@@ -666,3 +666,28 @@
      END OF PART 2 OF 3
      ================================================================ -->
   
+<!-- ================================================================
+     DASHBOARD FOOTER
+     ================================================================ -->
+<div class="dashboard-footer hidden" id="dashboardFooter">
+  &copy; 2026 Powered by <strong>TIS</strong> · The Ideal Schools Operational Portal
+</div>
+
+<!-- ================================================================
+     SCRIPT LOADING
+     ----------------------------------------------------------------
+     Order matters:
+       1. supabase-client.js  — defines window.TIS
+       2. app.js              — uses window.TIS, wires up the UI
+     Both load deferred so the DOM is ready when app.js runs.
+     ================================================================ -->
+<script src="supabase-client.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
+
+<!-- ================================================================
+     END OF PART 3 OF 3
+     END OF INDEX.HTML
+     ================================================================ -->
