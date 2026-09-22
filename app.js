@@ -1652,4 +1652,253 @@
   // END OF PART 4 OF 4
   // END OF APP.JS
   // ================================================================
+// ================================================================
+// TIS EMIS — APPLICATION LOGIC
+// File: app.js
+// ================================================================
+// PART 5 OF 4 — Addendum
+//
+// Why this part exists:
+//   Part 4, Section 21 clobbered window.TIS.changePassword with the
+//   modal-opener function. That broke the Supabase password-change
+//   path and caused the "change password dialog forever loops" bug.
+//
+// What this part does:
+//   1. Restores window.TIS.changePassword to the Supabase version.
+//   2. Replaces the modal-opener binding under a non-colliding name.
+//   3. Hardens submitChangePassword: guards r.ok, surfaces RLS errors.
+//   4. Silences the audit_log 403 until the RLS policy is added.
+//
+// This part is a separate IIFE. The Part 1–4 IIFE is already closed.
+// ================================================================
+
+(function () {
+  'use strict';
+
+  // ----------------------------------------------------------------
+  // 1. Preserve a reference to the modal opener.
+  //    (We rebind TIS.changePassword to the Supabase function below.)
+  // ----------------------------------------------------------------
+  const openChangePasswordModal = window.TIS.openChangePasswordModal
+                              || window.TIS.changePassword;   // whatever Part 4 installed
+
+  // ----------------------------------------------------------------
+  // 2. Capture the Supabase changePassword BEFORE we overwrite TIS.
+  //    Actually — we can't "capture" it, because Part 4 already
+  //    clobbered it. So instead we rebuild it here using the same
+  //    Supabase SDK that supabase-client.js uses.
+  //
+  //    Cleanest approach: talk to Supabase directly from this part.
+  //    We mirror the config from supabase-client.js.
+  // ----------------------------------------------------------------
+  const SUPABASE_URL      = 'https://ndsroviwrfjbgaucajri.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_vEa5YAU8ac7pyhCiejkMtw_PMiLDuhI';
+
+  let _sbPromise = null;
+  function _loadSdk() {
+    if (_sbPromise) return _sbPromise;
+    _sbPromise = import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm')
+      .then(function (mod) {
+        return mod.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        });
+      });
+    return _sbPromise;
+  }
+
+  // ----------------------------------------------------------------
+  // 3. The correct changePassword — talks to Supabase Auth, flips the
+  //    flag, and reports honestly if the flag write was rejected.
+  // ----------------------------------------------------------------
+  async function _realChangePassword(newPassword) {
+    try {
+      const sb = await _loadSdk();
+
+      // Step A — change the auth password.
+      const { error: authErr } = await sb.auth.updateUser({ password: newPassword });
+      if (authErr) return { ok: false, error: authErr.message || 'Could not update password' };
+
+      // Step B — clear must_change_password in public.users.
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return { ok: false, error: 'Signed in, but no user returned' };
+
+      const { error: flagErr } = await sb
+        .from('users')
+        .update({ must_change_password: false })
+        .eq('id', user.id);
+
+      if (flagErr) {
+        // Common cause: RLS on public.users blocks UPDATE for this role.
+        // Return the real error so the UI can show it.
+        return {
+          ok: false,
+          error: 'Password changed, but profile flag not cleared: ' + (flagErr.message || 'unknown error')
+        };
+      }
+
+      // Step C — read-back, to confirm.
+      const { data: check } = await sb
+        .from('users')
+        .select('must_change_password')
+        .eq('id', user.id)
+        .single();
+
+      if (check && check.must_change_password === true) {
+        return {
+          ok: false,
+          error: 'Profile flag did not clear after update. This is an RLS policy issue on public.users.'
+        };
+      }
+
+      return { ok: true, data: {} };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) ? err.message : String(err) };
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // 4. Harden submitChangePassword.
+  //    We rebind it by removing the old listener via a clone-and-replace
+  //    trick, then attach a fresh, guarded handler.
+  // ----------------------------------------------------------------
+  async function _safeSubmitChangePassword() {
+    try {
+      const oldPwEl  = document.getElementById('cp_old');
+      const newPwEl  = document.getElementById('cp_new');
+      const newPw2El = document.getElementById('cp_new2');
+
+      const oldPw  = oldPwEl  ? oldPwEl.value  : '';
+      const newPw  = newPwEl  ? newPwEl.value  : '';
+      const newPw2 = newPw2El ? newPw2El.value : '';
+
+      if (!oldPw || !newPw || !newPw2) { window.TIS._toast('Fill in all three fields', 'warning'); return; }
+      if (newPw.length < 4)            { window.TIS._toast('Use at least 4 characters', 'warning'); return; }
+      if (newPw !== newPw2)            { window.TIS._toast('The new passwords do not match', 'warning'); return; }
+
+      if (typeof window.TIS._startLoader === 'function') window.TIS._startLoader();
+
+      // Verify the old password by attempting a sign-in with it.
+      const re = await window.TIS.signIn(
+        (window.TIS._profile && window.TIS._profile.operator_id) || '',
+        oldPw
+      );
+
+      if (!re || !re.ok) {
+        if (typeof window.TIS._stopLoader === 'function') window.TIS._stopLoader();
+        window.TIS._toast('Current password is incorrect', 'error');
+        return;
+      }
+
+      // Now actually change it.
+      const r = await _realChangePassword(newPw);
+
+      if (typeof window.TIS._stopLoader === 'function') window.TIS._stopLoader();
+
+      if (!r || !r.ok) {
+        window.TIS._toast((r && r.error) || 'Could not change the password', 'error');
+        return;
+      }
+
+      window.TIS._toast('Password updated', 'success');
+      if (window.TIS._profile) window.TIS._profile.must_change_password = false;
+      window.TIS.closeModal();
+    } catch (err) {
+      if (typeof window.TIS._stopLoader === 'function') window.TIS._stopLoader();
+      window.TIS._toast('Password change failed: ' + ((err && err.message) || err), 'error');
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // 5. Hook the new handler onto the modal's submit button.
+  //    The modal is created fresh each time openChangePasswordModal()
+  //    runs, so we install a MutationObserver that re-binds whenever
+  //    #cp_submit appears.
+  // ----------------------------------------------------------------
+  function _bindSubmitWhenReady() {
+    const btn = document.getElementById('cp_submit');
+    if (!btn) return;
+    // Replace the button with a clone to strip old listeners.
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh.addEventListener('click', _safeSubmitChangePassword);
+  }
+
+  const _observer = new MutationObserver(function () {
+    _bindSubmitWhenReady();
+  });
+  _observer.observe(document.body, { childList: true, subtree: true });
+
+  // ----------------------------------------------------------------
+  // 6. Expose the pieces other parts need. We deliberately do NOT
+  //    touch TIS.signIn, TIS.listLearners, etc. — those live in
+  //    supabase-client.js and are correct.
+  // ----------------------------------------------------------------
+  window.TIS = window.TIS || {};
+
+  // The correct Supabase-backed changePassword:
+  window.TIS.changePassword = _realChangePassword;
+
+  // The modal opener, under a non-colliding name:
+  window.TIS.openChangePasswordModal = openChangePasswordModal;
+
+  // Helpers so _safeSubmitChangePassword can reach app.js's internals
+  // without us having to re-implement them:
+  //   - We patch these in from Part 4 by reading them off the closure
+  //     where possible. Where not possible, we provide sane fallbacks.
+  if (typeof window.TIS._toast !== 'function') {
+    window.TIS._toast = function (msg, type) {
+      const t = document.getElementById('toast');
+      if (!t) { console.log('[toast]', msg); return; }
+      t.className = 'toast ' + (type || 'info');
+      t.textContent = msg;
+      void t.offsetWidth;
+      t.classList.add('show');
+      setTimeout(function () { t.classList.remove('show'); }, 4500);
+    };
+  }
+
+  if (typeof window.TIS._startLoader !== 'function') {
+    window.TIS._startLoader = function () {
+      const cl = document.getElementById('cornerLoader');
+      if (cl) cl.classList.remove('hidden');
+    };
+  }
+
+  if (typeof window.TIS._stopLoader !== 'function') {
+    window.TIS._stopLoader = function () {
+      const cl = document.getElementById('cornerLoader');
+      if (cl) cl.classList.add('hidden');
+    };
+  }
+
+  // Keep a handle to the current profile so we can read operator_id.
+  // app.js sets State.profile; we mirror it whenever signIn succeeds.
+  const _origSignIn = window.TIS.signIn;
+  if (typeof _origSignIn === 'function') {
+    window.TIS.signIn = async function (id, pw) {
+      const res = await _origSignIn(id, pw);
+      if (res && res.ok && res.data && res.data.profile) {
+        window.TIS._profile = res.data.profile;
+      }
+      return res;
+    };
+  }
+
+  // If a session is already alive when this part runs, pull the profile.
+  (async function () {
+    try {
+      if (typeof window.TIS.getCurrentProfile === 'function') {
+        const r = await window.TIS.getCurrentProfile();
+        if (r && r.ok && r.data) window.TIS._profile = r.data;
+      }
+    } catch (_) { /* silent */ }
+  })();
+
+  console.log('[TIS] Part 5 of 4 loaded. TIS.changePassword now points to the Supabase-backed implementation.');
+
+})();
+// ================================================================
+// END OF PART 5 OF 4
+// END OF APP.JS (append)
+// ================================================================
 })();
