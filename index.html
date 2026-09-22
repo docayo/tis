@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="description" content="The Ideal Schools Operational Portal & Databank">
+  <title>TIS Portal</title>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ================================================================
+     LOADING SCREEN
+     ================================================================ -->
+<div class="loading-screen hidden" id="loadingScreen">
+  <div class="loading-marquee"><div class="loading-marquee-inner">
+    THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ The Ideal Kiddies School ~ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ The Ideal Kiddies School ~
+  </div></div>
+  <div class="loading-tis-anim">
+    <div class="ring-outer"></div>
+    <div class="ring-inner"></div>
+    <div class="logo-bg"></div>
+    <div class="tis-text">TIS</div>
+  </div>
+  <div class="loading-percent" id="loadingPercent">0%</div>
+  <div class="loading-welcome">Welcome to The Ideal Schools Digital Infrastructures</div>
+  <div class="loading-powered">Powered by <strong>Dr AYOOLA G O. FCIA NIIA</strong></div>
+</div>
+
+<!-- ================================================================
+     CORNER LOADER
+     ================================================================ -->
+<div class="corner-loader hidden" id="cornerLoader">
+  <div class="mini-tis">
+    <div class="ring-o"></div>
+    <div class="ring-i"></div>
+    <div class="mini-logo"></div>
+    <div class="mini-text">TIS</div>
+  </div>
+  <div class="mini-pct" id="miniPercent">0%</div>
+</div>
+
+<!-- ================================================================
+     TOAST
+     ================================================================ -->
+<div id="toast" class="toast"></div>
+
+<!-- ================================================================
+     LOGIN PAGE
+     ================================================================ -->
+<div class="login-page" id="loginPage">
+  <div class="login-overlay"></div>
+  <div class="login-box">
+    <div class="login-logos">
+      <img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School">
+      <div class="title-center">
+        <h1>THE IDEAL SCHOOLS</h1>
+        <div class="sub">Operational Portal &amp; Databank</div>
+      </div>
+      <img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry">
+    </div>
+    <div class="ff">
+      <label><i class="fas fa-user"></i> User ID</label>
+      <input type="text" id="loginId" placeholder="e.g. 01" autocomplete="username" autofocus>
+    </div>
+    <div class="ff">
+      <label><i class="fas fa-lock"></i> Password</label>
+      <div class="password-wrapper">
+        <input type="password" id="loginPassword" placeholder="Enter password" autocomplete="current-password">
+        <i class="fas fa-eye eye" id="togglePwBtn"></i>
+      </div>
+    </div>
+    <button class="login-btn" id="loginBtn" type="button">
+      <i class="fas fa-sign-in-alt"></i> Access Portal
+    </button>
+    <div id="loginStatus" class="login-status"></div>
+    <div class="login-hint">Default password: <strong>1234</strong> — change after first login</div>
+    <div class="login-footer">&copy; 2026 Powered by <strong>TIS</strong> · Ogun State Ministry of Education</div>
+  </div>
+</div>
+
+<!-- ================================================================
+     DASHBOARD BANNER — 3-row layout
+     ================================================================ -->
+<div class="hidden" id="dashboardHeader">
+  <div class="dashboard-header">
+
+    <!-- ROW 1: School logo | Name + Motto | Ministry logo -->
+    <div class="banner-row-1">
+      <div class="banner-logo">
+        <img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School Logo">
+      </div>
+      <div class="banner-center">
+        <div class="title">THE IDEAL <span class="h">SCHOOLS</span></div>
+        <div class="motto">Scientia est potentia</div>
+      </div>
+      <div class="banner-logo">
+        <img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry Logo">
+      </div>
+    </div>
+
+    <!-- ROW 2: Navigation tabs -->
+    <div class="banner-row-2">
+      <div class="nav-tabs" id="navTabs">
+        <button class="nav-tab active" data-tab="learners"><i class="fas fa-users"></i> Learners</button>
+        <button class="nav-tab" data-tab="staff"><i class="fas fa-user-tie"></i> Staff</button>
+        <button class="nav-tab" data-tab="terms"><i class="fas fa-calendar-alt"></i> Terms</button>
+        <button class="nav-tab" data-tab="attendance"><i class="fas fa-clipboard-check"></i> Attendance</button>
+        <button class="nav-tab" data-tab="staffatt"><i class="fas fa-clock"></i> Staff Att.</button>
+        <button class="nav-tab" data-tab="broadsheet"><i class="fas fa-file-alt"></i> Broad Sheet</button>
+        <button class="nav-tab" data-tab="calendar"><i class="fas fa-calendar"></i> Calendar</button>
+        <button class="nav-tab" data-tab="calimport"><i class="fas fa-file-upload"></i> Calendar Import</button>
+        <button class="nav-tab" data-tab="qr"><i class="fas fa-qrcode"></i> QR</button>
+        <button class="nav-tab" data-tab="reports"><i class="fas fa-file-pdf"></i> Reports</button>
+        <button class="nav-tab" data-tab="classes"><i class="fas fa-layer-group"></i> Classes</button>
+        <button class="nav-tab" data-tab="users"><i class="fas fa-user-cog"></i> Users</button>
+      </div>
+    </div>
+
+    <!-- ROW 3: Operator chip -->
+    <div class="banner-row-3">
+      <div class="operator-chip-static">
+        <img id="dashAvatar" src="https://lh3.googleusercontent.com/d/1-6CBHAHcOtpT50t1tMdwpsfXe2jOCDeS=w200" alt="">
+        <div class="info">
+          <div class="n" id="dashOperatorName">Operator</div>
+          <div class="r" id="dashOperatorRole">Role</div>
+        </div>
+        <div class="actions">
+          <button class="pwd" id="btnChangePassword" type="button">
+            <i class="fas fa-key"></i> Change Password
+          </button>
+          <button class="out" id="btnLogout" type="button">
+            <i class="fas fa-sign-out-alt"></i> Logout
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ================================================================
+     END OF PART 1 OF 3
+     ================================================================ -->
