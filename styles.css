@@ -947,3 +947,267 @@ input:focus, select:focus, textarea:focus {
 /* ================================================================
    END OF PART 3 OF 4
    ================================================================ */
+/* ================================================================
+   PART 4 of 4 — Staff cards + Monthly + Calendar + Birthday + Mobile
+   ================================================================ */
+
+/* ================================================================
+   STAFF CARDS — for the Staff Attendance live list
+   ================================================================ */
+.staff-card {
+  background: white;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border-left: 4px solid var(--green-primary);
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.staff-card:hover { transform: translateX(2px); box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+.staff-card.state-CLOCKED_OUT  { border-left-color: #6c757d; }
+.staff-card.state-CLOCKED_IN   { border-left-color: #27ae60; background: #f0f8f0; }
+.staff-card.state-MOVEMENT_OUT { border-left-color: #f39c12; background: #fff8e0; }
+
+.staff-card .sc-info { flex: 1; min-width: 0; }
+.staff-card .sc-name { font-weight: 700; font-size: 13px; }
+.staff-card .sc-detail { font-size: 11px; color: #6b7a8f; margin-top: 2px; }
+.staff-card .sc-badge {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  flex-shrink: 0;
+}
+.staff-card .sc-badge.present { background: #d4edda; color: #155724; }
+.staff-card .sc-badge.late    { background: #fff3cd; color: #856404; }
+.staff-card .sc-badge.out     { background: #f8d7da; color: #721c24; }
+
+/* ================================================================
+   MONTHLY DAY TABLES — one styled table per day, Word-like
+   ================================================================ */
+.monthly-day-table {
+  margin-bottom: 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border: 1px solid #e6e9f0;
+}
+.monthly-day-header {
+  background: linear-gradient(135deg, #1a5276, #0f3460);
+  color: white;
+  padding: 12px 18px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 700;
+}
+.monthly-day-header .day-title {
+  font-size: 14px; letter-spacing: 1px; text-transform: uppercase;
+}
+.monthly-day-header .day-date { font-size: 11px; opacity: 0.85; }
+.monthly-day-header.weekend {
+  background: linear-gradient(135deg, #6b7a8f, #4a5567);
+}
+.monthly-day-header.today {
+  background: linear-gradient(135deg, #0b6623, #1a8a3a);
+}
+
+.monthly-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 12px; background: white;
+}
+.monthly-table th {
+  background: #f0f4f8;
+  color: #1a5276;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  font-weight: 700;
+  border-bottom: 2px solid #1a5276;
+}
+.monthly-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f2f5;
+  vertical-align: middle;
+}
+.monthly-table tr:nth-child(even) td { background: #fafbfc; }
+.monthly-table tr:hover td { background: #f0f8f0; }
+
+/* Status badges */
+.badge-present  { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                  font-size: 10px; font-weight: 700; background: #d4edda; color: #155724; }
+.badge-late     { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                  font-size: 10px; font-weight: 700; background: #f8d7da; color: #721c24; }
+.badge-halfday  { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                  font-size: 10px; font-weight: 700; background: #d1ecf1; color: #0c5460; }
+.badge-absent   { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                  font-size: 10px; font-weight: 700; background: #fff3cd; color: #856404; }
+.badge-movement { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                  font-size: 10px; font-weight: 700; background: #e2e3f5; color: #383d6d; }
+.halfday-note { color: #0c5460; font-weight: 700; font-size: 11px; }
+.late-note    { color: #c0392b; font-weight: 700; font-size: 11px; }
+
+/* ================================================================
+   CALENDAR IMPORT — upload zone and staging rows
+   ================================================================ */
+.upload-zone {
+  border: 3px dashed #c8d0dd;
+  border-radius: 14px;
+  padding: 28px;
+  text-align: center;
+  background: #fafbfc;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.upload-zone:hover { border-color: var(--green-primary); background: #f0f8f0; }
+.upload-zone i {
+  font-size: 34px; color: var(--green-primary);
+  margin-bottom: 10px; display: block;
+}
+.upload-zone h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.upload-zone p  { font-size: 11px; color: var(--text-light); }
+
+.staging-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 11px;
+}
+.staging-row.needs-review { background: #fff8e0; }
+.confidence-chip {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+}
+.confidence-chip.high   { background: #d4edda; color: #155724; }
+.confidence-chip.review { background: #fff3cd; color: #856404; }
+
+/* ================================================================
+   BIRTHDAY OVERLAY
+   ================================================================ */
+.birthday-overlay {
+  position: fixed; inset: 0; z-index: 5000;
+  background: radial-gradient(circle at 50% 30%,
+    rgba(26,26,46,0.97),
+    rgba(10,22,34,0.99));
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+  animation: fadeIn 0.3s ease;
+}
+.birthday-box {
+  background: linear-gradient(160deg, #12121f, #1a1a2e 55%, #0f3460);
+  border: 3px solid var(--gold-primary);
+  border-radius: 22px;
+  padding: 28px 24px;
+  max-width: 520px; width: 100%;
+  color: white;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+  text-align: center;
+  animation: modalPop 0.4s ease;
+}
+.birthday-title {
+  font-size: 24px; font-weight: 900; letter-spacing: 1px;
+  color: var(--gold-light); margin-bottom: 18px;
+}
+.birthday-chant {
+  font-size: 13px; line-height: 1.9;
+  margin: 14px 0;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px; padding: 12px 14px;
+}
+.birthday-chant .caller   { color: var(--gold-light); font-weight: 700; margin-right: 4px; }
+.birthday-chant .response { color: #7ddf9a; font-weight: 700; margin-right: 4px; }
+.birthday-chant .hurray   { display: block; font-weight: 800; color: var(--gold-light); font-size: 14px; }
+.birthday-celebrant { margin: 20px 0; }
+.celebrant-photo {
+  width: 120px; height: 120px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid var(--gold-primary);
+  background: linear-gradient(135deg, var(--green-primary), var(--gold-primary));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 44px; font-weight: 900;
+}
+.celebrant-photo img { width: 100%; height: 100%; object-fit: cover; }
+.celebrant-name { font-size: 20px; font-weight: 800; color: white; }
+.celebrant-age  { margin-top: 8px; font-size: 14px; font-weight: 700; color: var(--gold-light); }
+
+/* ================================================================
+   DASHBOARD FOOTER
+   ================================================================ */
+.dashboard-footer {
+  text-align: center; padding: 12px; margin-top: 16px;
+  font-size: 11px; color: var(--text-light);
+}
+
+/* ================================================================
+   TERM TABS — for term navigation (used in some modules)
+   ================================================================ */
+.term-tabs {
+  display: flex; gap: 4px;
+  overflow-x: auto;
+  padding: 4px;
+  background: #f0f2f5;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.term-tab {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text-light);
+  background: transparent; border: none;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  transition: background 0.2s, color 0.2s;
+}
+.term-tab .term-label { font-weight: 700; }
+.term-tab .term-range { font-size: 9px; opacity: 0.7; font-weight: 400; }
+.term-tab.active {
+  background: white;
+  color: var(--green-primary);
+  border-bottom: 3px solid var(--green-primary);
+}
+
+/* ================================================================
+   MOBILE
+   ================================================================ */
+@media (max-width: 768px) {
+  .banner-row-1 .banner-center .title { font-size: 15px; letter-spacing: 1.5px; }
+  .banner-row-1 .banner-center .motto { font-size: 10px; }
+  .banner-row-1 .banner-logo img { height: 40px; }
+  .nav-tab { padding: 6px 10px; font-size: 10px; }
+  .students-grid { grid-template-columns: 1fr; }
+  .btn { width: 100%; justify-content: center; margin-bottom: 4px; }
+  .toast { left: 12px; right: 12px; bottom: 90px; max-width: none; }
+  .attendance-table td.markable-cell { min-width: 40px; font-size: 10px; }
+  .attendance-table td.locked-cell   { min-width: 40px; font-size: 10px; }
+  .operator-chip-static { flex-wrap: wrap; justify-content: center; }
+  .staff-card { flex-direction: column; align-items: flex-start; }
+  .modal-box { padding: 18px; border-radius: 14px; }
+  .perm-grid td, .perm-grid th { padding: 4px 6px; font-size: 10px; }
+}
+
+/* ================================================================
+   PRINT
+   ================================================================ */
+@media print {
+  .dashboard-header,
+  .nav-tabs,
+  .btn,
+  .corner-loader,
+  .toast,
+  .birthday-overlay,
+  .operator-chip-static .actions {
+    display: none !important;
+  }
+  .module-view { box-shadow: none; padding: 0; }
+  body { background: white; }
+}
+
+/* ================================================================
+   END OF PART 4 OF 4
+   END OF STYLES.CSS
+   ================================================================ */
