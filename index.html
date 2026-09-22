@@ -145,3 +145,524 @@
 <!-- ================================================================
      END OF PART 1 OF 3
      ================================================================ -->
+<!-- ================================================================
+     MAIN CONTAINER — all module views
+     ================================================================ -->
+<div class="main-container hidden" id="mainContainer">
+
+  <!-- ============ LEARNERS ============ -->
+  <div class="module-view active" id="module-learners">
+    <div class="module-title"><i class="fas fa-users"></i> Learners</div>
+    <div class="module-subtitle">Live search, view profile, print</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group">
+          <input type="text" id="learnerSearchInput" placeholder="Type a name or PIN... (auto search)">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-secondary" id="btnRefreshLearners" type="button">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+          <button class="btn btn-gold" id="btnPrintLearners" type="button" data-perm="print_learners">
+            <i class="fas fa-print"></i> Print List
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="learnerStats"></div>
+    <div class="students-grid" id="learnersGrid"></div>
+  </div>
+
+  <!-- ============ STAFF ============ -->
+  <div class="module-view hidden" id="module-staff">
+    <div class="module-title"><i class="fas fa-user-tie"></i> Staff</div>
+    <div class="module-subtitle">Search, add, edit • Photo upload</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group">
+          <input type="text" id="staffSearchInput" placeholder="Search staff...">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-success" id="btnAddStaff" type="button" data-perm="write_staff">
+            <i class="fas fa-plus"></i> Add Staff
+          </button>
+          <button class="btn btn-secondary" id="btnRefreshStaff" type="button">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+          <button class="btn btn-gold" id="btnPrintStaff" type="button" data-perm="print_staff">
+            <i class="fas fa-print"></i> Print
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="staffStats"></div>
+    <div class="students-grid" id="staffGrid"></div>
+  </div>
+
+  <!-- ============ TERMS & PROMOTION ============ -->
+  <div class="module-view hidden" id="module-terms">
+    <div class="module-title"><i class="fas fa-calendar-alt"></i> Terms &amp; Promotion</div>
+    <div class="module-subtitle">Manage terms, archive, promote learners forward</div>
+
+    <div class="card-bg" id="termsList"></div>
+
+    <div class="card-bg">
+      <h4 style="margin-bottom:10px;color:var(--blue-primary);">Term Transition</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>From Term (Archive)</label>
+          <select id="promoteFromTerm"></select>
+        </div>
+        <div class="form-group">
+          <label>To Term (Activate)</label>
+          <select id="promoteToTerm"></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Old Class</label>
+          <select id="promoteOldClass"><option value="">-- All --</option></select>
+        </div>
+        <div class="form-group">
+          <label>New Class</label>
+          <select id="promoteNewClass"><option value="">-- Auto --</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <button class="btn btn-warning" id="btnArchiveOnly" type="button" data-perm="write_terms">
+            <i class="fas fa-archive"></i> Archive Only
+          </button>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" id="btnPreviewPromotion" type="button">
+            <i class="fas fa-users"></i> Preview
+          </button>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-success" id="btnFullTransition" type="button" data-perm="write_terms">
+            <i class="fas fa-level-up-alt"></i> Full Transition
+          </button>
+        </div>
+      </div>
+      <div id="promotionFeedback" style="margin-top:8px;font-size:12px;"></div>
+      <div id="promotionStudentList" style="display:none;margin-top:12px;overflow-x:auto;"></div>
+    </div>
+
+    <div class="card-bg">
+      <h4 style="margin-bottom:10px;color:var(--blue-primary);">Archived Terms</h4>
+      <div id="archivesList"></div>
+    </div>
+
+    <div class="card-bg">
+      <h4 style="margin-bottom:10px;color:var(--blue-primary);">Exit Learner</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>PIN</label>
+          <input type="text" id="exitStudentPin">
+        </div>
+        <div class="form-group">
+          <label>Reason</label>
+          <select id="exitReasonSelect"></select>
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-danger" id="btnExitStudent" type="button" data-perm="write_terms">
+            <i class="fas fa-user-times"></i> Exit
+          </button>
+        </div>
+      </div>
+      <div id="exitFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+  </div>
+
+  <!-- ============ LEARNER ATTENDANCE ============ -->
+  <div class="module-view hidden" id="module-attendance">
+    <div class="module-title"><i class="fas fa-clipboard-check"></i> Learner Attendance</div>
+    <div class="module-subtitle">Click cells to cycle marks • Press M / A / B for bulk</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Term</label>
+          <select id="attendanceTerm">
+            <option value="1st">1st Term</option>
+            <option value="2nd">2nd Term</option>
+            <option value="3rd" selected>3rd Term</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Year</label>
+          <input type="text" id="attendanceYear" value="2025">
+        </div>
+        <div class="form-group">
+          <label>Class</label>
+          <select id="attendanceClass"><option value="">-- Select --</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <button class="btn btn-primary" id="btnLoadAttendance" type="button">
+            <i class="fas fa-sync-alt"></i> Load Term View
+          </button>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-secondary" id="btnGenerateAttendance" type="button" data-perm="write_attendance">
+            <i class="fas fa-plus"></i> Generate
+          </button>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-gold" id="btnPrintAttendance" type="button" data-perm="print_attendance">
+            <i class="fas fa-print"></i> Print
+          </button>
+        </div>
+      </div>
+      <div id="attendanceFeedback" style="margin-top:8px;font-size:12px;"></div>
+      <div class="kb-hint" id="kbHint"></div>
+    </div>
+
+    <div id="markingStatus"></div>
+    <div class="stats-grid" id="attendanceTopMetrics"></div>
+    <div id="attendanceTermView"></div>
+
+    <div class="expandable" id="analysisFrame">
+      <div class="expandable-header">
+        <span><i class="fas fa-chart-bar"></i> Class Analysis (Weekly + Term Totals)</span>
+        <i class="fas fa-chevron-down"></i>
+      </div>
+      <div class="expandable-body" id="analysisBody"></div>
+    </div>
+
+    <div class="expandable open" id="signatureFrame">
+      <div class="expandable-header">
+        <span><i class="fas fa-signature"></i> Week Signatures</span>
+        <i class="fas fa-chevron-down"></i>
+      </div>
+      <div class="expandable-body" id="signatureBody"></div>
+    </div>
+  </div>
+
+  <!-- ============ STAFF ATTENDANCE ============ -->
+  <div class="module-view hidden" id="module-staffatt">
+    <div class="module-title"><i class="fas fa-clock"></i> Staff Attendance</div>
+    <div class="module-subtitle">Today's status • Clock in/out • Movement log • Monthly history</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-primary" id="btnRefreshStaffAtt" type="button">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-warning" id="btnManualStaffEntry" type="button" data-perm="write_staffatt">
+            <i class="fas fa-qrcode"></i> Manual Staff Entry
+          </button>
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-secondary" id="btnViewArchivedMonths" type="button">
+            <i class="fas fa-history"></i> View Archived Months
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="staffAttStats"></div>
+    <div id="staffAttList"></div>
+
+    <div class="card-bg" style="margin-top:20px;">
+      <h4 style="color:var(--blue-primary);margin-bottom:10px;">
+        <i class="fas fa-route"></i> Today's Movement Log
+      </h4>
+      <div id="movementLogList">
+        <div class="page-loader"><p>Loading movements...</p></div>
+      </div>
+    </div>
+
+    <div class="card-bg" style="margin-top:20px;">
+      <h4 style="color:var(--blue-primary);margin-bottom:10px;">
+        <i class="fas fa-calendar-day"></i> This Month — Daily Breakdown
+      </h4>
+      <p style="font-size:11px;color:var(--text-light);margin-bottom:10px;">
+        One table per day. Most recent day at top.
+      </p>
+      <div id="staffMonthlyView">
+        <div class="page-loader"><p>Loading monthly view...</p></div>
+      </div>
+    </div>
+
+    <div class="card-bg" style="margin-top:20px;">
+      <h4 style="color:var(--blue-primary);margin-bottom:10px;">
+        <i class="fas fa-archive"></i> Archive Staff Attendance
+      </h4>
+      <p style="font-size:11px;color:var(--text-light);margin-bottom:10px;">
+        Snapshots current attendance and movements, resets counters for the new month.
+      </p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Month</label>
+          <select id="archiveMonth">
+            <option value="January">January</option>
+            <option value="February">February</option>
+            <option value="March">March</option>
+            <option value="April">April</option>
+            <option value="May">May</option>
+            <option value="June">June</option>
+            <option value="July">July</option>
+            <option value="August">August</option>
+            <option value="September" selected>September</option>
+            <option value="October">October</option>
+            <option value="November">November</option>
+            <option value="December">December</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Year</label>
+          <input type="text" id="archiveYear" value="2026">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+          <button class="btn btn-danger" id="btnRunStaffArchive" type="button" data-perm="write_staffatt">
+            <i class="fas fa-archive"></i> Archive &amp; Reset
+          </button>
+        </div>
+      </div>
+      <div id="archiveFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+
+    <div class="card-bg" style="margin-top:20px;">
+      <h4 style="color:var(--blue-primary);margin-bottom:10px;">
+        <i class="fas fa-history"></i> Archived Months
+      </h4>
+      <div id="archiveList">
+        <div class="page-loader"><p>Loading archives...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ BROADSHEET ============ -->
+  <div class="module-view hidden" id="module-broadsheet">
+    <div class="module-title"><i class="fas fa-file-alt"></i> Broad Sheet</div>
+    <div class="module-subtitle">Term-wide subject scores by class</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Term</label>
+          <select id="bsTerm">
+            <option value="1st">1st Term</option>
+            <option value="2nd">2nd Term</option>
+            <option value="3rd" selected>3rd Term</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Year</label>
+          <input type="text" id="bsYear" value="2025">
+        </div>
+        <div class="form-group">
+          <label>Class</label>
+          <select id="bsClass"><option value="">-- All --</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <button class="btn btn-primary" id="btnLoadBroadSheet" type="button">Load</button>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-warning" id="btnPopulateBroadSheet" type="button" data-perm="write_broadsheet">
+            <i class="fas fa-sync-alt"></i> Populate
+          </button>
+        </div>
+      </div>
+      <div id="bsFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+
+    <div id="bsContent" style="overflow-x:auto;"></div>
+  </div>
+
+  <!-- ============ CALENDAR ============ -->
+  <div class="module-view hidden" id="module-calendar">
+    <div class="module-title"><i class="fas fa-calendar"></i> Academic Calendar</div>
+    <div class="module-subtitle">Term dates, holidays, events</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Session</label>
+          <input type="text" id="calSession" value="2026/2027">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-secondary" id="btnLoadCalendar" type="button">
+            <i class="fas fa-sync-alt"></i> View Calendar
+          </button>
+        </div>
+      </div>
+      <div id="calFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+
+    <div id="calendarContent"></div>
+  </div>
+
+  <!-- ============ CALENDAR IMPORT ============ -->
+  <div class="module-view hidden" id="module-calimport">
+    <div class="module-title"><i class="fas fa-file-upload"></i> Calendar Import</div>
+    <div class="module-subtitle">Upload a PDF or Word calendar. Review parsed rows, then commit.</div>
+
+    <div class="card-bg">
+      <h4 style="margin-bottom:10px;color:var(--blue-primary);">Step 1 — Upload</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Session (optional — auto-detected if blank)</label>
+          <input type="text" id="ci_session" placeholder="e.g. 2026/2027">
+        </div>
+      </div>
+      <div class="upload-zone" id="ci_uploadZone">
+        <i class="fas fa-cloud-upload-alt"></i>
+        <h4>Click to browse, or drag a file here</h4>
+        <p>PDF, DOCX, DOC, TXT — up to 5 MB</p>
+        <input type="file" id="ci_file" accept=".pdf,.docx,.doc,.txt,.rtf" style="display:none">
+      </div>
+      <div style="text-align:center;margin:12px 0;color:var(--text-light);font-size:11px;">— OR —</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Paste a Google Drive link (or file ID)</label>
+          <input type="text" id="ci_driveLink" placeholder="https://drive.google.com/file/d/...">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+          <button class="btn btn-primary" id="btnImportFromDrive" type="button">
+            <i class="fas fa-cloud-download-alt"></i> Import from Drive
+          </button>
+        </div>
+      </div>
+      <div id="ci_uploadFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+
+    <div class="card-bg hidden" id="ci_reviewPanel">
+      <h4 style="margin-bottom:10px;color:var(--blue-primary);">Step 2 — Review</h4>
+      <div id="ci_summary" style="margin-bottom:10px;font-size:12px;"></div>
+      <div id="ci_stagedRows" style="max-height:500px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;"></div>
+      <div class="form-row" style="margin-top:12px;">
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-success" id="btnCommitReviewed" type="button">
+            <i class="fas fa-check"></i> Commit Reviewed
+          </button>
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-warning" id="btnCommitAll" type="button">
+            <i class="fas fa-forward"></i> Trust &amp; Commit All
+          </button>
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-danger" id="btnDiscardImport" type="button">
+            <i class="fas fa-trash"></i> Discard
+          </button>
+        </div>
+      </div>
+      <div id="ci_commitFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+
+    <div class="card-bg">
+      <h4 style="margin-bottom:10px;color:var(--blue-primary);">Import History</h4>
+      <div id="ci_history">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ============ QR ============ -->
+  <div class="module-view hidden" id="module-qr">
+    <div class="module-title"><i class="fas fa-qrcode"></i> QR Code — Staff Clock-in</div>
+    <div class="module-subtitle">Post at the school gate so staff can clock in from their phone</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group">
+          <button class="btn btn-primary" id="btnGenerateQR" type="button" data-perm="write_qr">
+            <i class="fas fa-qrcode"></i> Generate New QR
+          </button>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-secondary" id="btnShowActiveQR" type="button">
+            Show Active
+          </button>
+        </div>
+      </div>
+      <div id="qrFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+
+    <div id="qrContent"></div>
+  </div>
+
+  <!-- ============ REPORTS ============ -->
+  <div class="module-view hidden" id="module-reports">
+    <div class="module-title"><i class="fas fa-file-pdf"></i> Reports</div>
+    <div class="module-subtitle">Generate PDF reports for any date range</div>
+
+    <div class="card-bg">
+      <div class="form-row">
+        <div class="form-group">
+          <label>From</label>
+          <input type="date" id="reportFrom">
+        </div>
+        <div class="form-group">
+          <label>To</label>
+          <input type="date" id="reportTo">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;">
+          <button class="btn btn-primary" id="btnGenerateReport" type="button" data-perm="print_reports">
+            Generate PDF
+          </button>
+        </div>
+      </div>
+      <div id="reportFeedback" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+  </div>
+
+  <!-- ============ CLASSES ============ -->
+  <div class="module-view hidden" id="module-classes">
+    <div class="module-title"><i class="fas fa-layer-group"></i> Classes</div>
+    <div class="module-subtitle">Add, rename, retire classes. Next-class drives promotion.</div>
+
+    <div class="card-bg">
+      <button class="btn btn-success" id="btnAddClass" type="button" data-perm="write_classes">
+        <i class="fas fa-plus"></i> Add Class
+      </button>
+      <button class="btn btn-secondary" id="btnRefreshClasses" type="button">
+        <i class="fas fa-sync-alt"></i> Refresh
+      </button>
+      <button class="btn btn-warning" id="btnSeedDefaultClasses" type="button" data-perm="write_classes">
+        <i class="fas fa-seedling"></i> Seed Defaults
+      </button>
+      <button class="btn btn-gold" id="btnShowRetiredClasses" type="button">
+        <i class="fas fa-eye"></i> Show Retired
+      </button>
+    </div>
+
+    <div id="classesContent">Loading...</div>
+  </div>
+
+  <!-- ============ USERS ============ -->
+  <div class="module-view hidden" id="module-users">
+    <div class="module-title"><i class="fas fa-user-cog"></i> Users &amp; Permissions</div>
+    <div class="module-subtitle">Turn users on/off, assign Read / Write / Print permissions per module</div>
+
+    <div class="card-bg">
+      <button class="btn btn-secondary" id="btnRefreshUsers" type="button">
+        <i class="fas fa-sync-alt"></i> Refresh
+      </button>
+    </div>
+
+    <div id="usersContent"></div>
+  </div>
+
+</div>
+
+<!-- ================================================================
+     MODAL CONTAINER — modals get injected here
+     ================================================================ -->
+<div id="modalContainer"></div>
+
+<!-- ================================================================
+     END OF PART 2 OF 3
+     ================================================================ -->
+  
