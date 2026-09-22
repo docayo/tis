@@ -581,3 +581,369 @@ body {
 /* ================================================================
    END OF PART 2 OF 4
    ================================================================ */
+/* ================================================================
+   PART 3 of 4 — Forms + Tables + Modals + Expandables + Permissions
+   ================================================================ */
+
+/* ================================================================
+   FORMS
+   ================================================================ */
+.form-row {
+  display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
+}
+@media (min-width: 480px) {
+  .form-row { flex-direction: row; }
+  .form-row .form-group { flex: 1; }
+}
+.form-group { margin-bottom: 8px; }
+.form-group label {
+  display: block; font-size: 10px; font-weight: 700; margin-bottom: 3px;
+}
+input, select, textarea {
+  width: 100%; padding: 8px 12px;
+  border: 2px solid #e6e9f0; border-radius: 8px;
+  font-size: 12px; font-family: inherit;
+  background: #f8f9fc;
+  transition: border-color 0.2s, background 0.2s;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--green-primary);
+  background: white;
+}
+
+.card-bg {
+  background: #fafbfc;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid #e6e9f0;
+  margin-bottom: 12px;
+}
+
+/* ================================================================
+   TABLES — the standard attendance-table
+   ================================================================ */
+.attendance-table {
+  width: 100%; border-collapse: collapse; font-size: 11px;
+}
+.attendance-table th {
+  background: var(--green-primary);
+  color: white; padding: 6px 8px;
+  text-align: center; font-size: 10px; text-transform: uppercase;
+}
+.attendance-table td {
+  padding: 5px 6px; border: 1px solid #ddd; text-align: center;
+}
+.attendance-table .name-cell { text-align: left; font-weight: 700; }
+.attendance-table .name-cell.female { color: #c0392b; }
+.attendance-table .name-cell.male   { color: #1a5276; }
+
+.attendance-table .present     { background: #d4edda; color: #27ae60; font-weight: 700; }
+.attendance-table .absent      { background: #f8d7da; color: #c0392b; }
+.attendance-table .holiday-cell {
+  background: linear-gradient(135deg, #ffe6e6, #ffcdd2);
+  color: #c62828; font-weight: 700;
+}
+.attendance-table .week-header { background: #0b6623; }
+.attendance-table .day-header  { background: #1a8a3a; }
+.attendance-table .total-col   { background: #f0f8f0; font-weight: 700; }
+.attendance-table .today-col {
+  background: #fff8e0;
+  border: 2px solid var(--gold-primary) !important;
+}
+.attendance-table .today-header {
+  background: var(--gold-primary) !important;
+  color: #1a1a2e !important;
+}
+
+/* Editable markable cells */
+.attendance-table td.markable-cell {
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
+  min-width: 50px;
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  font-size: 12px;
+  user-select: none;
+}
+.attendance-table td.markable-cell:hover {
+  background: #fffbe6 !important;
+  transform: scale(1.06);
+  box-shadow: inset 0 0 0 2px var(--gold-primary);
+}
+.attendance-table td.markable-cell:active { transform: scale(0.98); }
+
+.attendance-table td.locked-cell {
+  background: #f0f2f5 !important;
+  color: #8899bb;
+  cursor: not-allowed;
+  min-width: 50px;
+  font-family: 'Courier New', monospace;
+}
+
+.attendance-table td.save-cell {
+  background: #0b6623; padding: 0;
+}
+.attendance-table td.save-cell button {
+  background: transparent;
+  border: none; color: white;
+  font-weight: 700; font-size: 10px;
+  padding: 8px 6px; cursor: pointer; width: 100%;
+  transition: background 0.2s;
+}
+.attendance-table td.save-cell button:hover { background: #1a8a3a; }
+
+/* ================================================================
+   EXPANDABLES
+   ================================================================ */
+.expandable {
+  border: 1px solid #e6e9f0;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.expandable-header {
+  background: #f8f9fc;
+  padding: 10px 14px;
+  cursor: pointer; font-weight: 700; font-size: 12px;
+  display: flex; justify-content: space-between; align-items: center;
+  transition: background 0.2s, color 0.2s;
+}
+.expandable-header:hover { background: #eef1f5; }
+.expandable-body { padding: 12px 14px; display: none; }
+.expandable.open .expandable-body { display: block; }
+.expandable.open .expandable-header {
+  background: var(--green-primary); color: white;
+}
+
+/* ================================================================
+   INFO ROWS — key/value pairs
+   ================================================================ */
+.info-row {
+  display: flex; justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid #f5f6f9;
+  font-size: 11px;
+  gap: 12px;
+}
+.info-label { color: var(--text-light); }
+.info-value { font-weight: 600; text-align: right; }
+
+/* ================================================================
+   MODALS
+   ================================================================ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+.modal-box {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 800px; width: 100%;
+  max-height: 90vh; overflow-y: auto;
+  animation: modalPop 0.25s ease;
+}
+@keyframes modalPop {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.modal-box.wide { max-width: 1100px; }
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid #e6e9f0;
+}
+.modal-header h2 {
+  font-size: 18px; font-weight: 800; color: var(--green-primary);
+}
+.modal-header .close-btn {
+  background: none; border: none;
+  font-size: 22px; cursor: pointer; color: var(--text-light);
+}
+
+/* ================================================================
+   TERM CARDS
+   ================================================================ */
+.term-card {
+  background: #f8f9fc;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  border-left: 4px solid var(--green-primary);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 10px;
+}
+
+/* ================================================================
+   QR BOX
+   ================================================================ */
+.qr-box { text-align: center; padding: 20px; }
+.qr-box img {
+  max-width: 280px;
+  border: 4px solid var(--gold-primary);
+  border-radius: 12px;
+}
+
+/* ================================================================
+   PHOTO PICKER
+   ================================================================ */
+.photo-picker {
+  display: flex; gap: 12px; align-items: center; margin-bottom: 12px;
+}
+.photo-preview {
+  width: 80px; height: 80px; border-radius: 50%;
+  border: 3px solid var(--gold-primary);
+  background: linear-gradient(135deg, var(--green-primary), var(--gold-primary));
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 700; font-size: 24px;
+  overflow: hidden; flex-shrink: 0;
+}
+.photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ================================================================
+   TOGGLE SWITCH
+   ================================================================ */
+.toggle-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f6f9;
+  font-size: 12px;
+}
+.toggle-switch {
+  position: relative;
+  width: 40px; height: 22px;
+  background: #ccc; border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.3s;
+  flex-shrink: 0;
+}
+.toggle-switch.on { background: var(--green-primary); }
+.toggle-switch::after {
+  content: '';
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  background: white; border-radius: 50%;
+  transition: left 0.3s;
+}
+.toggle-switch.on::after { left: 20px; }
+
+/* ================================================================
+   PERMISSIONS GRID
+   ================================================================ */
+.perm-grid {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.perm-grid th {
+  background: var(--blue-primary); color: white;
+  padding: 8px 10px;
+  text-align: center;
+  font-size: 10px; text-transform: uppercase; font-weight: 700;
+}
+.perm-grid th.mod-col { text-align: left; }
+.perm-grid td {
+  padding: 6px 10px;
+  border: 1px solid #e6e9f0;
+  text-align: center;
+  vertical-align: middle;
+}
+.perm-grid td.mod-name {
+  text-align: left; font-weight: 600; color: var(--text-dark);
+}
+.perm-grid tr:nth-child(even) td { background: #fafbfc; }
+.perm-check {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border: 2px solid #c8d0dd; border-radius: 6px;
+  cursor: pointer; background: white;
+  transition: background 0.15s, border-color 0.15s;
+  position: relative;
+}
+.perm-check:hover { border-color: var(--green-primary); }
+.perm-check.on {
+  background: var(--green-primary);
+  border-color: var(--green-primary);
+}
+.perm-check.on::after {
+  content: '\2713';
+  color: white; font-weight: 900; font-size: 14px; line-height: 1;
+}
+
+/* ================================================================
+   USERS TABLE
+   ================================================================ */
+.users-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.users-table th {
+  background: var(--blue-primary); color: white;
+  padding: 10px;
+  text-align: left;
+  font-size: 10px; text-transform: uppercase; font-weight: 700;
+}
+.users-table td {
+  padding: 10px;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.users-table tr:hover td { background: #f8f9fc; }
+.users-table .u-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 2px solid var(--gold-primary);
+  object-fit: cover;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.users-table .u-active {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600;
+}
+.users-table .u-active .dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #27ae60;
+}
+.users-table .u-active.off .dot { background: #c0392b; }
+.users-table .u-actions {
+  display: flex; gap: 6px; justify-content: flex-end;
+}
+
+/* ================================================================
+   MARKING STATUS — for attendance modules
+   ================================================================ */
+.marking-status {
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  font-size: 12px; font-weight: 600;
+}
+.marking-status.ok {
+  background: #d4edda; color: #155724;
+  border-left: 4px solid #27ae60;
+}
+.marking-status.warn {
+  background: #fff3cd; color: #856404;
+  border-left: 4px solid #f39c12;
+}
+.marking-status.error {
+  background: #f8d7da; color: #721c24;
+  border-left: 4px solid #c0392b;
+}
+.kb-hint {
+  font-size: 10px; color: #6b7a8f; margin-top: 4px;
+}
+.kb-hint kbd {
+  background: #f0f2f5; padding: 2px 6px;
+  border-radius: 4px; border: 1px solid #ccc;
+  font-family: monospace; font-size: 10px;
+}
+
+/* ================================================================
+   END OF PART 3 OF 4
+   ================================================================ */
