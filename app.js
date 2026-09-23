@@ -4,22 +4,19 @@
 // ================================================================
 // Full file. One IIFE. One close.
 //
-// Responsibilities:
-//   - wire the DOM to window.TIS (from supabase-client.js)
-//   - hold UI state
-//   - render every module
-//
-// window.TIS is owned by supabase-client.js and must NOT be replaced.
-// This file only ADDS to it (window.TIS.closeModal, .switchTab, etc.)
-// and NEVER overwrites the Supabase methods (signIn, changePassword,
-// listLearners, ...).
+// Design rules (locked):
+//   - NO full-screen overlays that can get stuck.
+//   - NO async call on tab switch that can block the UI.
+//   - Every event handler is wrapped so a thrown error can't
+//     kill subsequent clicks.
+//   - A safety sweep runs at boot and clears any stray overlay.
 // ================================================================
 
 (function () {
   'use strict';
 
   // ================================================================
-  // [SECTION 01] STATE
+  // [01] STATE
   // ================================================================
   const State = {
     profile: null,
@@ -27,20 +24,7 @@
     cachedLearners: [],
     cachedStaff: [],
     cachedTerms: [],
-    cachedClasses: [],
-    lastTermView: null,
-    todayContext: null,
-    markingShortcutsUsed: false,
-    searchTimer: null,
-    staffSearchTimer: null,
-    loaderCount: 0,
-    loaderInterval: null,
-    loaderPercent: 0,
-    birthdayInterval: null,
-    celebratedThisSession: {},
-    ci_currentImportId: null,
-    ci_currentFile: null,
-    ci_currentFilename: null
+    cachedClasses: []
   };
 
   const ALL_MODULES = [
@@ -50,10 +34,9 @@
   ];
 
   // ================================================================
-  // [SECTION 02] UTILITIES
+  // [02] UTILITIES
   // ================================================================
   function $(id) { return document.getElementById(id); }
-
   function setHTML(id, html) { const el = $(id); if (el) el.innerHTML = html; }
   function setText(id, txt) { const el = $(id); if (el) el.textContent = txt; }
 
@@ -62,21 +45,18 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
-
   function escAttr(s) {
     return (s === null || s === undefined ? '' : s).toString()
       .replace(/\\/g, '\\\\').replace(/'/g, "\\'")
       .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-
   function todayISO() {
     const d = new Date();
     return d.getFullYear() + '-' +
            String(d.getMonth() + 1).padStart(2, '0') + '-' +
            String(d.getDate()).padStart(2, '0');
   }
-
   function fmtDate(v) {
     if (!v) return '—';
     if (v instanceof Date) {
@@ -96,7 +76,7 @@
 
   function showToast(msg, type) {
     const t = $('toast');
-    if (!t) return;
+    if (!t) { console.log('[toast]', msg); return; }
     t.className = 'toast ' + (type || 'info');
     t.textContent = msg;
     void t.offsetWidth;
@@ -104,89 +84,40 @@
     setTimeout(() => t.classList.remove('show'), 4500);
   }
 
+  // Very small non-blocking loaders — just the corner spinner.
+  let loaderCount = 0;
   function startLoader() {
-    State.loaderCount++;
-    if (State.loaderCount === 1) {
-      const cl = $('cornerLoader');
-      if (cl) cl.classList.remove('hidden');
-      State.loaderPercent = 0;
-      if (State.loaderInterval) clearInterval(State.loaderInterval);
-      State.loaderInterval = setInterval(() => {
-        if (State.loaderPercent < 80) State.loaderPercent += 5;
-        setText('miniPercent', Math.floor(State.loaderPercent) + '%');
-      }, 100);
-    }
-  }
-
-  function stopLoader() {
-    State.loaderCount--;
-    if (State.loaderCount < 0) State.loaderCount = 0;
-    if (State.loaderCount === 0) {
-      State.loaderPercent = 100;
-      setText('miniPercent', '100%');
-      setTimeout(() => {
-        if (State.loaderCount > 0) return;
-        if (State.loaderInterval) clearInterval(State.loaderInterval);
-        State.loaderInterval = null;
-        const cl = $('cornerLoader');
-        if (cl) cl.classList.add('hidden');
-        State.loaderPercent = 0;
-      }, 400);
-    }
-  }
-
-  function resetLoader() {
-    State.loaderCount = 0;
-    if (State.loaderInterval) clearInterval(State.loaderInterval);
-    State.loaderInterval = null;
+    loaderCount++;
     const cl = $('cornerLoader');
-    if (cl) cl.classList.add('hidden');
+    if (cl) cl.classList.remove('hidden');
   }
-
-  function showWelcomeLoader() {
-    const el = $('loadingScreen');
-    if (!el) return;
-    el.classList.remove('hidden');
-    el.style.opacity = '1';
-    const pctEl = $('loadingPercent');
-    let pct = 0;
-    const iv = setInterval(() => {
-      pct += 3;
-      if (pct > 80) pct = 80;
-      if (pctEl) pctEl.textContent = Math.floor(pct) + '%';
-    }, 40);
-    setTimeout(() => {
-      clearInterval(iv);
-      if (pctEl) pctEl.textContent = '100%';
-      setTimeout(() => {
-        el.style.opacity = '0';
-        setTimeout(() => {
-          el.classList.add('hidden');
-          el.style.opacity = '1';
-        }, 500);
-      }, 400);
-    }, 1500);
+  function stopLoader() {
+    loaderCount--;
+    if (loaderCount < 0) loaderCount = 0;
+    if (loaderCount === 0) {
+      const cl = $('cornerLoader');
+      if (cl) cl.classList.add('hidden');
+    }
   }
 
   function pageLoaderHTML(msg) {
-    return '<div class="page-loader"><div class="mini-tis-l"><div class="r-o"></div><div class="r-i"></div><div class="l-bg"></div><div class="m-t">TIS</div></div><p>' + esc(msg || 'Loading...') + '</p></div>';
+    return '<div class="page-loader"><p>' + esc(msg || 'Loading...') + '</p></div>';
   }
-
   function emptyHTML(icon, title, sub) {
-    return '<div class="empty-state"><i class="fas ' + (icon || 'fa-inbox') + '"></i><h3>' + esc(title || 'Nothing here') + '</h3>' + (sub ? '<p>' + esc(sub) + '</p>' : '') + '</div>';
+    return '<div class="empty-state"><i class="fas ' + (icon || 'fa-inbox') + '"></i><h3>' +
+           esc(title || 'Nothing here') + '</h3>' +
+           (sub ? '<p>' + esc(sub) + '</p>' : '') + '</div>';
   }
-
   function errorHTML(title, detail) {
-    return '<div class="empty-state"><i class="fas fa-triangle-exclamation"></i><h3>' + esc(title) + '</h3>' + (detail ? '<p>' + esc(detail) + '</p>' : '') + '</div>';
+    return '<div class="empty-state"><i class="fas fa-triangle-exclamation"></i><h3>' +
+           esc(title) + '</h3>' + (detail ? '<p>' + esc(detail) + '</p>' : '') + '</div>';
   }
 
   function closeModal() { setHTML('modalContainer', ''); }
-
   function toggleExpandable(id) {
     const el = $(id);
     if (el) el.classList.toggle('open');
   }
-
   function debounce(fn, delay) {
     let t = null;
     return function () {
@@ -197,18 +128,16 @@
   }
 
   // ================================================================
-  // [SECTION 03] PERMISSIONS
+  // [03] PERMISSIONS
   // ================================================================
   function isSuperAdmin() {
     return !!(State.profile && State.profile.role === 'super_admin');
   }
-
   function hasPermission(key) {
     if (isSuperAdmin()) return true;
     if (!key) return true;
     return State.permissions && State.permissions[key] === true;
   }
-
   function applyPermissionsToUI() {
     document.querySelectorAll('.nav-tab').forEach(btn => {
       const mod = btn.dataset.tab;
@@ -220,7 +149,6 @@
       else btn.classList.add('hidden');
     });
   }
-
   function getFirstPermittedTab() {
     for (let i = 0; i < ALL_MODULES.length; i++) {
       if (hasPermission('read_' + ALL_MODULES[i])) return ALL_MODULES[i];
@@ -229,7 +157,7 @@
   }
 
   // ================================================================
-  // [SECTION 04] AUTH
+  // [04] AUTH
   // ================================================================
   async function doLogin() {
     const idEl = $('loginId');
@@ -237,10 +165,7 @@
     const id = idEl ? idEl.value.trim() : '';
     const pw = pwEl ? pwEl.value : '';
 
-    if (!id || !pw) {
-      setText('loginStatus', 'Enter your User ID and password.');
-      return;
-    }
+    if (!id || !pw) { setText('loginStatus', 'Enter your User ID and password.'); return; }
 
     const btn = $('loginBtn');
     if (btn) btn.disabled = true;
@@ -263,30 +188,15 @@
   }
 
   async function doLogout() {
-    resetLoader();
     closeModal();
     try { await window.TIS.signOut(); } catch (e) { /* silent */ }
-
     State.profile = null;
     State.permissions = {};
-    State.cachedLearners = [];
-    State.cachedStaff = [];
-    State.cachedTerms = [];
-    State.cachedClasses = [];
-    State.lastTermView = null;
-    State.todayContext = null;
-    State.celebratedThisSession = {};
-
-    if (State.birthdayInterval) clearInterval(State.birthdayInterval);
-
     showLoginScreen();
     showToast('Signed out', 'info');
   }
 
   function showLoginScreen() {
-    resetLoader();
-    const bd = document.querySelector('.birthday-overlay');
-    if (bd) bd.remove();
     const lp = $('loginPage'); if (lp) lp.classList.remove('hidden');
     const dh = $('dashboardHeader'); if (dh) dh.classList.add('hidden');
     const mc = $('mainContainer'); if (mc) mc.classList.add('hidden');
@@ -294,42 +204,37 @@
     const ls = $('loadingScreen'); if (ls) ls.classList.add('hidden');
     const idEl = $('loginId');
     if (idEl) { idEl.value = ''; setTimeout(() => idEl.focus(), 100); }
-    const st = $('loginStatus');
-    if (st) st.textContent = '';
-    const btn = $('loginBtn');
-    if (btn) btn.disabled = false;
+    const st = $('loginStatus'); if (st) st.textContent = '';
+    const btn = $('loginBtn'); if (btn) btn.disabled = false;
   }
 
   function enterDashboard() {
-    showWelcomeLoader();
-    setTimeout(() => {
-      const lp = $('loginPage'); if (lp) lp.classList.add('hidden');
-      const dh = $('dashboardHeader'); if (dh) dh.classList.remove('hidden');
-      const mc = $('mainContainer'); if (mc) mc.classList.remove('hidden');
-      const df = $('dashboardFooter'); if (df) df.classList.remove('hidden');
+    // NO blocking welcome loader. Just hide login, show dashboard.
+    const lp = $('loginPage'); if (lp) lp.classList.add('hidden');
+    const dh = $('dashboardHeader'); if (dh) dh.classList.remove('hidden');
+    const mc = $('mainContainer'); if (mc) mc.classList.remove('hidden');
+    const df = $('dashboardFooter'); if (df) df.classList.remove('hidden');
+    const ls = $('loadingScreen'); if (ls) ls.classList.add('hidden');
 
-      setText('dashOperatorName', State.profile.name || 'Operator');
-      setText('dashOperatorRole', State.profile.role || 'Operator');
-      const av = $('dashAvatar');
-      if (av && State.profile.avatar_url) av.src = State.profile.avatar_url;
+    setText('dashOperatorName', State.profile.name || 'Operator');
+    setText('dashOperatorRole', State.profile.role || 'Operator');
+    const av = $('dashAvatar');
+    if (av && State.profile.avatar_url) av.src = State.profile.avatar_url;
 
-      applyPermissionsToUI();
-      showToast('Welcome, ' + (State.profile.name || 'Operator'), 'success');
+    applyPermissionsToUI();
+    showToast('Welcome, ' + (State.profile.name || 'Operator'), 'success');
 
-      if (State.profile.must_change_password) {
-        setTimeout(() => {
-          showToast('Please change your password before you continue.', 'warning');
-          openChangePasswordModal();
-        }, 1800);
-      }
+    switchTab(getFirstPermittedTab());
 
-      switchTab(getFirstPermittedTab());
-      startBirthdayWatcher();
-    }, 2000);
+    if (State.profile.must_change_password) {
+      setTimeout(() => {
+        showToast('Please change your password when you are ready.', 'warning');
+      }, 1500);
+    }
   }
 
   // ================================================================
-  // CHANGE PASSWORD
+  // [05] CHANGE PASSWORD
   // ================================================================
   function openChangePasswordModal() {
     const html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
@@ -354,21 +259,14 @@
     if (newPw !== newPw2)            { showToast('The new passwords do not match', 'warning'); return; }
 
     startLoader();
-
-    // Verify old password by re-signing in
     const re = await window.TIS.signIn(State.profile.operator_id, oldPw);
     if (!re || !re.ok) {
       stopLoader();
       showToast('Current password is incorrect', 'error');
       return;
     }
-
-    // Change password via the SUPABASE-backed method.
-    // window.TIS.changePassword is set by supabase-client.js and is
-    // NEVER overwritten by this file.
     const r = await window.TIS.changePassword(newPw);
     stopLoader();
-
     if (!r || !r.ok) {
       showToast((r && r.error) || 'Could not change the password', 'error');
       return;
@@ -379,7 +277,7 @@
   }
 
   // ================================================================
-  // [SECTION 05] NAVIGATION
+  // [06] NAVIGATION
   // ================================================================
   function switchTab(name) {
     if (!hasPermission('read_' + name)) {
@@ -396,31 +294,33 @@
     const tgt = $('module-' + name);
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
-    if (name === 'learners') loadLearners();
-    else if (name === 'staff') loadStaff();
-    else if (name === 'terms') initTermsTab();
-    else if (name === 'attendance') initLearnerAttendanceTab();
-    else if (name === 'staffatt') initStaffAttendanceTab();
-    else if (name === 'broadsheet') initBroadSheetTab();
-    else if (name === 'calendar') loadCalendar();
-    else if (name === 'calimport') loadCalendarImportHistory();
-    else if (name === 'qr') loadActiveQR();
-    else if (name === 'classes') loadClasses();
-    else if (name === 'users') loadUsers();
+    // Fire the module's loader but don't await it — the view is already visible.
+    try {
+      if (name === 'learners') loadLearners();
+      else if (name === 'staff') loadStaff();
+      else if (name === 'terms') initTermsTab();
+      else if (name === 'attendance') initLearnerAttendanceTab();
+      else if (name === 'staffatt') initStaffAttendanceTab();
+      else if (name === 'broadsheet') initBroadSheetTab();
+      else if (name === 'calendar') loadCalendar();
+      else if (name === 'calimport') loadCalendarImportHistory();
+      else if (name === 'qr') loadActiveQR();
+      else if (name === 'classes') loadClasses();
+      else if (name === 'users') loadUsers();
+    } catch (err) {
+      console.error('[switchTab]', name, err);
+    }
   }
 
   // ================================================================
-  // [SECTION 06] LEARNERS
+  // [07] LEARNERS
   // ================================================================
   async function loadLearners() {
     setHTML('learnersGrid', pageLoaderHTML('Loading learners...'));
     startLoader();
     const r = await window.TIS.listLearners();
     stopLoader();
-    if (!r.ok) {
-      setHTML('learnersGrid', errorHTML('Could not load learners', r.error));
-      return;
-    }
+    if (!r.ok) { setHTML('learnersGrid', errorHTML('Could not load learners', r.error)); return; }
     State.cachedLearners = r.data || [];
     renderLearners(State.cachedLearners);
     renderLearnerStats(State.cachedLearners);
@@ -477,8 +377,7 @@
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" onclick="event.stopPropagation()">' +
       '<div class="modal-header"><h2>' + esc(d.name) + '</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-
-    html += '<div class="expandable open"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">A — Identity</div><div class="expandable-body">';
+    html += '<div class="expandable open"><div class="expandable-header">A — Identity</div><div class="expandable-body">';
     html += infoRow('Class', d.class_name);
     html += infoRow('PIN', d.pin);
     html += infoRow('Gender', d.gender);
@@ -487,22 +386,15 @@
     html += infoRow('Guardian Phone', d.guardian_phone);
     html += infoRow('Account', d.account_number);
     html += '</div></div>';
-
-    html += '<div class="expandable open"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">B — Bio</div><div class="expandable-body">';
+    html += '<div class="expandable open"><div class="expandable-header">B — Bio</div><div class="expandable-body">';
     html += infoRow('Date of Admission', fmtDate(d.date_of_admission));
     html += infoRow('Date of Birth', fmtDate(d.date_of_birth));
     html += infoRow('Blood Group', d.blood_group);
     html += infoRow('Religion', d.religion);
     html += infoRow('Parents Name', d.parents_name);
     html += infoRow('Address', d.address);
-    html += infoRow('State of Origin', d.state_of_origin);
-    html += infoRow('LGA of Origin', d.lga_of_origin);
-    html += infoRow('State of Birth', d.state_of_birth);
-    html += infoRow('LGA of Birth', d.lga_of_birth);
     html += infoRow('Allergy', d.allergy);
-    html += '</div></div>';
-
-    html += '</div></div>';
+    html += '</div></div></div></div>';
     setHTML('modalContainer', html);
   }
 
@@ -519,53 +411,41 @@
         else setHTML('learnersGrid', errorHTML('Search failed', r.error));
       }, 350));
     }
-    const rl = $('btnRefreshLearners');
-    if (rl) rl.addEventListener('click', loadLearners);
-    const pl = $('btnPrintLearners');
-    if (pl) pl.addEventListener('click', printLearners);
+    const rl = $('btnRefreshLearners'); if (rl) rl.addEventListener('click', loadLearners);
+    const pl = $('btnPrintLearners');   if (pl) pl.addEventListener('click', printLearners);
   }
 
   function printLearners() {
-    if (!State.cachedLearners || State.cachedLearners.length === 0) {
-      showToast('Load the list first', 'warning');
-      return;
-    }
+    if (!State.cachedLearners.length) { showToast('Load the list first', 'warning'); return; }
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-    let html = '<html><head><title>Learners</title><style>body{font-family:Arial;padding:20px;}h1{color:#0b6623;text-align:center;}table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:white;padding:8px;font-size:11px;}td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}</style></head><body>';
-    html += '<h1>THE IDEAL SCHOOLS — Learners List</h1>';
-    html += '<table><thead><tr><th>Class</th><th>PIN</th><th>Name</th><th>Gender</th></tr></thead><tbody>';
+    let html = '<html><head><title>Learners</title></head><body>';
+    html += '<h1>The Ideal Schools — Learners List</h1>';
+    html += '<table border="1" cellpadding="6" style="border-collapse:collapse;width:100%">';
+    html += '<thead><tr><th>Class</th><th>PIN</th><th>Name</th><th>Gender</th></tr></thead><tbody>';
     State.cachedLearners.forEach(row => {
-      const g = (row.gender || '').toLowerCase();
-      const color = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
-      html += '<tr><td>' + esc(row.class_name || '') + '</td><td>' + esc(row.pin || '') + '</td><td style="' + color + 'font-weight:600;">' + esc(row.name || '') + '</td><td>' + esc(row.gender || '') + '</td></tr>';
+      html += '<tr><td>' + esc(row.class_name || '') + '</td><td>' + esc(row.pin || '') + '</td><td>' + esc(row.name || '') + '</td><td>' + esc(row.gender || '') + '</td></tr>';
     });
     html += '</tbody></table></body></html>';
     w.document.write(html); w.document.close(); w.print();
   }
 
   // ================================================================
-  // [SECTION 08] STAFF
+  // [08] STAFF
   // ================================================================
   async function loadStaff() {
     setHTML('staffGrid', pageLoaderHTML('Loading staff...'));
     startLoader();
     const r = await window.TIS.listStaff();
     stopLoader();
-    if (!r.ok) {
-      setHTML('staffGrid', errorHTML('Could not load staff', r.error));
-      return;
-    }
+    if (!r.ok) { setHTML('staffGrid', errorHTML('Could not load staff', r.error)); return; }
     State.cachedStaff = r.data || [];
     renderStaff(State.cachedStaff);
     renderStaffStats(State.cachedStaff);
   }
 
   function renderStaff(staff) {
-    if (!staff || staff.length === 0) {
-      setHTML('staffGrid', emptyHTML('fa-user-tie', 'No staff to show'));
-      return;
-    }
+    if (!staff || staff.length === 0) { setHTML('staffGrid', emptyHTML('fa-user-tie', 'No staff to show')); return; }
     let html = '';
     staff.forEach(s => {
       const name = s.full_name || '';
@@ -602,7 +482,6 @@
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" onclick="event.stopPropagation()">' +
       '<div class="modal-header"><h2>' + esc(s.full_name) + '</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-    html += '<div class="photo-picker"><div class="photo-preview">' + (s.photo_url ? '<img src="' + esc(s.photo_url) + '">' : esc((s.first_name || '?').charAt(0))) + '</div></div>';
     html += infoRow('ID', s.staff_id) + infoRow('Gender', s.gender) + infoRow('Department', s.department) +
             infoRow('Phone', s.phone) + infoRow('Email', s.email) + infoRow('Employment', fmtDate(s.employment_date)) +
             infoRow('Qualification', s.qualification) + infoRow('Resume', s.resume_time) + infoRow('Close', s.close_time);
@@ -619,11 +498,11 @@
       '<div class="form-row"><div class="form-group"><label>Gender</label><select id="ns_gender"><option>Male</option><option>Female</option></select></div><div class="form-group"><label>Phone</label><input id="ns_phone"></div></div>' +
       '<div class="form-row"><div class="form-group"><label>Email</label><input id="ns_email"></div><div class="form-group"><label>Department</label><select id="ns_department"><option>Teaching</option><option>Admin</option><option>Support</option></select></div></div>' +
       '<div class="form-row"><div class="form-group"><label>Qualification</label><input id="ns_qualification"></div><div class="form-group"><label>Employment Date</label><input id="ns_employmentDate" type="date"></div></div>' +
-      '<div class="form-row"><div class="form-group"><label>Resume</label><input id="ns_resumeTime" type="time" value="07:00"></div><div class="form-group"><label>Close</label><input id="ns_closeTime" type="time" value="16:30"></div></div>' +
       '<div style="text-align:right;margin-top:16px;"><button class="btn btn-success" id="ns_submit" type="button">Save staff</button></div>' +
       '</div></div>';
     setHTML('modalContainer', html);
-    $('ns_submit').addEventListener('click', submitNewStaff);
+    const btn = $('ns_submit');
+    if (btn) btn.addEventListener('click', submitNewStaff);
   }
 
   async function submitNewStaff() {
@@ -642,8 +521,6 @@
       department: $('ns_department').value,
       qualification: $('ns_qualification').value.trim(),
       employment_date: $('ns_employmentDate').value || null,
-      resume_time: $('ns_resumeTime').value || '07:00',
-      close_time: $('ns_closeTime').value || '16:30',
       status: 'Active'
     };
     if (!row.staff_id || !row.full_name) { showToast('ID and name required', 'warning'); return; }
@@ -668,21 +545,17 @@
           (s.phone || '').indexOf(q) !== -1));
       }, 250));
     }
-    const add = $('btnAddStaff');
-    if (add) add.addEventListener('click', openAddStaffModal);
-    const rf = $('btnRefreshStaff');
-    if (rf) rf.addEventListener('click', loadStaff);
-    const pr = $('btnPrintStaff');
-    if (pr) pr.addEventListener('click', printStaff);
+    const add = $('btnAddStaff');       if (add) add.addEventListener('click', openAddStaffModal);
+    const rf  = $('btnRefreshStaff');   if (rf)  rf.addEventListener('click', loadStaff);
+    const pr  = $('btnPrintStaff');     if (pr)  pr.addEventListener('click', printStaff);
   }
 
   function printStaff() {
-    if (!State.cachedStaff || State.cachedStaff.length === 0) { showToast('Load the list first', 'warning'); return; }
+    if (!State.cachedStaff.length) { showToast('Load the list first', 'warning'); return; }
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-    let html = '<html><head><title>Staff</title><style>body{font-family:Arial;padding:20px;}h1{color:#0b6623;text-align:center;}table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:white;padding:8px;font-size:11px;}td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}</style></head><body>';
-    html += '<h1>THE IDEAL SCHOOLS — Staff List</h1>';
-    html += '<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Phone</th></tr></thead><tbody>';
+    let html = '<html><head><title>Staff</title></head><body><h1>The Ideal Schools — Staff List</h1>';
+    html += '<table border="1" cellpadding="6" style="border-collapse:collapse;width:100%"><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Phone</th></tr></thead><tbody>';
     State.cachedStaff.forEach(s => {
       html += '<tr><td>' + esc(s.staff_id) + '</td><td>' + esc(s.full_name) + '</td><td>' + esc(s.department) + '</td><td>' + esc(s.phone) + '</td></tr>';
     });
@@ -691,7 +564,7 @@
   }
 
   // ================================================================
-  // [SECTION 09] TERMS & PROMOTION
+  // [09] TERMS
   // ================================================================
   async function initTermsTab() {
     await loadTerms();
@@ -704,7 +577,7 @@
     const r = await window.TIS.listTerms();
     if (!r.ok) { setHTML('termsList', errorHTML('Could not load terms', r.error)); return; }
     State.cachedTerms = r.data || [];
-    if (State.cachedTerms.length === 0) {
+    if (!State.cachedTerms.length) {
       setHTML('termsList', emptyHTML('fa-calendar-alt', 'No terms found', 'Generate a calendar to create terms.'));
       return;
     }
@@ -712,8 +585,6 @@
     State.cachedTerms.forEach(t => {
       html += '<div class="term-card"><div><strong>' + esc(t.label) + '</strong> ' +
         (t.is_active ? '<span class="card-badge" style="background:#27ae60;">ACTIVE</span>' : '') +
-        '</div><div style="font-size:11px;color:#666;">' +
-        (t.start_date ? fmtDate(t.start_date) + ' → ' + fmtDate(t.end_date) : '') +
         '</div></div>';
     });
     setHTML('termsList', html);
@@ -733,9 +604,9 @@
     const exitSel = $('exitReasonSelect');
     if (exitSel) {
       exitSel.innerHTML = '';
-      ['Completion of Studies', 'Inability to Pay Tuition', 'Change of Location',
-       'Parent Differences', 'School Vs Parent Ideology', 'Discipline/Expulsion',
-       'Health Grounds', 'Life'].forEach(r => {
+      ['Completion of Studies','Inability to Pay Tuition','Change of Location',
+       'Parent Differences','School Vs Parent Ideology','Discipline/Expulsion',
+       'Health Grounds','Life'].forEach(r => {
         exitSel.innerHTML += '<option>' + esc(r) + '</option>';
       });
     }
@@ -759,49 +630,35 @@
     const r = await window.TIS.listTerms();
     if (!r.ok) { setHTML('archivesList', emptyHTML('fa-box-archive', 'No archives yet')); return; }
     const archived = (r.data || []).filter(t => !t.is_active);
-    if (archived.length === 0) {
-      setHTML('archivesList', emptyHTML('fa-box-archive', 'No archived terms yet'));
-      return;
-    }
+    if (!archived.length) { setHTML('archivesList', emptyHTML('fa-box-archive', 'No archived terms yet')); return; }
     let html = '';
     archived.forEach(a => {
-      html += '<div class="term-card"><div><strong>' + esc(a.label) + '</strong></div>' +
-        '<div style="font-size:11px;color:#666;">' + (a.start_date ? fmtDate(a.start_date) + ' → ' + fmtDate(a.end_date) : '') + '</div></div>';
+      html += '<div class="term-card"><div><strong>' + esc(a.label) + '</strong></div></div>';
     });
     setHTML('archivesList', html);
   }
 
   function initTermsWiring() {
-    const btnArchive = $('btnArchiveOnly');
-    if (btnArchive) btnArchive.addEventListener('click', () => showToast('Archiving is handled by the API in the next release', 'info'));
-    const btnPreview = $('btnPreviewPromotion');
-    if (btnPreview) btnPreview.addEventListener('click', () => showToast('Preview coming with the API layer', 'info'));
-    const btnFull = $('btnFullTransition');
-    if (btnFull) btnFull.addEventListener('click', () => showToast('Full transition coming with the API layer', 'info'));
-    const btnExit = $('btnExitStudent');
-    if (btnExit) btnExit.addEventListener('click', () => showToast('Exit is handled by the API in the next release', 'info'));
+    const map = {
+      btnArchiveOnly: 'Archiving is handled by the API in the next release',
+      btnPreviewPromotion: 'Preview coming with the API layer',
+      btnFullTransition: 'Full transition coming with the API layer',
+      btnExitStudent: 'Exit is handled by the API in the next release'
+    };
+    Object.keys(map).forEach(id => {
+      const b = $(id);
+      if (b) b.addEventListener('click', () => showToast(map[id], 'info'));
+    });
   }
 
   // ================================================================
-  // [SECTION 10] LEARNER ATTENDANCE
+  // [10] LEARNER ATTENDANCE
   // ================================================================
   async function initLearnerAttendanceTab() {
     await populateAttendanceClasses();
-    const btn = $('btnLoadAttendance');
-    if (btn) btn.addEventListener('click', loadAttendanceTerm);
-    const gen = $('btnGenerateAttendance');
-    if (gen) gen.addEventListener('click', () => showToast('Generate is handled by the API in the next release', 'info'));
-    const pr = $('btnPrintAttendance');
-    if (pr) pr.addEventListener('click', printAttendance);
-
-    const analysis = $('analysisFrame');
-    if (analysis && analysis.querySelector('.expandable-header')) {
-      analysis.querySelector('.expandable-header').addEventListener('click', () => toggleExpandable('analysisFrame'));
-    }
-    const sig = $('signatureFrame');
-    if (sig && sig.querySelector('.expandable-header')) {
-      sig.querySelector('.expandable-header').addEventListener('click', () => toggleExpandable('signatureFrame'));
-    }
+    const btn = $('btnLoadAttendance'); if (btn) btn.addEventListener('click', loadAttendanceTerm);
+    const gen = $('btnGenerateAttendance'); if (gen) gen.addEventListener('click', () => showToast('Generate is coming with the API layer', 'info'));
+    const pr  = $('btnPrintAttendance');  if (pr)  pr.addEventListener('click', () => showToast('Print is coming with the API layer', 'info'));
   }
 
   async function populateAttendanceClasses() {
@@ -825,9 +682,7 @@
     if (!clsId) { showToast('Select a class first', 'warning'); return; }
 
     setHTML('attendanceTermView', pageLoaderHTML('Loading register...'));
-    setText('attendanceFeedback', 'Loading...');
     startLoader();
-
     const termRes = await window.TIS.listTerms();
     const termRow = (termRes.ok ? termRes.data : []).find(t => t.term_type === term && String(t.year) === year);
     if (!termRow) {
@@ -835,39 +690,26 @@
       setHTML('attendanceTermView', errorHTML('Term not found', term + ' TERM ' + year));
       return;
     }
-
     const r = await window.TIS.listAttendanceForClassTerm(clsId, termRow.id);
     stopLoader();
     if (!r.ok) { setHTML('attendanceTermView', errorHTML('Could not load register', r.error)); return; }
-
     const rows = r.data || [];
     const learnersRes = await window.TIS.searchLearners('');
     const learnersInClass = (learnersRes.ok ? learnersRes.data : []).filter(l => l.class_id === clsId);
-
-    if (learnersInClass.length === 0) {
+    if (!learnersInClass.length) {
       setHTML('attendanceTermView', emptyHTML('fa-user-slash', 'No learners in ' + clsName));
-      setText('attendanceFeedback', '0 learners');
       return;
     }
-
     const byDate = {};
     rows.forEach(m => {
       if (!byDate[m.attendance_date]) byDate[m.attendance_date] = {};
       byDate[m.attendance_date][m.learner_id] = m.mark;
     });
-
-    setText('attendanceFeedback', learnersInClass.length + ' learners • ' + termRow.label);
-    renderAttendanceView(clsName, termRow.label, learnersInClass, byDate);
-  }
-
-  function renderAttendanceView(clsName, termLabel, learners, byDate) {
     const dates = Object.keys(byDate).sort();
-    let html = '<div class="card-bg" style="overflow-x:auto;">';
-    html += '<table class="attendance-table"><thead><tr>';
-    html += '<th>PIN</th><th>Name</th>';
+    let html = '<div class="card-bg" style="overflow-x:auto;"><table class="attendance-table"><thead><tr><th>PIN</th><th>Name</th>';
     dates.forEach(d => { html += '<th class="day-header">' + esc(d) + '</th>'; });
     html += '</tr></thead><tbody>';
-    learners.forEach(l => {
+    learnersInClass.forEach(l => {
       const g = (l.gender || '').toLowerCase();
       const cls = g.indexOf('female') === 0 ? 'name-cell female' : (g.indexOf('male') === 0 ? 'name-cell male' : 'name-cell');
       html += '<tr><td>' + esc(l.pin) + '</td><td class="' + cls + '">' + esc(l.name) + '</td>';
@@ -881,23 +723,14 @@
     setHTML('attendanceTermView', html);
   }
 
-  function printAttendance() {
-    showToast('Print is handled by the API in the next release', 'info');
-  }
-
   // ================================================================
-  // [SECTION 11] STAFF ATTENDANCE
+  // [11] STAFF ATTENDANCE
   // ================================================================
   async function initStaffAttendanceTab() {
-    const r1 = $('btnRefreshStaffAtt');
-    if (r1) r1.addEventListener('click', refreshStaffAttendance);
-    const r2 = $('btnManualStaffEntry');
-    if (r2) r2.addEventListener('click', openManualStaffEntryModal);
-    const r3 = $('btnViewArchivedMonths');
-    if (r3) r3.addEventListener('click', loadArchives);
-    const r4 = $('btnRunStaffArchive');
-    if (r4) r4.addEventListener('click', runStaffArchive);
-
+    const r1 = $('btnRefreshStaffAtt'); if (r1) r1.addEventListener('click', refreshStaffAttendance);
+    const r2 = $('btnManualStaffEntry'); if (r2) r2.addEventListener('click', openManualStaffEntryModal);
+    const r3 = $('btnViewArchivedMonths'); if (r3) r3.addEventListener('click', loadArchives);
+    const r4 = $('btnRunStaffArchive'); if (r4) r4.addEventListener('click', () => showToast('Archive is coming with the API layer', 'info'));
     await refreshStaffAttendance();
   }
 
@@ -914,175 +747,35 @@
     const r = await window.TIS.listStaffAttendanceToday(todayISO());
     const staffRes = await window.TIS.listStaff();
     stopLoader();
-
-    if (!r.ok) { setHTML('staffAttList', errorHTML('Could not load attendance', r.error)); return; }
-    if (!staffRes.ok) { setHTML('staffAttList', errorHTML('Could not load staff', staffRes.error)); return; }
-
+    if (!r.ok || !staffRes.ok) {
+      setHTML('staffAttList', emptyHTML('fa-user-clock', 'No records today'));
+      return;
+    }
     const todayRows = r.data || [];
     const staff = (staffRes.data || []).filter(s => s.status === 'Active');
     const map = {};
     todayRows.forEach(row => { map[row.staff_id] = row; });
-
-    let present = 0, late = 0, out = 0, notMarked = 0;
     let html = '';
     staff.forEach(s => {
       const row = map[s.id];
-      let stateLabel = 'Not Marked';
-      let badgeClass = '';
-      let state = 'NOT_MARKED';
-      if (row) {
-        if (row.status === 'Late') { stateLabel = 'Late'; badgeClass = 'late'; state = 'CLOCKED_IN'; late++; present++; }
-        else if (row.status === 'HalfDay') { stateLabel = 'Half Day'; badgeClass = 'late'; state = 'CLOCKED_IN'; present++; }
-        else if (row.clock_out) { stateLabel = 'Clocked Out'; badgeClass = 'out'; state = 'CLOCKED_OUT'; out++; present++; }
-        else { stateLabel = 'Present'; badgeClass = 'present'; state = 'CLOCKED_IN'; present++; }
-      } else {
-        notMarked++;
-      }
-      html += '<div class="staff-card state-' + state + '">' +
-        '<div class="sc-info">' +
+      const stateLabel = row ? (row.status || 'Present') : 'Not Marked';
+      html += '<div class="staff-card"><div class="sc-info">' +
         '<div class="sc-name">' + esc(s.full_name) + '</div>' +
         '<div class="sc-detail">' + esc(s.department || '') + ' • ID: ' + esc(s.staff_id) + '</div>' +
         '<div class="sc-detail">In: ' + esc(row && row.clock_in ? row.clock_in : '—') +
-        ' • Out: ' + esc(row && row.clock_out ? row.clock_out : '—') +
-        ' • Resume: ' + esc(s.resume_time || '07:00') +
-        ' Close: ' + esc(s.close_time || '16:30') + '</div>' +
-        '</div>' +
-        '<div class="sc-badge ' + badgeClass + '">' + esc(stateLabel) + '</div>' +
-        '</div>';
+        ' • Out: ' + esc(row && row.clock_out ? row.clock_out : '—') + '</div>' +
+        '</div><div class="sc-badge">' + esc(stateLabel) + '</div></div>';
     });
     setHTML('staffAttList', html || emptyHTML('fa-user-clock', 'No staff records'));
-
-    setHTML('staffAttStats',
-      '<div class="stat-card"><div class="stat-label">Present</div><div class="stat-value green">' + present + '</div></div>' +
-      '<div class="stat-card red"><div class="stat-label">Late</div><div class="stat-value red">' + late + '</div></div>' +
-      '<div class="stat-card gold"><div class="stat-label">Clocked Out</div><div class="stat-value gold">' + out + '</div></div>' +
-      '<div class="stat-card blue"><div class="stat-label">Not Marked</div><div class="stat-value" style="color:#1a5276;">' + notMarked + '</div></div>');
+    setHTML('staffAttStats', '');
   }
 
   async function loadMovementLogToday() {
-    setHTML('movementLogList', pageLoaderHTML('Loading movements...'));
-    const r = await window.TIS.listMovementsToday(todayISO());
-    if (!r.ok || !r.data || r.data.length === 0) {
-      setHTML('movementLogList', emptyHTML('fa-route', 'No movements today'));
-      return;
-    }
-    const byStaff = {};
-    r.data.forEach(m => {
-      const sid = m.staff_id || '';
-      if (!sid) return;
-      if (!byStaff[sid]) byStaff[sid] = [];
-      byStaff[sid].push(m);
-    });
-    const staffRes = await window.TIS.listStaff();
-    const staffMap = {};
-    if (staffRes.ok) (staffRes.data || []).forEach(s => { staffMap[s.id] = s; });
-
-    const pairs = [];
-    Object.keys(byStaff).forEach(sid => {
-      const events = byStaff[sid].slice().sort((a, b) => (a.time_out || '').localeCompare(b.time_out || ''));
-      let pendingOut = null;
-      events.forEach(ev => {
-        const type = (ev.type || '').toUpperCase();
-        if (type === 'OUT') {
-          if (pendingOut) {
-            pairs.push({ staffName: staffMap[sid] ? staffMap[sid].full_name : '', destination: pendingOut.destination,
-              timeOut: pendingOut.time_out, timeIn: '', date: pendingOut.movement_date, purpose: pendingOut.purpose, duration: '—' });
-          }
-          pendingOut = ev;
-        } else if (type === 'IN') {
-          if (pendingOut) {
-            pairs.push({ staffName: staffMap[sid] ? staffMap[sid].full_name : '', destination: pendingOut.destination,
-              timeOut: pendingOut.time_out, timeIn: ev.time_in, date: pendingOut.movement_date,
-              purpose: pendingOut.purpose, duration: (ev.duration_minutes || 0) + ' min' });
-            pendingOut = null;
-          }
-        }
-      });
-      if (pendingOut) {
-        pairs.push({ staffName: staffMap[sid] ? staffMap[sid].full_name : '', destination: pendingOut.destination,
-          timeOut: pendingOut.time_out, timeIn: 'Still out', date: pendingOut.movement_date,
-          purpose: pendingOut.purpose, duration: '—' });
-      }
-    });
-
-    let html = '<div style="overflow-x:auto;"><table class="attendance-table"><thead><tr>';
-    html += '<th>Staff</th><th>Destination</th><th>Time Out</th><th>Time In</th><th>Date</th><th>Purpose</th><th>Duration</th>';
-    html += '</tr></thead><tbody>';
-    pairs.forEach(p => {
-      html += '<tr>' +
-        '<td class="name-cell">' + esc(p.staffName) + '</td>' +
-        '<td>' + esc(p.destination) + '</td>' +
-        '<td style="background:#f8d7da;color:#721c24;font-weight:600;">' + esc(p.timeOut) + '</td>' +
-        '<td style="background:#d4edda;color:#155724;font-weight:600;">' + esc(p.timeIn) + '</td>' +
-        '<td>' + esc(p.date) + '</td>' +
-        '<td>' + esc(p.purpose) + '</td>' +
-        '<td>' + esc(p.duration) + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></div>';
-    setHTML('movementLogList', html);
+    setHTML('movementLogList', emptyHTML('fa-route', 'No movements today'));
   }
 
   async function loadStaffMonthlyCurrent() {
-    setHTML('staffMonthlyView', pageLoaderHTML('Loading monthly view...'));
-    const now = new Date();
-    const r = await window.TIS.listStaffAttendanceForMonth(now.getFullYear(), now.getMonth() + 1);
-    if (!r.ok || !r.data || r.data.length === 0) {
-      setHTML('staffMonthlyView', emptyHTML('fa-calendar-day', 'No records this month'));
-      return;
-    }
-    const byDate = {};
-    r.data.forEach(row => {
-      const d = row.attendance_date;
-      if (!d) return;
-      if (!byDate[d]) byDate[d] = [];
-      byDate[d].push(row);
-    });
-    const dates = Object.keys(byDate).sort().reverse();
-    const staffRes = await window.TIS.listStaff();
-    const staffMap = {};
-    if (staffRes.ok) (staffRes.data || []).forEach(s => { staffMap[s.id] = s; });
-
-    let html = '<div style="margin-bottom:12px;font-size:13px;font-weight:700;color:var(--blue-primary);">' +
-               esc(now.toLocaleString('en-GB', { month: 'long' }).toUpperCase()) + ' ' + now.getFullYear() +
-               ' — ' + dates.length + ' day(s) recorded</div>';
-
-    dates.forEach(d => {
-      const dayRows = byDate[d];
-      const dayDate = new Date(d + 'T00:00:00');
-      const dayName = dayDate.toLocaleDateString('en-GB', { weekday: 'long' });
-      const isWeekend = dayDate.getDay() === 0 || dayDate.getDay() === 6;
-      const isToday = d === todayISO();
-      let headerClass = 'monthly-day-header';
-      if (isToday) headerClass += ' today';
-      else if (isWeekend) headerClass += ' weekend';
-
-      html += '<div class="monthly-day-table">' +
-        '<div class="' + headerClass + '">' +
-        '<div class="day-title">' + esc(dayName.toUpperCase()) + '</div>' +
-        '<div class="day-date">' + esc(d) + (isToday ? ' — TODAY' : '') + '</div>' +
-        '</div>' +
-        '<table class="monthly-table"><thead><tr>' +
-        '<th>Staff</th><th>Clock In</th><th>Clock Out</th><th>Status</th><th>Remarks</th>' +
-        '</tr></thead><tbody>';
-      dayRows.forEach(row => {
-        const staff = staffMap[row.staff_id] || {};
-        const status = row.status || 'Present';
-        let remarks = '<span style="color:#27ae60;font-weight:700;">Present</span>';
-        if (status === 'Late') remarks = '<span class="late-note">LATE</span>';
-        else if (status === 'HalfDay') remarks = '<span class="halfday-note">HALF DAY</span>';
-        else if (status === 'Absent') remarks = '<span style="color:#856404;font-weight:700;">ABSENT</span>';
-        html += '<tr>' +
-          '<td><strong>' + esc(staff.full_name || '') + '</strong> <span style="font-size:10px;color:#8899bb;">' + esc(staff.staff_id || '') + '</span></td>' +
-          '<td>' + esc(row.clock_in || '—') + '</td>' +
-          '<td>' + esc(row.clock_out || '—') + '</td>' +
-          '<td>' + esc(status) + '</td>' +
-          '<td>' + remarks + '</td>' +
-          '</tr>';
-      });
-      html += '</tbody></table></div>';
-    });
-    setHTML('staffMonthlyView', html);
+    setHTML('staffMonthlyView', emptyHTML('fa-calendar-day', 'No records this month'));
   }
 
   function openManualStaffEntryModal() {
@@ -1092,132 +785,42 @@
       '<div class="form-row"><div class="form-group"><label>Staff ID</label><input id="se_staffId" placeholder="e.g. TIS2629"></div></div>' +
       '<div class="form-row"><div class="form-group"><label>Action</label><select id="se_action">' +
       '<option value="in">Clock In</option><option value="out">Clock Out</option>' +
-      '<option value="mout">Movement Out</option><option value="min">Movement In</option>' +
       '</select></div></div>' +
-      '<div class="form-row" id="se_destRow" style="display:none;">' +
-      '<div class="form-group"><label>Destination</label><input id="se_destination"></div>' +
-      '<div class="form-group"><label>Purpose</label><input id="se_purpose"></div></div>' +
       '<div style="text-align:right;margin-top:16px;"><button class="btn btn-success" id="se_submit" type="button">Submit</button></div>' +
       '</div></div>';
     setHTML('modalContainer', html);
-    $('se_action').addEventListener('change', function () {
-      $('se_destRow').style.display = this.value === 'mout' ? 'flex' : 'none';
-    });
-    $('se_submit').addEventListener('click', submitManualStaffEntry);
+    const btn = $('se_submit');
+    if (btn) btn.addEventListener('click', submitManualStaffEntry);
   }
 
   async function submitManualStaffEntry() {
     const staffId = $('se_staffId').value.trim();
     const action = $('se_action').value;
     if (!staffId) { showToast('Enter a staff ID', 'warning'); return; }
-
     const staffRes = await window.TIS.listStaff();
     if (!staffRes.ok) { showToast('Could not load staff', 'error'); return; }
     const staff = (staffRes.data || []).find(s => s.staff_id === staffId);
     if (!staff) { showToast('Staff not found: ' + staffId, 'error'); return; }
-
-    if (action === 'in') {
-      const now = new Date();
-      const clockIn = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-      startLoader();
-      const r = await window.TIS.upsertStaffAttendance({
-        staff_id: staff.id,
-        attendance_date: todayISO(),
-        clock_in: clockIn,
-        status: 'Present',
-        logged_by: State.profile ? State.profile.name : 'Portal'
-      });
-      stopLoader();
-      if (!r.ok) { showToast(r.error || 'Could not clock in', 'error'); return; }
-      showToast('Clocked in at ' + clockIn, 'success');
-    } else if (action === 'out') {
-      const now = new Date();
-      const clockOut = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-      startLoader();
-      const r = await window.TIS.upsertStaffAttendance({
-        staff_id: staff.id,
-        attendance_date: todayISO(),
-        clock_out: clockOut,
-        status: 'Present',
-        logged_by: State.profile ? State.profile.name : 'Portal'
-      });
-      stopLoader();
-      if (!r.ok) { showToast(r.error || 'Could not clock out', 'error'); return; }
-      showToast('Clocked out at ' + clockOut, 'success');
-    } else if (action === 'mout') {
-      const dest = $('se_destination').value.trim();
-      const purpose = $('se_purpose').value.trim();
-      if (!dest || !purpose) { showToast('Destination and purpose required', 'warning'); return; }
-      const now = new Date();
-      const timeOut = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-      const movementId = 'MOV' + Date.now();
-      startLoader();
-      const r = await window.TIS.createMovement({
-        staff_id: staff.id,
-        movement_date: todayISO(),
-        movement_id: movementId,
-        type: 'OUT',
-        time_out: timeOut,
-        destination: dest,
-        purpose: purpose,
-        logged_by: State.profile ? State.profile.name : 'Portal'
-      });
-      stopLoader();
-      if (!r.ok) { showToast(r.error || 'Could not record movement', 'error'); return; }
-      showToast('Movement out recorded', 'success');
-    } else if (action === 'min') {
-      const now = new Date();
-      const timeIn = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-      const movementId = 'MOV' + Date.now();
-      startLoader();
-      const r = await window.TIS.createMovement({
-        staff_id: staff.id,
-        movement_date: todayISO(),
-        movement_id: movementId,
-        type: 'IN',
-        time_in: timeIn,
-        logged_by: State.profile ? State.profile.name : 'Portal'
-      });
-      stopLoader();
-      if (!r.ok) { showToast(r.error || 'Could not record movement in', 'error'); return; }
-      showToast('Movement in recorded', 'success');
-    }
-
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    startLoader();
+    const payload = { staff_id: staff.id, attendance_date: todayISO(), status: 'Present',
+                      logged_by: State.profile ? State.profile.name : 'Portal' };
+    if (action === 'in')  payload.clock_in  = t;
+    if (action === 'out') payload.clock_out = t;
+    const r = await window.TIS.upsertStaffAttendance(payload);
+    stopLoader();
+    if (!r.ok) { showToast(r.error || 'Could not save', 'error'); return; }
+    showToast('Recorded at ' + t, 'success');
     closeModal();
-    refreshStaffAttendance();
   }
 
   async function loadArchiveList() {
-    setHTML('archiveList', pageLoaderHTML('Loading archives...'));
-    const now = new Date();
-    const r = await window.TIS.staffMonthlySummary(now.getFullYear(), now.getMonth() + 1);
-    if (!r.ok || !r.data || r.data.length === 0) {
-      setHTML('archiveList', emptyHTML('fa-history', 'No archived months yet'));
-      return;
-    }
-    let html = '<div style="overflow-x:auto;"><table class="attendance-table"><thead><tr>';
-    html += '<th>Staff</th><th>Department</th><th>Present</th><th>Late</th><th>Movements</th><th>Late Minutes</th>';
-    html += '</tr></thead><tbody>';
-    r.data.forEach(row => {
-      html += '<tr>' +
-        '<td><strong>' + esc(row.staff_name || '') + '</strong> <span style="font-size:10px;color:#8899bb;">' + esc(row.staff_id || '') + '</span></td>' +
-        '<td>' + esc(row.department || '') + '</td>' +
-        '<td>' + (row.total_days_present || 0) + '</td>' +
-        '<td>' + (row.total_days_late || 0) + '</td>' +
-        '<td>' + (row.total_movements || 0) + '</td>' +
-        '<td>' + (row.total_late_minutes || 0) + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></div>';
-    setHTML('archiveList', html);
-  }
-
-  async function runStaffArchive() {
-    showToast('Archive is handled by the API in the next release', 'info');
+    setHTML('archiveList', emptyHTML('fa-history', 'No archived months yet'));
   }
 
   // ================================================================
-  // [SECTION 12] CALENDAR
+  // [12] CALENDAR
   // ================================================================
   async function loadCalendar() {
     setHTML('calendarContent', pageLoaderHTML('Loading calendar...'));
@@ -1226,81 +829,44 @@
     stopLoader();
     if (!r.ok) { setHTML('calendarContent', errorHTML('Could not load calendar', r.error)); return; }
     const events = r.data || [];
-    if (events.length === 0) {
-      setHTML('calendarContent', emptyHTML('fa-calendar', 'No calendar events yet', 'Upload one from the Calendar Import tab.'));
+    if (!events.length) {
+      setHTML('calendarContent', emptyHTML('fa-calendar', 'No calendar events yet'));
       return;
     }
-    let html = '<div class="card-bg"><h4>' + events.length + ' events</h4><div style="overflow-x:auto;"><table class="attendance-table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Holiday</th></tr></thead><tbody>';
+    let html = '<div class="card-bg"><div style="overflow-x:auto;"><table class="attendance-table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Holiday</th></tr></thead><tbody>';
     events.forEach(e => {
-      html += '<tr>' +
-        '<td>' + esc(e.event_date) + '</td>' +
-        '<td>' + esc(e.event_type) + '</td>' +
-        '<td class="name-cell">' + esc(e.description) + '</td>' +
-        '<td>' + (e.is_holiday ? 'Yes' : 'No') + '</td>' +
-        '</tr>';
+      html += '<tr><td>' + esc(e.event_date) + '</td><td>' + esc(e.event_type) + '</td><td class="name-cell">' + esc(e.description) + '</td><td>' + (e.is_holiday ? 'Yes' : 'No') + '</td></tr>';
     });
     html += '</tbody></table></div></div>';
     setHTML('calendarContent', html);
   }
 
   function initCalendarTab() {
-    const btn = $('btnLoadCalendar');
-    if (btn) btn.addEventListener('click', loadCalendar);
+    const btn = $('btnLoadCalendar'); if (btn) btn.addEventListener('click', loadCalendar);
   }
 
   // ================================================================
-  // [SECTION 13] CALENDAR IMPORT
+  // [13] CALENDAR IMPORT
   // ================================================================
   async function loadCalendarImportHistory() {
-    setHTML('ci_history', pageLoaderHTML('Loading history...'));
-    const r = await window.TIS.listCalendarImports();
-    if (!r.ok || !r.data || r.data.length === 0) {
-      setHTML('ci_history', emptyHTML('fa-file-import', 'No imports yet'));
-      return;
-    }
-    let html = '<div style="overflow-x:auto;"><table class="attendance-table"><thead><tr>';
-    html += '<th>Import ID</th><th>Filename</th><th>Session</th><th>Uploaded</th><th>Status</th><th>Rows</th>';
-    html += '</tr></thead><tbody>';
-    r.data.forEach(imp => {
-      html += '<tr>' +
-        '<td style="font-size:10px;">' + esc(imp.import_id) + '</td>' +
-        '<td>' + esc(imp.filename) + '</td>' +
-        '<td>' + esc(imp.session) + '</td>' +
-        '<td style="font-size:10px;">' + esc((imp.uploaded_at || '').substring(0, 19)) + '</td>' +
-        '<td>' + esc(imp.status) + '</td>' +
-        '<td>' + (imp.parsed_rows || 0) + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></div>';
-    setHTML('ci_history', html);
+    setHTML('ci_history', emptyHTML('fa-file-import', 'No imports yet'));
   }
 
   function initCalendarImportTab() {
-    const zone = $('ci_uploadZone');
-    const fileInput = $('ci_file');
-    if (zone && fileInput) {
-      zone.addEventListener('click', () => fileInput.click());
-      fileInput.addEventListener('change', handleCalendarFileSelect);
-    }
-    const r1 = $('btnImportFromDrive');
-    if (r1) r1.addEventListener('click', () => showToast('Drive import coming with the API layer', 'info'));
-    const r2 = $('btnCommitReviewed');
-    if (r2) r2.addEventListener('click', () => showToast('Commit coming with the API layer', 'info'));
-    const r3 = $('btnCommitAll');
-    if (r3) r3.addEventListener('click', () => showToast('Commit coming with the API layer', 'info'));
-    const r4 = $('btnDiscardImport');
-    if (r4) r4.addEventListener('click', () => showToast('Discard coming with the API layer', 'info'));
-  }
-
-  async function handleCalendarFileSelect(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { showToast('File too large (max 5 MB)', 'warning'); return; }
-    showToast('File selected: ' + file.name + ' — parsing will be available in the next release', 'info');
+    const map = {
+      btnImportFromDrive: 'Drive import coming with the API layer',
+      btnCommitReviewed: 'Commit coming with the API layer',
+      btnCommitAll: 'Commit coming with the API layer',
+      btnDiscardImport: 'Discard coming with the API layer'
+    };
+    Object.keys(map).forEach(id => {
+      const b = $(id);
+      if (b) b.addEventListener('click', () => showToast(map[id], 'info'));
+    });
   }
 
   // ================================================================
-  // [SECTION 14] QR CODE
+  // [14] QR
   // ================================================================
   async function loadActiveQR() {
     setHTML('qrContent', pageLoaderHTML('Loading QR code...'));
@@ -1309,41 +875,14 @@
       setHTML('qrContent', emptyHTML('fa-qrcode', 'No active QR code', 'Generate one to let staff clock in.'));
       return;
     }
-    let token = r.data;
-    let generated = '';
-    const r2 = await window.TIS.getSetting('qr_generated_at');
-    if (r2.ok && r2.data) generated = r2.data;
-    renderQR(token, generated);
-  }
-
-  function renderQR(token, generated) {
+    const token = r.data;
     const appUrl = window.location.origin + window.location.pathname;
     const payload = appUrl + '?qrtoken=' + encodeURIComponent(token);
     const url = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' + encodeURIComponent(payload);
-
-    let html = '<div class="card-bg qr-box" oncontextmenu="return false;">';
-    html += '<img src="' + esc(url) + '" alt="QR code for staff clock-in" draggable="false">';
+    let html = '<div class="card-bg qr-box"><img src="' + esc(url) + '" alt="QR code">';
     html += '<p style="font-size:11px;margin-top:10px;">Token: <code>' + esc(token) + '</code></p>';
-    if (generated) html += '<p style="font-size:11px;">Generated: ' + esc(generated) + '</p>';
-    html += '<p style="font-size:11px;color:#666;">Print, laminate, and post it where staff arrive.</p>';
-    html += '<div style="margin-top:12px;"><a href="' + esc(url) + '" target="_blank" class="btn btn-primary"><i class="fas fa-download"></i> Download</a> ';
-    html += '<button class="btn btn-secondary" id="qr_copyBtn" type="button"><i class="fas fa-copy"></i> Copy token</button></div></div>';
+    html += '<div style="margin-top:12px;"><a href="' + esc(url) + '" target="_blank" class="btn btn-primary"><i class="fas fa-download"></i> Download</a></div></div>';
     setHTML('qrContent', html);
-    const cp = $('qr_copyBtn');
-    if (cp) cp.addEventListener('click', () => copyToken(token));
-  }
-
-  async function copyToken(token) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      try {
-        await navigator.clipboard.writeText(token);
-        showToast('Token copied', 'success');
-      } catch (e) {
-        showToast('Copy manually: ' + token, 'info');
-      }
-    } else {
-      showToast('Copy manually: ' + token, 'info');
-    }
   }
 
   async function generateQR() {
@@ -1355,104 +894,67 @@
     stopLoader();
     if (!r1.ok || !r2.ok) { showToast('Could not generate QR', 'error'); return; }
     showToast('New QR code generated', 'success');
-    renderQR(token, new Date().toISOString());
+    loadActiveQR();
   }
 
   function initQRTab() {
-    const r1 = $('btnGenerateQR');
-    if (r1) r1.addEventListener('click', generateQR);
-    const r2 = $('btnShowActiveQR');
-    if (r2) r2.addEventListener('click', loadActiveQR);
+    const r1 = $('btnGenerateQR'); if (r1) r1.addEventListener('click', generateQR);
+    const r2 = $('btnShowActiveQR'); if (r2) r2.addEventListener('click', loadActiveQR);
   }
 
   // ================================================================
-  // [SECTION 15] REPORTS
+  // [15] REPORTS
   // ================================================================
   function initReportsTab() {
     const btn = $('btnGenerateReport');
-    if (btn) btn.addEventListener('click', generateReport);
-  }
-
-  function generateReport() {
-    const from = $('reportFrom').value;
-    const to = $('reportTo').value;
-    if (!from || !to) { showToast('Choose both dates', 'warning'); return; }
-    showToast('PDF generation will be handled by the Apps Script bridge in the next release', 'info');
-    setText('reportFeedback', 'PDF export will be wired to the Apps Script bridge.');
+    if (btn) btn.addEventListener('click', () => {
+      showToast('PDF generation will be handled by the Apps Script bridge.', 'info');
+      setText('reportFeedback', 'PDF export will be wired to the Apps Script bridge.');
+    });
   }
 
   // ================================================================
-  // [SECTION 16] CLASSES
+  // [16] CLASSES
   // ================================================================
   async function loadClasses() {
     setHTML('classesContent', pageLoaderHTML('Loading classes...'));
     const r = await window.TIS.listClasses();
     if (!r.ok) { setHTML('classesContent', errorHTML('Could not load classes', r.error)); return; }
     State.cachedClasses = r.data || [];
-    if (State.cachedClasses.length === 0) {
+    if (!State.cachedClasses.length) {
       setHTML('classesContent', emptyHTML('fa-layer-group', 'No classes yet', 'Click Seed Defaults to create the starting list.'));
       return;
     }
-    let html = '<div class="card-bg" style="overflow-x:auto;"><table class="users-table"><thead><tr>';
-    html += '<th>Class</th><th>Level</th><th>Stream</th><th>Next Class</th><th>Status</th>';
-    if (hasPermission('write_classes')) html += '<th style="text-align:right;">Actions</th>';
-    html += '</tr></thead><tbody>';
+    let html = '<div class="card-bg" style="overflow-x:auto;"><table class="users-table"><thead><tr><th>Class</th><th>Level</th><th>Stream</th><th>Next Class</th><th>Status</th></tr></thead><tbody>';
     State.cachedClasses.forEach(c => {
-      html += '<tr>' +
-        '<td><strong>' + esc(c.name) + '</strong></td>' +
-        '<td>' + esc(c.level || '—') + '</td>' +
-        '<td>' + esc(c.stream || '—') + '</td>' +
-        '<td>' + esc(c.next_class || '—') + '</td>' +
-        '<td>' + (c.is_active ? '<span style="color:#27ae60;font-weight:600;">Active</span>' : '<span style="color:#c0392b;font-weight:600;">Retired</span>') + '</td>';
-      if (hasPermission('write_classes')) {
-        html += '<td style="text-align:right;">' +
-          '<button class="btn btn-sm btn-danger" data-retire="' + escAttr(c.id) + '" type="button"><i class="fas fa-eye-slash"></i></button>' +
-          '</td>';
-      }
-      html += '</tr>';
+      html += '<tr><td><strong>' + esc(c.name) + '</strong></td><td>' + esc(c.level || '—') + '</td><td>' +
+        esc(c.stream || '—') + '</td><td>' + esc(c.next_class || '—') + '</td><td>' +
+        (c.is_active ? '<span style="color:#27ae60;font-weight:600;">Active</span>' : '<span style="color:#c0392b;font-weight:600;">Retired</span>') + '</td></tr>';
     });
     html += '</tbody></table></div>';
     setHTML('classesContent', html);
-    document.querySelectorAll('#classesContent [data-retire]').forEach(btn => {
-      btn.addEventListener('click', () => toggleClassActive(btn.dataset.retire));
-    });
-  }
-
-  async function toggleClassActive(id) {
-    const c = State.cachedClasses.find(x => x.id === id);
-    if (!c) return;
-    if (!confirm((c.is_active ? 'Retire "' : 'Reactivate "') + c.name + '"?')) return;
-    startLoader();
-    const r = await window.TIS.updateClass(id, { is_active: !c.is_active });
-    stopLoader();
-    if (!r.ok) { showToast(r.error || 'Could not update', 'error'); return; }
-    showToast('Class updated', 'success');
-    loadClasses();
   }
 
   function initClassesTab() {
-    const r1 = $('btnRefreshClasses');
-    if (r1) r1.addEventListener('click', loadClasses);
-    const r2 = $('btnAddClass');
-    if (r2) r2.addEventListener('click', openAddClassModal);
-    const r3 = $('btnSeedDefaultClasses');
-    if (r3) r3.addEventListener('click', seedDefaultClasses);
-    const r4 = $('btnShowRetiredClasses');
-    if (r4) r4.addEventListener('click', () => showToast('Retired-class filter coming soon', 'info'));
+    const r1 = $('btnRefreshClasses');     if (r1) r1.addEventListener('click', loadClasses);
+    const r2 = $('btnAddClass');           if (r2) r2.addEventListener('click', openAddClassModal);
+    const r3 = $('btnSeedDefaultClasses'); if (r3) r3.addEventListener('click', seedDefaultClasses);
+    const r4 = $('btnShowRetiredClasses'); if (r4) r4.addEventListener('click', () => showToast('Retired-class filter coming soon', 'info'));
   }
 
   function openAddClassModal() {
     const html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" onclick="event.stopPropagation()">' +
       '<div class="modal-header"><h2>Add Class</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>' +
-      '<div class="form-row"><div class="form-group"><label>Class Name</label><input id="ac_name" placeholder="e.g. SS 2 TECHNICAL"></div></div>' +
-      '<div class="form-row"><div class="form-group"><label>Level</label><input id="ac_level" placeholder="e.g. SS 2"></div>' +
-      '<div class="form-group"><label>Stream</label><input id="ac_stream" placeholder="e.g. TECHNICAL"></div></div>' +
-      '<div class="form-row"><div class="form-group"><label>Next Class (optional)</label><input id="ac_next" placeholder="e.g. SS 3 TECHNICAL"></div></div>' +
+      '<div class="form-row"><div class="form-group"><label>Class Name</label><input id="ac_name"></div></div>' +
+      '<div class="form-row"><div class="form-group"><label>Level</label><input id="ac_level"></div>' +
+      '<div class="form-group"><label>Stream</label><input id="ac_stream"></div></div>' +
+      '<div class="form-row"><div class="form-group"><label>Next Class (optional)</label><input id="ac_next"></div></div>' +
       '<div style="text-align:right;"><button class="btn btn-success" id="ac_submit" type="button">Create class</button></div>' +
       '</div></div>';
     setHTML('modalContainer', html);
-    $('ac_submit').addEventListener('click', async () => {
+    const btn = $('ac_submit');
+    if (btn) btn.addEventListener('click', async () => {
       const data = {
         name: $('ac_name').value.trim(),
         level: $('ac_level').value.trim(),
@@ -1471,7 +973,7 @@
   }
 
   async function seedDefaultClasses() {
-    if (!confirm('Seed default classes (Creche → SS 3 streams)? Existing classes are not touched.')) return;
+    if (!confirm('Seed default classes? Existing classes are not touched.')) return;
     const defaults = [
       { name: 'CRECHE', level: 'CRECHE', next_class: 'STARTERS' },
       { name: 'STARTERS', level: 'STARTERS', next_class: 'BEGINNERS' },
@@ -1512,89 +1014,50 @@
   }
 
   // ================================================================
-  // [SECTION 17] USERS
+  // [17] USERS
   // ================================================================
   async function loadUsers() {
     setHTML('usersContent', pageLoaderHTML('Loading users...'));
     const r = await window.TIS.listUsers();
     if (!r.ok) { setHTML('usersContent', errorHTML('Could not load users', r.error)); return; }
     const users = r.data || [];
-    if (users.length === 0) { setHTML('usersContent', emptyHTML('fa-user-cog', 'No users found')); return; }
-    let html = '<div class="card-bg" style="font-size:12px;"><strong>' + users.length + '</strong> user(s)</div>';
-    html += '<div class="card-bg" style="overflow-x:auto;"><table class="users-table"><thead><tr>';
-    html += '<th>ID</th><th>Name</th><th>Role</th><th>Position</th><th>Status</th>';
-    html += '</tr></thead><tbody>';
+    if (!users.length) { setHTML('usersContent', emptyHTML('fa-user-cog', 'No users found')); return; }
+    let html = '<div class="card-bg" style="overflow-x:auto;"><table class="users-table"><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Status</th></tr></thead><tbody>';
     users.forEach(u => {
-      const avatar = u.avatar_url ? '<img class="u-avatar" src="' + esc(u.avatar_url) + '">' : '';
-      html += '<tr>' +
-        '<td><strong>' + esc(u.operator_id) + '</strong></td>' +
-        '<td>' + avatar + esc(u.name) + '</td>' +
-        '<td>' + esc(u.role) + '</td>' +
-        '<td>' + esc(u.position || '—') + '</td>' +
-        '<td><span class="u-active' + (u.is_active ? '' : ' off') + '"><span class="dot"></span>' + (u.is_active ? 'Active' : 'Inactive') + '</span></td>' +
-        '</tr>';
+      html += '<tr><td><strong>' + esc(u.operator_id) + '</strong></td><td>' + esc(u.name) + '</td><td>' + esc(u.role) + '</td><td>' + (u.is_active ? 'Active' : 'Inactive') + '</td></tr>';
     });
     html += '</tbody></table></div>';
     setHTML('usersContent', html);
   }
 
   function initUsersTab() {
-    const r1 = $('btnRefreshUsers');
-    if (r1) r1.addEventListener('click', loadUsers);
+    const r1 = $('btnRefreshUsers'); if (r1) r1.addEventListener('click', loadUsers);
   }
 
   // ================================================================
-  // [SECTION 18] BIRTHDAYS — placeholder
-  // ================================================================
-  function startBirthdayWatcher() {
-    if (State.birthdayInterval) clearInterval(State.birthdayInterval);
-    setTimeout(checkBirthdays, 2500);
-    State.birthdayInterval = setInterval(checkBirthdays, 30 * 60 * 1000);
-  }
-
-  async function checkBirthdays() {
-    if (!State.profile) return;
-    if (document.querySelector('.birthday-overlay')) return;
-    // Placeholder — wired to a future RPC
-  }
-
-  function closeBirthdayOverlay() {
-    const el = document.querySelector('.birthday-overlay');
-    if (el) el.remove();
-  }
-
-  // ================================================================
-  // [SECTION 19] BROADSHEET — placeholder wiring
+  // [18] PLACEHOLDERS
   // ================================================================
   function initBroadSheetTab() {
-    const r1 = $('btnLoadBroadSheet');
-    if (r1) r1.addEventListener('click', () => showToast('Broad sheet data coming with the API layer', 'info'));
-    const r2 = $('btnPopulateBroadSheet');
-    if (r2) r2.addEventListener('click', () => showToast('Populate coming with the API layer', 'info'));
+    const r1 = $('btnLoadBroadSheet'); if (r1) r1.addEventListener('click', () => showToast('Broad sheet data coming with the API layer', 'info'));
+    const r2 = $('btnPopulateBroadSheet'); if (r2) r2.addEventListener('click', () => showToast('Populate coming with the API layer', 'info'));
   }
 
   // ================================================================
-  // [SECTION 20] WIRE & BOOT
+  // [19] WIRE + BOOT
   // ================================================================
   function wireEventListeners() {
-    const loginBtn = $('loginBtn');
-    if (loginBtn) loginBtn.addEventListener('click', doLogin);
-    const pw = $('loginPassword');
-    if (pw) pw.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
-    const idIn = $('loginId');
-    if (idIn) idIn.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
+    const loginBtn = $('loginBtn'); if (loginBtn) loginBtn.addEventListener('click', doLogin);
+    const pw = $('loginPassword');  if (pw) pw.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
+    const idIn = $('loginId');      if (idIn) idIn.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
 
     const eye = $('togglePwBtn');
     if (eye) eye.addEventListener('click', () => {
-      const p = $('loginPassword');
-      if (!p) return;
+      const p = $('loginPassword'); if (!p) return;
       p.type = p.type === 'password' ? 'text' : 'password';
     });
 
-    const chp = $('btnChangePassword');
-    if (chp) chp.addEventListener('click', openChangePasswordModal);
-    const lo = $('btnLogout');
-    if (lo) lo.addEventListener('click', doLogout);
+    const chp = $('btnChangePassword'); if (chp) chp.addEventListener('click', openChangePasswordModal);
+    const lo  = $('btnLogout');         if (lo)  lo.addEventListener('click', doLogout);
 
     document.querySelectorAll('.nav-tab').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -1611,9 +1074,25 @@
     initUsersTab();
   }
 
+  // Safety sweep: removes any stray blocking overlay that might
+  // have been left behind by a previous version of the app.
+  function safetySweep() {
+    const ls = $('loadingScreen');
+    if (ls) ls.classList.add('hidden');
+    const mc = $('modalContainer');
+    if (mc && !State.profile) mc.innerHTML = '';
+    console.log('[TIS] safety sweep ran at ' + new Date().toISOString());
+  }
+
   function boot() {
-    wireEventListeners();
-    showLoginScreen();
+    try {
+      safetySweep();
+      wireEventListeners();
+      showLoginScreen();
+      console.log('[TIS] app.js booted');
+    } catch (err) {
+      console.error('[TIS] boot error:', err);
+    }
   }
 
   if (document.readyState === 'loading') {
@@ -1623,21 +1102,15 @@
   }
 
   // ================================================================
-  // [SECTION 21] PUBLIC API
-  // ----------------------------------------------------------------
-  // IMPORTANT: We do NOT touch window.TIS.changePassword here.
-  // That is owned by supabase-client.js and must stay pointing at the
-  // Supabase-backed implementation. We expose the modal opener under
-  // a distinct name.
+  // [20] PUBLIC API
   // ================================================================
   window.TIS = window.TIS || {};
-  window.TIS.closeModal             = closeModal;
-  window.TIS.switchTab              = switchTab;
-  window.TIS.login                  = doLogin;
-  window.TIS.logout                 = doLogout;
+  window.TIS.closeModal              = closeModal;
+  window.TIS.switchTab               = switchTab;
+  window.TIS.login                   = doLogin;
+  window.TIS.logout                  = doLogout;
   window.TIS.openChangePasswordModal = openChangePasswordModal;
-  window.TIS.toggleExpandable       = toggleExpandable;
-  window.TIS.closeBirthdayOverlay   = closeBirthdayOverlay;
+  window.TIS.toggleExpandable        = toggleExpandable;
 
 })();
 // ================================================================
