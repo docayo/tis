@@ -7,25 +7,22 @@
 //
 // Exposes a single global: window.TIS
 // Every method returns { ok: true, data } or { ok: false, error }.
+//
+// NOTE: audit_log writes are DISABLED here. They were causing 403
+// errors and retry storms. We will re-enable them once the RLS
+// policy on audit_log is added.
 // ================================================================
 
 (function () {
   'use strict';
 
-  // ----------------------------------------------------------------
-  // CONFIG — the two values you supplied from the Supabase dashboard
-  // ----------------------------------------------------------------
   const SUPABASE_URL      = 'https://ndsroviwrfjbgaucajri.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_vEa5YAU8ac7pyhCiejkMtw_PMiLDuhI';
 
-  // Map operator IDs (01, 02, 03, 04, or a staff ID) to the internal
-  // Supabase Auth email. The user only ever types "01" or "TIS2401".
   const OPERATOR_EMAIL_SUFFIX = '@tis.local';
 
   // ----------------------------------------------------------------
-  // LAZY-LOAD the Supabase SDK
-  // Loading on demand keeps the first paint fast. The SDK is fetched
-  // from jsDelivr once and cached by the browser.
+  // Lazy-load the Supabase SDK
   // ----------------------------------------------------------------
   let sbPromise = null;
 
@@ -33,14 +30,23 @@
     if (sbPromise) return sbPromise;
     sbPromise = import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm')
       .then(function (mod) {
-        const client = mod.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        return mod.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
           auth: {
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: false
+          },
+          global: {
+            // 12-second hard ceiling on every Supabase request.
+            // Prevents the "page frozen because a fetch never returns" symptom.
+            fetch: function (url, opts) {
+              const ctrl = new AbortController();
+              const timer = setTimeout(function () { ctrl.abort(); }, 12000);
+              const merged = Object.assign({}, opts || {}, { signal: ctrl.signal });
+              return fetch(url, merged).finally(function () { clearTimeout(timer); });
+            }
           }
         });
-        return client;
       })
       .catch(function (err) {
         console.error('Failed to load Supabase SDK:', err);
@@ -50,7 +56,7 @@
   }
 
   // ----------------------------------------------------------------
-  // RESPONSE HELPERS — every method returns the same shape.
+  // Response helpers
   // ----------------------------------------------------------------
   function ok(data)   { return { ok: true,  data: data }; }
   function fail(error) {
@@ -61,29 +67,21 @@
   }
 
   // ----------------------------------------------------------------
-  // EMAIL MAPPING
+  // Email mapping
   // ----------------------------------------------------------------
   function toAuthEmail(operatorId) {
     const id = String(operatorId || '').trim().toLowerCase();
     return id + OPERATOR_EMAIL_SUFFIX;
   }
 
-  function fromAuthEmail(email) {
-    const e = String(email || '').trim().toLowerCase();
-    const idx = e.indexOf(OPERATOR_EMAIL_SUFFIX);
-    return idx === -1 ? e : e.substring(0, idx);
-  }
-
   // ================================================================
-  // PUBLIC API — everything lives under window.TIS
+  // PUBLIC API
   // ================================================================
   const TIS = {};
 
   // ----------------------------------------------------------------
   // AUTH
   // ----------------------------------------------------------------
-
-  // signIn('01', '1234') -> { ok: true, data: { user, profile } }
   TIS.signIn = async function (operatorId, password) {
     try {
       const sb = await loadSdk();
@@ -91,7 +89,6 @@
       const { data, error } = await sb.auth.signInWithPassword({ email, password });
       if (error) return fail(error.message || 'Sign in failed');
 
-      // Fetch the matching profile row from public.users
       const { data: profile, error: profErr } = await sb
         .from('users')
         .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password')
@@ -104,45 +101,26 @@
         return fail('That account is currently inactive.');
       }
 
-      // Touch last_login
-      await sb.from('users')
-        .update({ last_login: new Date().toISOString() })
-        .eq('id', data.user.id);
-
-      // Write to audit_log (best-effort; ignore failures)
+      // last_login update (best effort, silent on failure)
       try {
-        await sb.from('audit_log').insert({
-          user_id: data.user.id,
-          action: 'LOGIN_SUCCESS',
-          details: 'Session started from portal'
-        });
+        await sb.from('users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', data.user.id);
       } catch (_) { /* silent */ }
 
       return ok({ user: data.user, profile });
     } catch (err) { return fail(err); }
   };
 
-  // signOut() -> { ok: true }
   TIS.signOut = async function () {
     try {
       const sb = await loadSdk();
-      const { data: { session } } = await sb.auth.getSession();
-      if (session && session.user) {
-        try {
-          await sb.from('audit_log').insert({
-            user_id: session.user.id,
-            action: 'LOGOUT',
-            details: 'User signed out'
-          });
-        } catch (_) { /* silent */ }
-      }
       const { error } = await sb.auth.signOut();
       if (error) return fail(error.message);
       return ok({});
     } catch (err) { return fail(err); }
   };
 
-  // getCurrentProfile() -> profile row for the signed-in user
   TIS.getCurrentProfile = async function () {
     try {
       const sb = await loadSdk();
@@ -158,25 +136,27 @@
     } catch (err) { return fail(err); }
   };
 
-  // changePassword(newPassword) — sets a new password for the current user
   TIS.changePassword = async function (newPassword) {
     try {
       const sb = await loadSdk();
       const { error } = await sb.auth.updateUser({ password: newPassword });
       if (error) return fail(error.message);
-      // Clear must_change_password
+
       const { data: { user } } = await sb.auth.getUser();
       if (user) {
-        await sb.from('users')
+        const { error: flagErr } = await sb.from('users')
           .update({ must_change_password: false })
           .eq('id', user.id);
+        if (flagErr) {
+          return fail('Password changed, but profile flag not cleared: ' + flagErr.message);
+        }
       }
       return ok({});
     } catch (err) { return fail(err); }
   };
 
   // ----------------------------------------------------------------
-  // GENERIC TABLE HELPERS — used by every module below
+  // Generic table helpers
   // ----------------------------------------------------------------
   async function tableSelect(table, opts) {
     const sb = await loadSdk();
@@ -186,7 +166,6 @@
     if (opts && opts.ilike)   Object.keys(opts.ilike).forEach(k => { q = q.ilike(k, opts.ilike[k]); });
     if (opts && opts.order)   q = q.order(opts.order.column, { ascending: !!opts.order.ascending });
     if (opts && opts.limit)   q = q.limit(opts.limit);
-    if (opts && opts.range)   q = q.range(opts.range[0], opts.range[1]);
     const { data, error } = await q;
     if (error) throw error;
     return data || [];
@@ -217,62 +196,49 @@
     return true;
   }
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // CLASSES
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listClasses = async function () {
     try { return ok(await tableSelect('classes', { order: { column: 'name', ascending: true } })); }
     catch (err) { return fail(err); }
   };
-
   TIS.createClass = async function (row) {
     try { return ok(await tableInsert('classes', row)); }
     catch (err) { return fail(err); }
   };
-
   TIS.updateClass = async function (id, patch) {
     try { return ok(await tableUpdate('classes', patch, { id })); }
     catch (err) { return fail(err); }
   };
-
   TIS.deleteClass = async function (id) {
     try { await tableDelete('classes', { id }); return ok({}); }
     catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // TERMS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listTerms = async function () {
-    try {
-      return ok(await tableSelect('terms', {
-        order: { column: 'year', ascending: false }
-      }));
-    } catch (err) { return fail(err); }
+    try { return ok(await tableSelect('terms', { order: { column: 'year', ascending: false } })); }
+    catch (err) { return fail(err); }
   };
-
   TIS.getActiveTerm = async function () {
     try { return ok(await tableSelect('terms', { eq: { is_active: true }, limit: 1 })); }
     catch (err) { return fail(err); }
   };
-
   TIS.createTerm = async function (row) {
     try { return ok(await tableInsert('terms', row)); }
     catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // LEARNERS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listLearners = async function () {
-    try {
-      const rows = await tableSelect('learners', {
-        order: { column: 'name', ascending: true }
-      });
-      return ok(rows);
-    } catch (err) { return fail(err); }
+    try { return ok(await tableSelect('learners', { order: { column: 'name', ascending: true } })); }
+    catch (err) { return fail(err); }
   };
-
   TIS.searchLearners = async function (term) {
     try {
       const q = String(term || '').trim();
@@ -288,57 +254,50 @@
       return ok(data || []);
     } catch (err) { return fail(err); }
   };
-
   TIS.getLearner = async function (id) {
     try {
       const rows = await tableSelect('learners', { eq: { id }, limit: 1 });
       return ok(rows[0] || null);
     } catch (err) { return fail(err); }
   };
-
   TIS.createLearner = async function (row) {
     try { return ok(await tableInsert('learners', row)); }
     catch (err) { return fail(err); }
   };
-
   TIS.updateLearner = async function (id, patch) {
     try { return ok(await tableUpdate('learners', patch, { id })); }
     catch (err) { return fail(err); }
   };
-
   TIS.deleteLearner = async function (id) {
     try { await tableDelete('learners', { id }); return ok({}); }
     catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // STAFF
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listStaff = async function () {
     try { return ok(await tableSelect('staff', { order: { column: 'full_name', ascending: true } })); }
     catch (err) { return fail(err); }
   };
-
   TIS.getStaff = async function (id) {
     try {
       const rows = await tableSelect('staff', { eq: { id }, limit: 1 });
       return ok(rows[0] || null);
     } catch (err) { return fail(err); }
   };
-
   TIS.createStaff = async function (row) {
     try { return ok(await tableInsert('staff', row)); }
     catch (err) { return fail(err); }
   };
-
   TIS.updateStaff = async function (id, patch) {
     try { return ok(await tableUpdate('staff', patch, { id })); }
     catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // ATTENDANCE — LEARNERS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listAttendanceForClassTerm = async function (classId, termId) {
     try {
       return ok(await tableSelect('attendance_learner', {
@@ -348,30 +307,6 @@
     } catch (err) { return fail(err); }
   };
 
-  // Upsert a single learner's mark for a specific date
-  TIS.markLearnerAttendance = async function (learnerId, termId, classId, dateISO, mark, markedBy) {
-    try {
-      const sb = await loadSdk();
-      const payload = {
-        learner_id: learnerId,
-        term_id: termId,
-        class_id: classId,
-        attendance_date: dateISO,
-        mark: mark,
-        marked_by: markedBy || '',
-        marked_at: new Date().toISOString()
-      };
-      const { data, error } = await sb
-        .from('attendance_learner')
-        .upsert(payload, { onConflict: 'learner_id,attendance_date' })
-        .select()
-        .single();
-      if (error) return fail(error.message);
-      return ok(data);
-    } catch (err) { return fail(err); }
-  };
-
-  // Bulk save: marks = [{ learnerId, mark }]
   TIS.saveLearnerAttendance = async function (termId, classId, dateISO, marks, markedBy) {
     try {
       if (!marks || marks.length === 0) return ok([]);
@@ -396,7 +331,6 @@
     } catch (err) { return fail(err); }
   };
 
-  // RPC wrapper — weekly class analysis
   TIS.classAnalysis = async function (classId, termId) {
     try {
       const sb = await loadSdk();
@@ -409,14 +343,12 @@
     } catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // ATTENDANCE — STAFF
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listStaffAttendanceToday = async function (dateISO) {
     try {
-      return ok(await tableSelect('attendance_staff', {
-        eq: { attendance_date: dateISO }
-      }));
+      return ok(await tableSelect('attendance_staff', { eq: { attendance_date: dateISO } }));
     } catch (err) { return fail(err); }
   };
 
@@ -461,9 +393,9 @@
     } catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // MOVEMENTS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listMovementsToday = async function (dateISO) {
     try {
       return ok(await tableSelect('movements', {
@@ -472,15 +404,14 @@
       }));
     } catch (err) { return fail(err); }
   };
-
   TIS.createMovement = async function (row) {
     try { return ok(await tableInsert('movements', row)); }
     catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // PAYMENTS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listPayments = async function (learnerId) {
     try {
       return ok(await tableSelect('payments', {
@@ -489,31 +420,24 @@
       }));
     } catch (err) { return fail(err); }
   };
-
   TIS.recordPayment = async function (row) {
     try { return ok(await tableInsert('payments', row)); }
     catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // CALENDAR
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listCalendar = async function () {
     try {
-      return ok(await tableSelect('calendar', {
-        order: { column: 'event_date', ascending: true }
-      }));
+      return ok(await tableSelect('calendar', { order: { column: 'event_date', ascending: true } }));
     } catch (err) { return fail(err); }
   };
-
   TIS.listCalendarImports = async function () {
     try {
-      return ok(await tableSelect('calendar_imports', {
-        order: { column: 'uploaded_at', ascending: false }
-      }));
+      return ok(await tableSelect('calendar_imports', { order: { column: 'uploaded_at', ascending: false } }));
     } catch (err) { return fail(err); }
   };
-
   TIS.listCalendarStaging = async function (importId) {
     try {
       return ok(await tableSelect('calendar_staging', {
@@ -523,9 +447,9 @@
     } catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // SUBJECTS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listSubjects = async function (classId) {
     try {
       const rows = await tableSelect('subjects', {
@@ -536,9 +460,9 @@
     } catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // SETTINGS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.getSetting = async function (key) {
     try {
       const sb = await loadSdk();
@@ -565,25 +489,22 @@
     } catch (err) { return fail(err); }
   };
 
-  // ================================================================
+  // ----------------------------------------------------------------
   // USERS
-  // ================================================================
+  // ----------------------------------------------------------------
   TIS.listUsers = async function () {
     try {
-      return ok(await tableSelect('users', {
-        order: { column: 'operator_id', ascending: true }
-      }));
+      return ok(await tableSelect('users', { order: { column: 'operator_id', ascending: true } }));
     } catch (err) { return fail(err); }
   };
-
   TIS.updateUser = async function (id, patch) {
     try { return ok(await tableUpdate('users', patch, { id })); }
     catch (err) { return fail(err); }
   };
 
-  // ================================================================
-  // STORAGE — file uploads (photos, PDFs)
-  // ================================================================
+  // ----------------------------------------------------------------
+  // STORAGE
+  // ----------------------------------------------------------------
   TIS.uploadPhoto = async function (bucket, path, file) {
     try {
       const sb = await loadSdk();
@@ -596,9 +517,6 @@
     } catch (err) { return fail(err); }
   };
 
-  // ================================================================
-  // EXPORT
-  // ================================================================
   window.TIS = TIS;
   console.log('[TIS] Supabase client ready. Connection to:', SUPABASE_URL);
 
