@@ -2,13 +2,17 @@
 // TIS EMIS — APPLICATION LOGIC
 // File: app.js
 // ================================================================
-// PART 1 of 4 — State · Utilities · Auth · Navigation · Learners
-// PART 2 of 4 — Staff · Terms · Learner Attendance
-// PART 3 of 4 — Staff Attendance · Movements · Monthly
-// PART 4 of 4 — Broadsheet · Calendar · Import · QR · Reports ·
-//               Classes · Users · Birthdays · Init (closes IIFE)
+// Full file. One IIFE. One close.
 //
-// Every part appends to the end. Only Part 4 closes the IIFE.
+// Responsibilities:
+//   - wire the DOM to window.TIS (from supabase-client.js)
+//   - hold UI state
+//   - render every module
+//
+// window.TIS is owned by supabase-client.js and must NOT be replaced.
+// This file only ADDS to it (window.TIS.closeModal, .switchTab, etc.)
+// and NEVER overwrites the Supabase methods (signIn, changePassword,
+// listLearners, ...).
 // ================================================================
 
 (function () {
@@ -51,7 +55,6 @@
   function $(id) { return document.getElementById(id); }
 
   function setHTML(id, html) { const el = $(id); if (el) el.innerHTML = html; }
-
   function setText(id, txt) { const el = $(id); if (el) el.textContent = txt; }
 
   function esc(s) {
@@ -89,13 +92,6 @@
       return dd + '/' + mm + '/' + parsed.getFullYear();
     }
     return s;
-  }
-
-  function fmtMoney(v) {
-    if (v === '' || v === null || v === undefined) return '—';
-    const n = Number(v);
-    if (isNaN(n)) return v.toString();
-    return '\u20a6' + n.toLocaleString();
   }
 
   function showToast(msg, type) {
@@ -251,9 +247,9 @@
     setText('loginStatus', 'Checking your details...');
 
     const r = await window.TIS.signIn(id, pw);
-    if (!r.ok) {
+    if (!r || !r.ok) {
       if (btn) btn.disabled = false;
-      setText('loginStatus', r.error || 'Login failed.');
+      setText('loginStatus', (r && r.error) || 'Login failed.');
       if (pwEl) { pwEl.value = ''; pwEl.focus(); }
       return;
     }
@@ -291,11 +287,11 @@
     resetLoader();
     const bd = document.querySelector('.birthday-overlay');
     if (bd) bd.remove();
-    $('loginPage').classList.remove('hidden');
-    $('dashboardHeader').classList.add('hidden');
-    $('mainContainer').classList.add('hidden');
-    $('dashboardFooter').classList.add('hidden');
-    $('loadingScreen').classList.add('hidden');
+    const lp = $('loginPage'); if (lp) lp.classList.remove('hidden');
+    const dh = $('dashboardHeader'); if (dh) dh.classList.add('hidden');
+    const mc = $('mainContainer'); if (mc) mc.classList.add('hidden');
+    const df = $('dashboardFooter'); if (df) df.classList.add('hidden');
+    const ls = $('loadingScreen'); if (ls) ls.classList.add('hidden');
     const idEl = $('loginId');
     if (idEl) { idEl.value = ''; setTimeout(() => idEl.focus(), 100); }
     const st = $('loginStatus');
@@ -307,10 +303,10 @@
   function enterDashboard() {
     showWelcomeLoader();
     setTimeout(() => {
-      $('loginPage').classList.add('hidden');
-      $('dashboardHeader').classList.remove('hidden');
-      $('mainContainer').classList.remove('hidden');
-      $('dashboardFooter').classList.remove('hidden');
+      const lp = $('loginPage'); if (lp) lp.classList.add('hidden');
+      const dh = $('dashboardHeader'); if (dh) dh.classList.remove('hidden');
+      const mc = $('mainContainer'); if (mc) mc.classList.remove('hidden');
+      const df = $('dashboardFooter'); if (df) df.classList.remove('hidden');
 
       setText('dashOperatorName', State.profile.name || 'Operator');
       setText('dashOperatorRole', State.profile.role || 'Operator');
@@ -332,7 +328,10 @@
     }, 2000);
   }
 
-  async function openChangePasswordModal() {
+  // ================================================================
+  // CHANGE PASSWORD
+  // ================================================================
+  function openChangePasswordModal() {
     const html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">' +
       '<div class="modal-header"><h2>Change password</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>' +
@@ -342,24 +341,38 @@
       '<div style="text-align:right;margin-top:12px;"><button class="btn btn-success" id="cp_submit" type="button">Update password</button></div>' +
       '</div></div>';
     setHTML('modalContainer', html);
-    $('cp_submit').addEventListener('click', submitChangePassword);
+    const btn = $('cp_submit');
+    if (btn) btn.addEventListener('click', submitChangePassword);
   }
 
   async function submitChangePassword() {
-    const oldPw = $('cp_old').value;
-    const newPw = $('cp_new').value;
-    const newPw2 = $('cp_new2').value;
+    const oldPw  = $('cp_old')  ? $('cp_old').value  : '';
+    const newPw  = $('cp_new')  ? $('cp_new').value  : '';
+    const newPw2 = $('cp_new2') ? $('cp_new2').value : '';
     if (!oldPw || !newPw || !newPw2) { showToast('Fill in all three fields', 'warning'); return; }
-    if (newPw.length < 4) { showToast('Use at least 4 characters', 'warning'); return; }
-    if (newPw !== newPw2) { showToast('The new passwords do not match', 'warning'); return; }
+    if (newPw.length < 4)            { showToast('Use at least 4 characters', 'warning'); return; }
+    if (newPw !== newPw2)            { showToast('The new passwords do not match', 'warning'); return; }
 
     startLoader();
-    const re = await window.TIS.signIn(State.profile.operator_id, oldPw);
-    if (!re.ok) { stopLoader(); showToast('Current password is incorrect', 'error'); return; }
 
+    // Verify old password by re-signing in
+    const re = await window.TIS.signIn(State.profile.operator_id, oldPw);
+    if (!re || !re.ok) {
+      stopLoader();
+      showToast('Current password is incorrect', 'error');
+      return;
+    }
+
+    // Change password via the SUPABASE-backed method.
+    // window.TIS.changePassword is set by supabase-client.js and is
+    // NEVER overwritten by this file.
     const r = await window.TIS.changePassword(newPw);
     stopLoader();
-    if (!r.ok) { showToast(r.error || 'Could not change the password', 'error'); return; }
+
+    if (!r || !r.ok) {
+      showToast((r && r.error) || 'Could not change the password', 'error');
+      return;
+    }
     showToast('Password updated', 'success');
     State.profile.must_change_password = false;
     closeModal();
@@ -530,17 +543,6 @@
     html += '</tbody></table></body></html>';
     w.document.write(html); w.document.close(); w.print();
   }
-
-  // ================================================================
-  // PART 1 PUBLIC API
-  // ================================================================
-  window.TIS = window.TIS || {};
-  window.TIS.closeModal = closeModal;
-
-  // ================================================================
-  // END OF PART 1 OF 4
-  // ================================================================
-
 
   // ================================================================
   // [SECTION 08] STAFF
@@ -793,11 +795,11 @@
     if (pr) pr.addEventListener('click', printAttendance);
 
     const analysis = $('analysisFrame');
-    if (analysis) {
+    if (analysis && analysis.querySelector('.expandable-header')) {
       analysis.querySelector('.expandable-header').addEventListener('click', () => toggleExpandable('analysisFrame'));
     }
     const sig = $('signatureFrame');
-    if (sig) {
+    if (sig && sig.querySelector('.expandable-header')) {
       sig.querySelector('.expandable-header').addEventListener('click', () => toggleExpandable('signatureFrame'));
     }
   }
@@ -883,10 +885,6 @@
     showToast('Print is handled by the API in the next release', 'info');
   }
 
-  // ================================================================
-  // END OF PART 2 OF 4
-  // ================================================================
- 
   // ================================================================
   // [SECTION 11] STAFF ATTENDANCE
   // ================================================================
@@ -1121,13 +1119,12 @@
     if (action === 'in') {
       const now = new Date();
       const clockIn = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-      const status = 'Present';
       startLoader();
       const r = await window.TIS.upsertStaffAttendance({
         staff_id: staff.id,
         attendance_date: todayISO(),
         clock_in: clockIn,
-        status: status,
+        status: 'Present',
         logged_by: State.profile ? State.profile.name : 'Portal'
       });
       stopLoader();
@@ -1192,7 +1189,6 @@
 
   async function loadArchiveList() {
     setHTML('archiveList', pageLoaderHTML('Loading archives...'));
-    // Uses staff_monthly_summary for the current month as a preview
     const now = new Date();
     const r = await window.TIS.staffMonthlySummary(now.getFullYear(), now.getMonth() + 1);
     if (!r.ok || !r.data || r.data.length === 0) {
@@ -1303,10 +1299,6 @@
     showToast('File selected: ' + file.name + ' — parsing will be available in the next release', 'info');
   }
 
-  // ================================================================
-  // END OF PART 3 OF 4
-  // ================================================================
- 
   // ================================================================
   // [SECTION 14] QR CODE
   // ================================================================
@@ -1552,7 +1544,7 @@
   }
 
   // ================================================================
-  // [SECTION 18] BIRTHDAYS
+  // [SECTION 18] BIRTHDAYS — placeholder
   // ================================================================
   function startBirthdayWatcher() {
     if (State.birthdayInterval) clearInterval(State.birthdayInterval);
@@ -1563,9 +1555,7 @@
   async function checkBirthdays() {
     if (!State.profile) return;
     if (document.querySelector('.birthday-overlay')) return;
-    // Birthdays are computed from learners + staff DOB, handled later
-    // in a dedicated RPC. For now, this is a placeholder that keeps
-    // the interval from firing errors.
+    // Placeholder — wired to a future RPC
   }
 
   function closeBirthdayOverlay() {
@@ -1584,10 +1574,9 @@
   }
 
   // ================================================================
-  // [SECTION 20] INIT — wire everything, then boot
+  // [SECTION 20] WIRE & BOOT
   // ================================================================
   function wireEventListeners() {
-    // Login
     const loginBtn = $('loginBtn');
     if (loginBtn) loginBtn.addEventListener('click', doLogin);
     const pw = $('loginPassword');
@@ -1602,18 +1591,15 @@
       p.type = p.type === 'password' ? 'text' : 'password';
     });
 
-    // Banner buttons
     const chp = $('btnChangePassword');
     if (chp) chp.addEventListener('click', openChangePasswordModal);
     const lo = $('btnLogout');
     if (lo) lo.addEventListener('click', doLogout);
 
-    // Nav
     document.querySelectorAll('.nav-tab').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // Module-specific wiring
     initLearnersTab();
     initStaffTab();
     initTermsWiring();
@@ -1637,268 +1623,23 @@
   }
 
   // ================================================================
-  // [SECTION 21] PUBLIC API — inline handlers in the HTML
+  // [SECTION 21] PUBLIC API
+  // ----------------------------------------------------------------
+  // IMPORTANT: We do NOT touch window.TIS.changePassword here.
+  // That is owned by supabase-client.js and must stay pointing at the
+  // Supabase-backed implementation. We expose the modal opener under
+  // a distinct name.
   // ================================================================
   window.TIS = window.TIS || {};
-  window.TIS.closeModal = closeModal;
-  window.TIS.switchTab = switchTab;
-  window.TIS.login = doLogin;
-  window.TIS.logout = doLogout;
-  window.TIS.changePassword = openChangePasswordModal;
-  window.TIS.toggleExpandable = toggleExpandable;
-  window.TIS.closeBirthdayOverlay = closeBirthdayOverlay;
-
-  // ================================================================
-  // END OF PART 4 OF 4
-  // END OF APP.JS
-  // ================================================================
-  })();
-// ================================================================
-// TIS EMIS — APPLICATION LOGIC
-// File: app.js
-// ================================================================
-// PART 5 OF 4 — Addendum
-//
-// Why this part exists:
-//   Part 4, Section 21 clobbered window.TIS.changePassword with the
-//   modal-opener function. That broke the Supabase password-change
-//   path and caused the "change password dialog forever loops" bug.
-//
-// What this part does:
-//   1. Restores window.TIS.changePassword to the Supabase version.
-//   2. Replaces the modal-opener binding under a non-colliding name.
-//   3. Hardens submitChangePassword: guards r.ok, surfaces RLS errors.
-//   4. Silences the audit_log 403 until the RLS policy is added.
-//
-// This part is a separate IIFE. The Part 1–4 IIFE is already closed.
-// ================================================================
-
-(function () {
-  'use strict';
-
-  // ----------------------------------------------------------------
-  // 1. Preserve a reference to the modal opener.
-  //    (We rebind TIS.changePassword to the Supabase function below.)
-  // ----------------------------------------------------------------
-  const openChangePasswordModal = window.TIS.openChangePasswordModal
-                              || window.TIS.changePassword;   // whatever Part 4 installed
-
-  // ----------------------------------------------------------------
-  // 2. Capture the Supabase changePassword BEFORE we overwrite TIS.
-  //    Actually — we can't "capture" it, because Part 4 already
-  //    clobbered it. So instead we rebuild it here using the same
-  //    Supabase SDK that supabase-client.js uses.
-  //
-  //    Cleanest approach: talk to Supabase directly from this part.
-  //    We mirror the config from supabase-client.js.
-  // ----------------------------------------------------------------
-  const SUPABASE_URL      = 'https://ndsroviwrfjbgaucajri.supabase.co';
-  const SUPABASE_ANON_KEY = 'sb_publishable_vEa5YAU8ac7pyhCiejkMtw_PMiLDuhI';
-
-  let _sbPromise = null;
-  function _loadSdk() {
-    if (_sbPromise) return _sbPromise;
-    _sbPromise = import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm')
-      .then(function (mod) {
-        return mod.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-        });
-      });
-    return _sbPromise;
-  }
-
-  // ----------------------------------------------------------------
-  // 3. The correct changePassword — talks to Supabase Auth, flips the
-  //    flag, and reports honestly if the flag write was rejected.
-  // ----------------------------------------------------------------
-  async function _realChangePassword(newPassword) {
-    try {
-      const sb = await _loadSdk();
-
-      // Step A — change the auth password.
-      const { error: authErr } = await sb.auth.updateUser({ password: newPassword });
-      if (authErr) return { ok: false, error: authErr.message || 'Could not update password' };
-
-      // Step B — clear must_change_password in public.users.
-      const { data: { user } } = await sb.auth.getUser();
-      if (!user) return { ok: false, error: 'Signed in, but no user returned' };
-
-      const { error: flagErr } = await sb
-        .from('users')
-        .update({ must_change_password: false })
-        .eq('id', user.id);
-
-      if (flagErr) {
-        // Common cause: RLS on public.users blocks UPDATE for this role.
-        // Return the real error so the UI can show it.
-        return {
-          ok: false,
-          error: 'Password changed, but profile flag not cleared: ' + (flagErr.message || 'unknown error')
-        };
-      }
-
-      // Step C — read-back, to confirm.
-      const { data: check } = await sb
-        .from('users')
-        .select('must_change_password')
-        .eq('id', user.id)
-        .single();
-
-      if (check && check.must_change_password === true) {
-        return {
-          ok: false,
-          error: 'Profile flag did not clear after update. This is an RLS policy issue on public.users.'
-        };
-      }
-
-      return { ok: true, data: {} };
-    } catch (err) {
-      return { ok: false, error: (err && err.message) ? err.message : String(err) };
-    }
-  }
-
-  // ----------------------------------------------------------------
-  // 4. Harden submitChangePassword.
-  //    We rebind it by removing the old listener via a clone-and-replace
-  //    trick, then attach a fresh, guarded handler.
-  // ----------------------------------------------------------------
-  async function _safeSubmitChangePassword() {
-    try {
-      const oldPwEl  = document.getElementById('cp_old');
-      const newPwEl  = document.getElementById('cp_new');
-      const newPw2El = document.getElementById('cp_new2');
-
-      const oldPw  = oldPwEl  ? oldPwEl.value  : '';
-      const newPw  = newPwEl  ? newPwEl.value  : '';
-      const newPw2 = newPw2El ? newPw2El.value : '';
-
-      if (!oldPw || !newPw || !newPw2) { window.TIS._toast('Fill in all three fields', 'warning'); return; }
-      if (newPw.length < 4)            { window.TIS._toast('Use at least 4 characters', 'warning'); return; }
-      if (newPw !== newPw2)            { window.TIS._toast('The new passwords do not match', 'warning'); return; }
-
-      if (typeof window.TIS._startLoader === 'function') window.TIS._startLoader();
-
-      // Verify the old password by attempting a sign-in with it.
-      const re = await window.TIS.signIn(
-        (window.TIS._profile && window.TIS._profile.operator_id) || '',
-        oldPw
-      );
-
-      if (!re || !re.ok) {
-        if (typeof window.TIS._stopLoader === 'function') window.TIS._stopLoader();
-        window.TIS._toast('Current password is incorrect', 'error');
-        return;
-      }
-
-      // Now actually change it.
-      const r = await _realChangePassword(newPw);
-
-      if (typeof window.TIS._stopLoader === 'function') window.TIS._stopLoader();
-
-      if (!r || !r.ok) {
-        window.TIS._toast((r && r.error) || 'Could not change the password', 'error');
-        return;
-      }
-
-      window.TIS._toast('Password updated', 'success');
-      if (window.TIS._profile) window.TIS._profile.must_change_password = false;
-      window.TIS.closeModal();
-    } catch (err) {
-      if (typeof window.TIS._stopLoader === 'function') window.TIS._stopLoader();
-      window.TIS._toast('Password change failed: ' + ((err && err.message) || err), 'error');
-    }
-  }
-
-  // ----------------------------------------------------------------
-  // 5. Hook the new handler onto the modal's submit button.
-  //    The modal is created fresh each time openChangePasswordModal()
-  //    runs, so we install a MutationObserver that re-binds whenever
-  //    #cp_submit appears.
-  // ----------------------------------------------------------------
-  function _bindSubmitWhenReady() {
-    const btn = document.getElementById('cp_submit');
-    if (!btn) return;
-    // Replace the button with a clone to strip old listeners.
-    const fresh = btn.cloneNode(true);
-    btn.parentNode.replaceChild(fresh, btn);
-    fresh.addEventListener('click', _safeSubmitChangePassword);
-  }
-
-  const _observer = new MutationObserver(function () {
-    _bindSubmitWhenReady();
-  });
-  _observer.observe(document.body, { childList: true, subtree: true });
-
-  // ----------------------------------------------------------------
-  // 6. Expose the pieces other parts need. We deliberately do NOT
-  //    touch TIS.signIn, TIS.listLearners, etc. — those live in
-  //    supabase-client.js and are correct.
-  // ----------------------------------------------------------------
-  window.TIS = window.TIS || {};
-
-  // The correct Supabase-backed changePassword:
-  window.TIS.changePassword = _realChangePassword;
-
-  // The modal opener, under a non-colliding name:
+  window.TIS.closeModal             = closeModal;
+  window.TIS.switchTab              = switchTab;
+  window.TIS.login                  = doLogin;
+  window.TIS.logout                 = doLogout;
   window.TIS.openChangePasswordModal = openChangePasswordModal;
-
-  // Helpers so _safeSubmitChangePassword can reach app.js's internals
-  // without us having to re-implement them:
-  //   - We patch these in from Part 4 by reading them off the closure
-  //     where possible. Where not possible, we provide sane fallbacks.
-  if (typeof window.TIS._toast !== 'function') {
-    window.TIS._toast = function (msg, type) {
-      const t = document.getElementById('toast');
-      if (!t) { console.log('[toast]', msg); return; }
-      t.className = 'toast ' + (type || 'info');
-      t.textContent = msg;
-      void t.offsetWidth;
-      t.classList.add('show');
-      setTimeout(function () { t.classList.remove('show'); }, 4500);
-    };
-  }
-
-  if (typeof window.TIS._startLoader !== 'function') {
-    window.TIS._startLoader = function () {
-      const cl = document.getElementById('cornerLoader');
-      if (cl) cl.classList.remove('hidden');
-    };
-  }
-
-  if (typeof window.TIS._stopLoader !== 'function') {
-    window.TIS._stopLoader = function () {
-      const cl = document.getElementById('cornerLoader');
-      if (cl) cl.classList.add('hidden');
-    };
-  }
-
-  // Keep a handle to the current profile so we can read operator_id.
-  // app.js sets State.profile; we mirror it whenever signIn succeeds.
-  const _origSignIn = window.TIS.signIn;
-  if (typeof _origSignIn === 'function') {
-    window.TIS.signIn = async function (id, pw) {
-      const res = await _origSignIn(id, pw);
-      if (res && res.ok && res.data && res.data.profile) {
-        window.TIS._profile = res.data.profile;
-      }
-      return res;
-    };
-  }
-
-  // If a session is already alive when this part runs, pull the profile.
-  (async function () {
-    try {
-      if (typeof window.TIS.getCurrentProfile === 'function') {
-        const r = await window.TIS.getCurrentProfile();
-        if (r && r.ok && r.data) window.TIS._profile = r.data;
-      }
-    } catch (_) { /* silent */ }
-  })();
-
-  console.log('[TIS] Part 5 of 4 loaded. TIS.changePassword now points to the Supabase-backed implementation.');
+  window.TIS.toggleExpandable       = toggleExpandable;
+  window.TIS.closeBirthdayOverlay   = closeBirthdayOverlay;
 
 })();
 // ================================================================
-// END OF PART 5 OF 4
-// END OF APP.JS (append)
+// END OF app.js
 // ================================================================
