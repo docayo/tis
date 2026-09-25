@@ -2,15 +2,15 @@
 // TIS EMIS — SUPABASE CLIENT
 // File: supabase-client.js
 // ================================================================
-// One file, one job: talk to Supabase.
-// The rest of the app never touches the Supabase SDK directly.
+// Loads the Supabase SDK as a classic script (UMD build) from a CDN,
+// then exposes window.TIS with every method the app needs.
 //
-// Exposes a single global: window.TIS
 // Every method returns { ok: true, data } or { ok: false, error }.
 //
-// NOTE: audit_log writes are DISABLED here. They were causing 403
-// errors and retry storms. We will re-enable them once the RLS
-// policy on audit_log is added.
+// IMPORTANT: This file is loaded with a regular <script> tag in
+// index.html. It does NOT use import() or ES modules. The SDK is
+// loaded dynamically by injecting a <script> tag and resolving
+// when window.supabase is available.
 // ================================================================
 
 (function () {
@@ -18,47 +18,93 @@
 
   const SUPABASE_URL      = 'https://ndsroviwrfjbgaucajri.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_vEa5YAU8ac7pyhCiejkMtw_PMiLDuhI';
+  const SDK_URL           = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
 
   const OPERATOR_EMAIL_SUFFIX = '@tis.local';
 
   // ----------------------------------------------------------------
-  // Lazy-load the Supabase SDK
+  // Load the Supabase UMD build once, resolve when window.supabase exists.
   // ----------------------------------------------------------------
   let sbPromise = null;
 
   function loadSdk() {
     if (sbPromise) return sbPromise;
-    sbPromise = import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm')
-      .then(function (mod) {
-        return mod.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: false
-          },
-          global: {
-            // 12-second hard ceiling on every Supabase request.
-            // Prevents the "page frozen because a fetch never returns" symptom.
-            fetch: function (url, opts) {
-              const ctrl = new AbortController();
-              const timer = setTimeout(function () { ctrl.abort(); }, 12000);
-              const merged = Object.assign({}, opts || {}, { signal: ctrl.signal });
-              return fetch(url, merged).finally(function () { clearTimeout(timer); });
+
+    sbPromise = new Promise(function (resolve, reject) {
+      // Already loaded?
+      if (window.supabase && window.supabase.createClient) {
+        try {
+          resolve(window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+              persistSession: true,
+              autoRefreshToken: true,
+              detectSessionInUrl: false
+            },
+            global: {
+              // 12-second hard ceiling on every Supabase request.
+              fetch: function (url, opts) {
+                const ctrl = new AbortController();
+                const timer = setTimeout(function () { ctrl.abort(); }, 12000);
+                const merged = Object.assign({}, opts || {}, { signal: ctrl.signal });
+                return fetch(url, merged).finally(function () { clearTimeout(timer); });
+              }
             }
-          }
-        });
-      })
-      .catch(function (err) {
-        console.error('Failed to load Supabase SDK:', err);
-        throw new Error('Could not load the connection library. Check your internet and reload.');
-      });
+          }));
+        } catch (e) { reject(e); }
+        return;
+      }
+
+      // Inject the SDK script tag and wait for it to load.
+      const s = document.createElement('script');
+      s.src = SDK_URL;
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+
+      s.onload = function () {
+        if (!window.supabase || !window.supabase.createClient) {
+          reject(new Error('Supabase SDK loaded but createClient is not available.'));
+          return;
+        }
+        try {
+          resolve(window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+              persistSession: true,
+              autoRefreshToken: true,
+              detectSessionInUrl: false
+            },
+            global: {
+              fetch: function (url, opts) {
+                const ctrl = new AbortController();
+                const timer = setTimeout(function () { ctrl.abort(); }, 12000);
+                const merged = Object.assign({}, opts || {}, { signal: ctrl.signal });
+                return fetch(url, merged).finally(function () { clearTimeout(timer); });
+              }
+            }
+          }));
+        } catch (e) { reject(e); }
+      };
+
+      s.onerror = function () {
+        reject(new Error('Could not load the Supabase SDK. Check your internet connection.'));
+      };
+
+      document.head.appendChild(s);
+
+      // Safety timeout: if the SDK does not load in 15 seconds, reject.
+      setTimeout(function () {
+        if (!window.supabase || !window.supabase.createClient) {
+          reject(new Error('Supabase SDK timed out. Please reload the page.'));
+        }
+      }, 15000);
+    });
+
     return sbPromise;
   }
 
   // ----------------------------------------------------------------
   // Response helpers
   // ----------------------------------------------------------------
-  function ok(data)   { return { ok: true,  data: data }; }
+  function ok(data)    { return { ok: true,  data: data }; }
   function fail(error) {
     const msg = (error && error.message) ? error.message
               : (typeof error === 'string') ? error
@@ -101,7 +147,6 @@
         return fail('That account is currently inactive.');
       }
 
-      // last_login update (best effort, silent on failure)
       try {
         await sb.from('users')
           .update({ last_login: new Date().toISOString() })
@@ -161,11 +206,11 @@
   async function tableSelect(table, opts) {
     const sb = await loadSdk();
     let q = sb.from(table).select(opts && opts.select ? opts.select : '*');
-    if (opts && opts.eq)      Object.keys(opts.eq).forEach(k => { q = q.eq(k, opts.eq[k]); });
-    if (opts && opts.neq)     Object.keys(opts.neq).forEach(k => { q = q.neq(k, opts.neq[k]); });
-    if (opts && opts.ilike)   Object.keys(opts.ilike).forEach(k => { q = q.ilike(k, opts.ilike[k]); });
-    if (opts && opts.order)   q = q.order(opts.order.column, { ascending: !!opts.order.ascending });
-    if (opts && opts.limit)   q = q.limit(opts.limit);
+    if (opts && opts.eq)    Object.keys(opts.eq).forEach(k => { q = q.eq(k, opts.eq[k]); });
+    if (opts && opts.neq)   Object.keys(opts.neq).forEach(k => { q = q.neq(k, opts.neq[k]); });
+    if (opts && opts.ilike) Object.keys(opts.ilike).forEach(k => { q = q.ilike(k, opts.ilike[k]); });
+    if (opts && opts.order) q = q.order(opts.order.column, { ascending: !!opts.order.ascending });
+    if (opts && opts.limit) q = q.limit(opts.limit);
     const { data, error } = await q;
     if (error) throw error;
     return data || [];
@@ -517,7 +562,16 @@
     } catch (err) { return fail(err); }
   };
 
-  window.TIS = TIS;
+  // ----------------------------------------------------------------
+  // Pre-load the SDK right away so it is ready when the user logs in.
+  // Errors here are non-fatal — they surface only when a call is made.
+  // ----------------------------------------------------------------
+  loadSdk().catch(function (e) {
+    console.warn('[TIS] Supabase SDK preload failed:', e.message);
+  });
+
+  window.TIS = window.TIS || {};
+  Object.assign(window.TIS, TIS);
   console.log('[TIS] Supabase client ready. Connection to:', SUPABASE_URL);
 
 })();
