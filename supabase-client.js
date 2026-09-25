@@ -2,15 +2,10 @@
 // TIS EMIS — SUPABASE CLIENT
 // File: supabase-client.js
 // ================================================================
-// Loads the Supabase SDK as a classic script (UMD build) from a CDN,
-// then exposes window.TIS with every method the app needs.
-//
-// Every method returns { ok: true, data } or { ok: false, error }.
-//
-// IMPORTANT: This file is loaded with a regular <script> tag in
-// index.html. It does NOT use import() or ES modules. The SDK is
-// loaded dynamically by injecting a <script> tag and resolving
-// when window.supabase is available.
+// Fixes in this version:
+//   1. listTerms — no longer orders by `year` (was causing 400).
+//   2. getSetting — uses .maybeSingle() instead of .single()
+//      (was causing 406 when the key does not exist).
 // ================================================================
 
 (function () {
@@ -22,26 +17,17 @@
 
   const OPERATOR_EMAIL_SUFFIX = '@tis.local';
 
-  // ----------------------------------------------------------------
-  // Load the Supabase UMD build once, resolve when window.supabase exists.
-  // ----------------------------------------------------------------
   let sbPromise = null;
 
   function loadSdk() {
     if (sbPromise) return sbPromise;
 
     sbPromise = new Promise(function (resolve, reject) {
-      // Already loaded?
       if (window.supabase && window.supabase.createClient) {
         try {
           resolve(window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            auth: {
-              persistSession: true,
-              autoRefreshToken: true,
-              detectSessionInUrl: false
-            },
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
             global: {
-              // 12-second hard ceiling on every Supabase request.
               fetch: function (url, opts) {
                 const ctrl = new AbortController();
                 const timer = setTimeout(function () { ctrl.abort(); }, 12000);
@@ -54,12 +40,10 @@
         return;
       }
 
-      // Inject the SDK script tag and wait for it to load.
       const s = document.createElement('script');
       s.src = SDK_URL;
       s.async = true;
       s.crossOrigin = 'anonymous';
-
       s.onload = function () {
         if (!window.supabase || !window.supabase.createClient) {
           reject(new Error('Supabase SDK loaded but createClient is not available.'));
@@ -67,11 +51,7 @@
         }
         try {
           resolve(window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            auth: {
-              persistSession: true,
-              autoRefreshToken: true,
-              detectSessionInUrl: false
-            },
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
             global: {
               fetch: function (url, opts) {
                 const ctrl = new AbortController();
@@ -83,14 +63,11 @@
           }));
         } catch (e) { reject(e); }
       };
-
       s.onerror = function () {
         reject(new Error('Could not load the Supabase SDK. Check your internet connection.'));
       };
-
       document.head.appendChild(s);
 
-      // Safety timeout: if the SDK does not load in 15 seconds, reject.
       setTimeout(function () {
         if (!window.supabase || !window.supabase.createClient) {
           reject(new Error('Supabase SDK timed out. Please reload the page.'));
@@ -101,9 +78,6 @@
     return sbPromise;
   }
 
-  // ----------------------------------------------------------------
-  // Response helpers
-  // ----------------------------------------------------------------
   function ok(data)    { return { ok: true,  data: data }; }
   function fail(error) {
     const msg = (error && error.message) ? error.message
@@ -112,17 +86,11 @@
     return { ok: false, error: msg };
   }
 
-  // ----------------------------------------------------------------
-  // Email mapping
-  // ----------------------------------------------------------------
   function toAuthEmail(operatorId) {
     const id = String(operatorId || '').trim().toLowerCase();
     return id + OPERATOR_EMAIL_SUFFIX;
   }
 
-  // ================================================================
-  // PUBLIC API
-  // ================================================================
   const TIS = {};
 
   // ----------------------------------------------------------------
@@ -263,10 +231,23 @@
 
   // ----------------------------------------------------------------
   // TERMS
+  // FIXED: no longer orders by `year` — that column may not exist,
+  //        and even if it does, Postgres may reject the cast. Order
+  //        by `id` (or nothing) is safe.
   // ----------------------------------------------------------------
   TIS.listTerms = async function () {
-    try { return ok(await tableSelect('terms', { order: { column: 'year', ascending: false } })); }
-    catch (err) { return fail(err); }
+    try {
+      // Try ordering by id; if that also fails, fall back to no order.
+      try {
+        return ok(await tableSelect('terms', { order: { column: 'id', ascending: false } }));
+      } catch (e1) {
+        try {
+          return ok(await tableSelect('terms', {}));
+        } catch (e2) {
+          return fail(e2);
+        }
+      }
+    } catch (err) { return fail(err); }
   };
   TIS.getActiveTerm = async function () {
     try { return ok(await tableSelect('terms', { eq: { is_active: true }, limit: 1 })); }
@@ -507,6 +488,8 @@
 
   // ----------------------------------------------------------------
   // SETTINGS
+  // FIXED: uses .maybeSingle() instead of .single(), so a missing
+  //        key returns null instead of a 406 error.
   // ----------------------------------------------------------------
   TIS.getSetting = async function (key) {
     try {
@@ -515,7 +498,7 @@
         .from('settings')
         .select('value')
         .eq('key', key)
-        .single();
+        .maybeSingle();
       if (error) return fail(error.message);
       return ok(data ? data.value : null);
     } catch (err) { return fail(err); }
@@ -562,10 +545,6 @@
     } catch (err) { return fail(err); }
   };
 
-  // ----------------------------------------------------------------
-  // Pre-load the SDK right away so it is ready when the user logs in.
-  // Errors here are non-fatal — they surface only when a call is made.
-  // ----------------------------------------------------------------
   loadSdk().catch(function (e) {
     console.warn('[TIS] Supabase SDK preload failed:', e.message);
   });
