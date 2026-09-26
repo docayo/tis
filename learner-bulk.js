@@ -3,35 +3,30 @@
 // File: learner-bulk.js
 // ================================================================
 // SECTION MAP:
-//   [LB01] BACKEND BRIDGE (JSONP)
-//   [LB02] HELPERS
-//   [LB03] BULK DOWNLOAD TEMPLATE
-//   [LB04] BULK UPLOAD UPDATES
-//   [LB05] EDIT LEARNER MODAL (editable A/B/C)
-//   [LB06] VIEW LEARNER MODAL (read-only A/B/C)
-//   [LB07] PRINT LEARNER (printable A/B/C)
-//   [LB08] ADD NEW LEARNER
-//   [LB09] PHOTO PICKER
-//   [LB10] PUBLIC API EXPORT
+//   [LB-01] BACKEND BRIDGE (JSONP)
+//   [LB-02] HELPERS (toast, escape, modal host, term resolver)
+//   [LB-03] BULK DOWNLOAD TEMPLATE
+//   [LB-04] BULK UPLOAD UPDATES
+//   [LB-05] EDIT LEARNER MODAL (editable A/B/C)
+//   [LB-06] VIEW LEARNER MODAL (read-only A/B/C)
+//   [LB-07] PART PAYMENT BLOCK (smart sub-table)
+//   [LB-08] OTHER BILLS BLOCK (+ Add Bill, up to 7)
+//   [LB-09] UPDATE PAYMENT MODAL (per-learner)
+//   [LB-10] PRINT LEARNER (A4 banner + 80mm thermal)
+//   [LB-11] ADD NEW LEARNER
+//   [LB-12] PHOTO PICKER
+//   [LB-13] PUBLIC API EXPORT
 // ================================================================
 
 (function () {
   'use strict';
 
   // ================================================================
-  // [LB01] BACKEND BRIDGE — JSONP
+  // [LB-01] BACKEND BRIDGE — JSONP
   // ----------------------------------------------------------------
-  // Apps Script Web App does not send CORS headers, so fetch() is
-  // blocked. JSONP works: we inject a <script> tag whose src is the
-  // Apps Script URL with callback=NAME. The server responds with
-  //   NAME({...json...});
-  // and the browser executes it, calling window[NAME].
-  //
-  // Server side (doGet in Apps Script) must:
-  //   1. Read action, args, callback from e.parameter
-  //   2. Call the named function with parsed args
-  //   3. Wrap JSON in callback(...)
-  //   4. Return ContentService.createTextOutput with MimeType.JAVASCRIPT
+  // Apps Script Web App has no CORS headers, so fetch() is blocked.
+  // JSONP: inject <script src=...&callback=NAME> and the server
+  // replies with  NAME({...json...});
   // ================================================================
 
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwp8WB7ZCYOiolA70SQAPi7--1cmclVwRQEMBaur6CwymD_8sDo9uL7dNNh9LFUkIZd/exec';
@@ -82,7 +77,7 @@
   }
 
   // ================================================================
-  // [LB02] HELPERS
+  // [LB-02] HELPERS
   // ================================================================
   function showToast(msg, type) {
     if (typeof window.showToast === 'function') { window.showToast(msg, type); return; }
@@ -106,40 +101,63 @@
     return host;
   }
 
+  // Active term label — drives which fee columns are shown.
+  let ACTIVE_TERM = '1ST TERM 2026/2027';
+  async function resolveActiveTerm() {
+    const r = await callBackend('getActiveTerm');
+    if (r && r.success && r.data) {
+      if (typeof r.data === 'string') ACTIVE_TERM = r.data;
+      else if (r.data.label) ACTIVE_TERM = r.data.label;
+      else if (r.data.term_type && r.data.year) {
+        ACTIVE_TERM = r.data.term_type.toUpperCase() + ' TERM ' + r.data.year;
+      }
+    }
+    return ACTIVE_TERM;
+  }
+
+  function fmtNaira(v) {
+    if (v === '' || v === null || v === undefined) return '—';
+    const n = Number(String(v).replace(/[^\d.\-]/g, ''));
+    if (isNaN(n) || n === 0) return '₦0.00';
+    return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtDate(v) {
+    if (!v) return '—';
+    return String(v).trim();
+  }
+  function isBlank(v) {
+    return v === '' || v === null || v === undefined || String(v).trim() === '';
+  }
+
   // ================================================================
-  // [LB03] BULK DOWNLOAD TEMPLATE
+  // [LB-03] BULK DOWNLOAD TEMPLATE
   // ================================================================
   async function downloadLearnerTemplate() {
     showToast('Preparing template...');
-
     const all = await callBackend('LB_getAllLearnersFull');
     if (!all || !all.success) {
       showToast('Could not load learners: ' + ((all && all.message) || 'unknown'));
       return;
     }
-
     if (typeof XLSX === 'undefined') {
       showToast('Excel library not loaded. Refresh and try again.', 'error');
       return;
     }
-
     const headers = all.headers || [];
     const rows = [headers];
     (all.learners || []).forEach(function (l) {
       rows.push(headers.map(function (h) { return l[h] !== undefined ? l[h] : ''; }));
     });
-
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'LEARNERS');
-
     const today = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(wb, 'TIS_LEARNERS_' + today + '.xlsx');
     showToast('Template downloaded.', 'success');
   }
 
   // ================================================================
-  // [LB04] BULK UPLOAD UPDATES
+  // [LB-04] BULK UPLOAD UPDATES
   // ================================================================
   async function uploadLearnerUpdates(file) {
     if (!file) return;
@@ -188,81 +206,74 @@
   }
 
   // ================================================================
-  // [LB05] EDIT LEARNER — EDITABLE A/B/C MODAL
+  // [LB-05] EDIT LEARNER MODAL — EDITABLE A / B / C
   // ================================================================
   async function openLearnerEditModal(pin) {
     showToast('Loading learner...');
+    await resolveActiveTerm();
 
-    const [data, fieldMap, priority] = await Promise.all([
+    const [data, fieldMap, priority, otherBills] = await Promise.all([
       callBackend('LB_getLearnerFull', pin),
       callBackend('LB_getLearnerFieldMap'),
-      callBackend('LB_getContactPriority', pin)
+      callBackend('LB_getContactPriority', pin),
+      callBackend('LB_getOtherBills', pin, ACTIVE_TERM)
     ]);
 
     if (!data || !data.success) {
       showToast('Could not load learner: ' + ((data && data.message) || 'unknown'), 'error');
       return;
     }
-
     window.__lbEditingPin = pin;
     window.__lbFieldMap = fieldMap;
     window.__lbLearner = data.learner;
     window.__lbPriority = priority;
+    window.__lbOtherBills = otherBills && otherBills.success ? (otherBills.bills || []) : [];
 
-    renderEditModal(data.learner, fieldMap, priority);
+    renderEditModal(data.learner, fieldMap, priority, window.__lbOtherBills);
   }
 
-  function renderEditModal(learner, fieldMap, priority) {
-    const sections = ['A', 'B', 'C'];
-    const titles = { A: 'A — Identity', B: 'B — Fees & Health', C: 'C — History & Origin' };
+  function renderEditModal(learner, fieldMap, priority, otherBills) {
     const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
 
     let html = '<div class="modal-overlay" id="lbEditOverlay">';
-    html += '<div class="modal-box" style="max-width:900px;max-height:90vh;overflow-y:auto;">';
+    html += '<div class="modal-box" style="max-width:1000px;max-height:92vh;overflow-y:auto;">';
     html += '<div class="modal-header"><h2>Edit — ' +
-            escapeHtml(learner['LEARNERS NAME'] || learner['name'] || '') + '</h2>' +
+            escapeHtml(learner['LEARNERS NAME'] || '') + '</h2>' +
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
-    sections.forEach(function (sec) {
-      const fields = usable[sec] || [];
-      if (!fields.length) return;
+    // ---- Header strip (photo, name, PIN, class) ----
+    html += buildHeaderStrip(learner);
 
-      html += '<div class="expandable open">';
-      html += '<div class="expandable-header">';
-      html += '<span>' + escapeHtml(titles[sec]) + '</span>';
-      html += '<button type="button" class="btn btn-warning" style="margin-left:auto;font-size:11px;padding:3px 8px;" ' +
-              'onclick="event.stopPropagation();LB.addHeaderToSection(\'' + sec + '\')">+ Add Header</button>';
-      html += '</div><div class="expandable-body">';
-
-      fields.forEach(function (f) {
-        const val = learner[f.header] !== undefined ? learner[f.header] : '';
-        const inputId = 'lb_field_' + f.col;
-        html += '<div class="form-group" style="margin-bottom:10px;">';
-        html += '<label style="font-weight:600;font-size:12px;">' + escapeHtml(f.header) + '</label>';
-        if (/^PHOTO/i.test(f.header)) {
-          html += '<div style="display:flex;gap:10px;align-items:center;">';
-          html += '<input type="text" id="' + inputId + '" value="' + escapeAttr(val) + '" style="flex:1;">';
-          html += '<button type="button" class="btn btn-gold" onclick="LB.pickPhoto(\'' + inputId + '\')">Upload</button>';
-          html += '</div>';
-        } else {
-          html += '<input type="text" id="' + inputId + '" value="' + escapeAttr(val) +
-                  '" data-field="' + escapeAttr(f.header) + '" data-col="' + f.col + '" style="width:100%;">';
-        }
-        html += '</div>';
-      });
-
-      html += '</div></div>';
+    // ---- Section A: simple single-value fields, editable ----
+    html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
+    const identityFields = (usable.A || []).filter(function (f) {
+      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header);
     });
+    identityFields.forEach(function (f) {
+      html += buildEditableField(f, learner[f.header]);
+    });
+    html += '</div></div>';
 
+    // ---- Section B: intelligent fee block ----
+    html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
+    html += buildFeeBlock(learner, otherBills, true);
+    html += '</div></div>';
+
+    // ---- Section C: history & origin, editable ----
+    html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
+    (usable.C || []).forEach(function (f) {
+      html += buildEditableField(f, learner[f.header]);
+    });
+    html += '</div></div>';
+
+    // ---- Contact priority ----
     html += '<div class="expandable open"><div class="expandable-header">Contact Priority</div><div class="expandable-body">';
     ['first', 'second', 'third'].forEach(function (rank, i) {
-      const id = 'lb_prio_' + rank;
       const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
       html += '<div class="form-group" style="margin-bottom:10px;">';
-      html += '<label style="font-weight:600;font-size:12px;">' +
-              (i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact</label>';
-      html += '<select id="' + id + '" style="width:100%;">';
-      ['father', 'mother', 'guardian'].forEach(function (opt) {
+      html += '<label style="font-weight:600;font-size:12px;">' + (i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact</label>';
+      html += '<select id="lb_prio_' + rank + '" style="width:100%;">';
+      ['father','mother','guardian'].forEach(function (opt) {
         html += '<option value="' + opt + '"' + (opt === val ? ' selected' : '') + '>' + opt.toUpperCase() + '</option>';
       });
       html += '</select></div>';
@@ -275,132 +286,123 @@
     html += '</div></div></div>';
 
     getModalHost().innerHTML = html;
+    attachFeeBlockHandlers(true);
   }
 
-  async function saveLearnerEdit() {
-    const pin = window.__lbEditingPin;
-    if (!pin) return;
+  // ---- Header strip (photo, name, PIN, class) ----
+  function buildHeaderStrip(learner) {
+    const name = learner['LEARNERS NAME'] || '';
+    const pin  = learner['PIN'] || '';
+    const cls  = learner['3RD TERM 2026 CLASS'] || learner['CLASS'] || '';
+    const photo = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
 
-    const inputs = document.querySelectorAll('#lbModalHost [data-field]');
-    const patch = {};
-    inputs.forEach(function (inp) { patch[inp.dataset.field] = inp.value; });
-
-    const prioFirst  = (document.getElementById('lb_prio_first')  || {}).value || 'father';
-    const prioSecond = (document.getElementById('lb_prio_second') || {}).value || 'mother';
-    const prioThird  = (document.getElementById('lb_prio_third')  || {}).value || 'guardian';
-
-    showToast('Saving...');
-    const updateRes = await callBackend('LB_updateLearner', pin, patch);
-    await callBackend('LB_setContactPriority', pin, prioFirst, prioSecond, prioThird);
-
-    if (updateRes && updateRes.success) {
-      showToast('Learner updated.', 'success');
-      closeEditModal();
-      if (typeof window.loadLearners === 'function') window.loadLearners();
+    let html = '<div style="display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
+    if (photo) {
+      html += '<img src="' + escapeAttr(photo) + '" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid #0d4d26;" onerror="this.outerHTML=\'<div style=&quot;width:80px;height:80px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;&quot;>' + escapeHtml((name || '?').charAt(0)) + '</div>\'">';
     } else {
-      showToast('Save failed: ' + ((updateRes && updateRes.message) || 'unknown'), 'error');
+      html += '<div style="width:80px;height:80px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;">' +
+              escapeHtml((name || '?').charAt(0)) + '</div>';
     }
+    html += '<div>';
+    html += '<div style="font-size:20px;font-weight:800;color:#0d4d26;">' + escapeHtml(name) + '</div>';
+    html += '<div style="font-size:13px;color:#555;margin-top:4px;">PIN: <b>' + escapeHtml(pin) + '</b></div>';
+    html += '<div style="font-size:13px;color:#555;">Class: <b>' + escapeHtml(cls) + '</b></div>';
+    html += '<div style="font-size:12px;color:#777;">Active Term: <b>' + escapeHtml(ACTIVE_TERM) + '</b></div>';
+    html += '</div></div>';
+    return html;
   }
 
-  async function addHeaderToSection(section) {
-    const name = prompt('New header name for Section ' + section + ':');
-    if (!name) return;
-    const cleaned = String(name).trim();
-    if (!cleaned) return;
-    if (!confirm('Add column "' + cleaned + '" to the LEARNERS sheet?')) return;
-
-    showToast('Adding header...');
-    const res = await callBackend('LB_addHeader', cleaned);
-    if (res && res.success) {
-      showToast('Header added: ' + cleaned, 'success');
-      if (window.__lbEditingPin) openLearnerEditModal(window.__lbEditingPin);
+  // ---- Editable field ----
+  function buildEditableField(f, val) {
+    const v = val === undefined || val === null ? '' : val;
+    const inputId = 'lb_field_' + f.col;
+    let html = '<div class="form-group" style="margin-bottom:10px;">';
+    html += '<label style="font-weight:600;font-size:12px;">' + escapeHtml(f.header) + '</label>';
+    if (/^PHOTO/i.test(f.header)) {
+      html += '<div style="display:flex;gap:10px;align-items:center;">';
+      html += '<input type="text" id="' + inputId + '" value="' + escapeAttr(v) + '" style="flex:1;">';
+      html += '<button type="button" class="btn btn-gold" onclick="LB.pickPhoto(\'' + inputId + '\')">Upload</button>';
+      html += '</div>';
     } else {
-      showToast('Failed: ' + ((res && res.message) || 'unknown'), 'error');
+      html += '<input type="text" id="' + inputId + '" value="' + escapeAttr(v) +
+              '" data-field="' + escapeAttr(f.header) + '" data-col="' + f.col + '" style="width:100%;">';
     }
+    html += '</div>';
+    return html;
   }
 
   // ================================================================
-  // [LB06] VIEW LEARNER — READ-ONLY A/B/C MODAL
+  // [LB-06] VIEW LEARNER MODAL — READ-ONLY A / B / C
   // ================================================================
   async function openLearnerViewModal(pin) {
     showToast('Loading learner...');
+    await resolveActiveTerm();
 
-    const [data, fieldMap, priority] = await Promise.all([
+    const [data, fieldMap, priority, otherBills] = await Promise.all([
       callBackend('LB_getLearnerFull', pin),
       callBackend('LB_getLearnerFieldMap'),
-      callBackend('LB_getContactPriority', pin)
+      callBackend('LB_getContactPriority', pin),
+      callBackend('LB_getOtherBills', pin, ACTIVE_TERM)
     ]);
 
     if (!data || !data.success) {
       showToast('Could not load learner: ' + ((data && data.message) || 'unknown'), 'error');
       return;
     }
-    renderViewModal(data.learner, fieldMap, priority);
+    window.__lbViewingPin = pin;
+    window.__lbLearner = data.learner;
+    window.__lbPriority = priority;
+    window.__lbOtherBills = otherBills && otherBills.success ? (otherBills.bills || []) : [];
+
+    renderViewModal(data.learner, fieldMap, priority, window.__lbOtherBills);
   }
 
-  function renderViewModal(learner, fieldMap, priority) {
-    const sections = ['A', 'B', 'C'];
-    const titles = { A: 'A — Identity', B: 'B — Fees & Health', C: 'C — History & Origin' };
+  function renderViewModal(learner, fieldMap, priority, otherBills) {
     const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
-
-    const learnerName = learner['LEARNERS NAME'] || learner['name'] || '';
-    const photoUrl = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
     const pin = learner['PIN'] || '';
-    const cls = learner['3RD TERM 2026 CLASS'] || '';
 
     let html = '<div class="modal-overlay" id="lbViewOverlay">';
-    html += '<div class="modal-box" style="max-width:900px;max-height:90vh;overflow-y:auto;">';
-    html += '<div class="modal-header">';
-    html += '<h2>' + escapeHtml(learnerName) + '</h2>';
-    html += '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button>';
-    html += '</div>';
+    html += '<div class="modal-box" style="max-width:1000px;max-height:92vh;overflow-y:auto;">';
+    html += '<div class="modal-header"><h2>' + escapeHtml(learner['LEARNERS NAME'] || '') + '</h2>' +
+            '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
-    // Header card with photo + key ID
-    html += '<div style="display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
-    if (photoUrl) {
-      html += '<img src="' + escapeAttr(photoUrl) + '" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid #0d4d26;" onerror="this.style.display=\'none\'">';
-    } else {
-      html += '<div style="width:80px;height:80px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;">' +
-              escapeHtml((learnerName || '?').charAt(0)) + '</div>';
-    }
-    html += '<div>';
-    html += '<div style="font-size:20px;font-weight:800;color:#0d4d26;">' + escapeHtml(learnerName) + '</div>';
-    html += '<div style="font-size:13px;color:#555;margin-top:4px;">PIN: <b>' + escapeHtml(pin) + '</b></div>';
-    html += '<div style="font-size:13px;color:#555;">Class: <b>' + escapeHtml(cls) + '</b></div>';
+    html += buildHeaderStrip(learner);
+
+    // Section A
+    html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
+    const identityFields = (usable.A || []).filter(function (f) {
+      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header);
+    });
+    identityFields.forEach(function (f) {
+      html += buildViewField(f.header, learner[f.header]);
+    });
     html += '</div></div>';
 
-    // Sections A, B, C — read-only
-    sections.forEach(function (sec) {
-      const fields = usable[sec] || [];
-      if (!fields.length) return;
+    // Section B
+    html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
+    html += buildFeeBlock(learner, otherBills, false);
+    html += '</div></div>';
 
-      html += '<div class="expandable open"><div class="expandable-header">' + escapeHtml(titles[sec]) + '</div><div class="expandable-body">';
-      fields.forEach(function (f) {
-        const val = learner[f.header] !== undefined ? learner[f.header] : '';
-        const shown = (val === '' || val === null || val === undefined) ? '—' : val;
-        html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;">';
-        html += '<span style="font-size:12px;color:#666;font-weight:600;">' + escapeHtml(f.header) + '</span>';
-        html += '<span style="font-size:13px;color:#000;font-weight:500;text-align:right;max-width:60%;">' + escapeHtml(String(shown)) + '</span>';
-        html += '</div>';
-      });
-      html += '</div></div>';
+    // Section C
+    html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
+    (usable.C || []).forEach(function (f) {
+      html += buildViewField(f.header, learner[f.header]);
     });
+    html += '</div></div>';
 
-    // Contact priority — read-only
+    // Contact priority
     html += '<div class="expandable open"><div class="expandable-header">Contact Priority</div><div class="expandable-body">';
     ['first', 'second', 'third'].forEach(function (rank, i) {
       const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
-      html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;">';
-      html += '<span style="font-size:12px;color:#666;font-weight:600;">' +
-              (i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact</span>';
-      html += '<span style="font-size:13px;color:#000;font-weight:600;">' + escapeHtml(String(val).toUpperCase()) + '</span>';
-      html += '</div>';
+      html += buildViewField((i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact',
+                             String(val).toUpperCase());
     });
     html += '</div></div>';
 
     // Actions
     html += '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
     html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Close</button>';
+    html += '<button class="btn btn-warning" onclick="LB.openUpdatePaymentModal(\'' + escapeAttr(pin) + '\')">Update Payment</button>';
     html += '<button class="btn btn-gold" onclick="LB.printLearner(\'' + escapeAttr(pin) + '\')">Print</button>';
     html += '<button class="btn btn-primary" onclick="LB.openLearnerEditModal(\'' + escapeAttr(pin) + '\')">Edit</button>';
     html += '</div></div></div>';
@@ -408,72 +410,434 @@
     getModalHost().innerHTML = html;
   }
 
+  function buildViewField(label, val) {
+    const shown = (val === '' || val === null || val === undefined) ? '—' : val;
+    let html = '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;">';
+    html += '<span style="font-size:12px;color:#666;font-weight:600;">' + escapeHtml(label) + '</span>';
+    html += '<span style="font-size:13px;color:#000;font-weight:500;text-align:right;max-width:60%;">' + escapeHtml(String(shown)) + '</span>';
+    html += '</div>';
+    return html;
+  }
+
   // ================================================================
-  // [LB07] PRINT LEARNER
+  // [LB-07] PART PAYMENT BLOCK — SMART SUB-TABLE
+  // ----------------------------------------------------------------
+  // Reads the 5 part-payment columns per term:
+  //   "1ST TERM 2026/2027 1st PART PAYMENT DATE"
+  //   "1ST TERM 2026/2027 1st PART PAYMENT AMOUNT"
+  //   ... through 5th.
+  // Only renders rows where DATE or AMOUNT is not blank.
+  // In edit mode, "+ Add Payment" adds the next unused installment.
+  // ================================================================
+  function collectPartPayments(learner) {
+    const rows = [];
+    const suffixes = ['1st', '2nd', '3rd', '4th', '5th'];
+    suffixes.forEach(function (suffix, i) {
+      const dKey = ACTIVE_TERM + ' ' + suffix + ' PART PAYMENT DATE';
+      const aKey = ACTIVE_TERM + ' ' + suffix + ' PART PAYMENT AMOUNT';
+      const d = learner[dKey];
+      const a = learner[aKey];
+      if (!isBlank(d) || !isBlank(a)) {
+        rows.push({
+          index: i + 1,
+          suffix: suffix,
+          date: d || '',
+          amount: a || '',
+          dateKey: dKey,
+          amountKey: aKey
+        });
+      }
+    });
+    return rows;
+  }
+
+  function buildFeeBlock(learner, otherBills, editable) {
+    const balanceBFKey  = ACTIVE_TERM + ' Balance B F';
+    const billKey       = ACTIVE_TERM + ' BILL';
+    const otherBillKey  = ACTIVE_TERM + ' OTHER BILL';
+    const totalPaidKey  = ACTIVE_TERM + ' TOTAL PART PAYMENT';
+    const balanceCFKey  = ACTIVE_TERM + ' BALANCE C F';
+    const clearanceKey  = ACTIVE_TERM + ' CLEARANCE';
+    const clearedKey    = ACTIVE_TERM + ' Cleared';
+
+    const rows = collectPartPayments(learner);
+    const totalPartPayment = rows.reduce(function (sum, r) {
+      const n = Number(String(r.amount || '').replace(/[^\d.\-]/g, ''));
+      return sum + (isNaN(n) ? 0 : n);
+    }, 0);
+
+    const bill = Number(String(learner[billKey] || '').replace(/[^\d.\-]/g, '')) || 0;
+    const otherBillTotal = (otherBills || []).reduce(function (sum, b) {
+      const n = Number(String(b.Amount || b.amount || '').replace(/[^\d.\-]/g, ''));
+      return sum + (isNaN(n) ? 0 : n);
+    }, 0);
+    const netBill = bill + otherBillTotal;
+    const balanceCF = netBill - totalPartPayment;
+
+    let html = '';
+
+    // Balance B/F, Bill, Other Bill
+    html += buildViewField('Previous Term Balance B/F', fmtNaira(learner[balanceBFKey]));
+    html += buildViewField('Current Term Tuition (Bill)', fmtNaira(learner[billKey]));
+
+    // Other Bills sub-list
+    html += '<div style="margin-top:10px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Other Bills</div>';
+    if (otherBills && otherBills.length) {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="background:#f0f0f0;">' +
+              '<th style="text-align:left;padding:5px;">#</th>' +
+              '<th style="text-align:left;padding:5px;">Description</th>' +
+              '<th style="text-align:right;padding:5px;">Amount</th>' +
+              (editable ? '<th style="text-align:right;padding:5px;">Action</th>' : '') +
+              '</tr></thead><tbody>';
+      otherBills.forEach(function (b, i) {
+        html += '<tr>' +
+                '<td style="padding:5px;">' + (i + 1) + '</td>' +
+                '<td style="padding:5px;">' + escapeHtml(b.Description || b.description || '') + '</td>' +
+                '<td style="padding:5px;text-align:right;">' + fmtNaira(b.Amount || b.amount) + '</td>' +
+                (editable ? '<td style="padding:5px;text-align:right;"><button type="button" class="btn btn-sm btn-danger" onclick="LB.removeOtherBill(\'' + escapeAttr(b.id || '') + '\')">Remove</button></td>' : '') +
+                '</tr>';
+      });
+      html += '</tbody></table>';
+    } else {
+      html += '<div style="padding:6px 0;font-size:12px;color:#888;">No other bills yet.</div>';
+    }
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #ccc;font-weight:700;">' +
+            '<span style="font-size:12px;">Other Bills Total</span>' +
+            '<span style="font-size:13px;">' + fmtNaira(otherBillTotal) + '</span>' +
+            '</div>';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #ccc;font-weight:700;">' +
+            '<span style="font-size:12px;">Net Bills (Tuition + Other Bills)</span>' +
+            '<span style="font-size:13px;">' + fmtNaira(netBill) + '</span>' +
+            '</div>';
+    if (editable) {
+      html += '<div style="margin:6px 0;"><button type="button" class="btn btn-sm btn-primary" onclick="LB.addOtherBillPrompt()">+ Add Bill</button></div>';
+    }
+
+    // Part payments sub-table
+    html += '<div style="margin-top:16px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Part Payments</div>';
+    if (rows.length === 0) {
+      html += '<div style="padding:6px 0;font-size:12px;color:#888;">No payments recorded for this term yet.</div>';
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="background:#f0f0f0;">' +
+              '<th style="text-align:left;padding:5px;">#</th>' +
+              '<th style="text-align:left;padding:5px;">Date</th>' +
+              '<th style="text-align:right;padding:5px;">Amount</th>' +
+              '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        html += '<tr>' +
+                '<td style="padding:5px;">' + r.index + '</td>' +
+                '<td style="padding:5px;">' + escapeHtml(fmtDate(r.date)) + '</td>' +
+                '<td style="padding:5px;text-align:right;">' + fmtNaira(r.amount) + '</td>' +
+                '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #ccc;font-weight:700;">' +
+            '<span style="font-size:12px;">Total Part Payment</span>' +
+            '<span style="font-size:13px;">' + fmtNaira(totalPartPayment) + '</span>' +
+            '</div>';
+
+    // Balance C/F, Clearance
+    html += buildViewField('Balance C/F', fmtNaira(balanceCF));
+    html += buildViewField('Clearance Date', fmtDate(learner[clearanceKey]));
+    html += buildViewField('Cleared', learner[clearedKey] || 'No');
+
+    return html;
+  }
+
+  // Attach handlers for editable mode (Other Bills remove buttons + payment buttons)
+  function attachFeeBlockHandlers(editable) {
+    if (!editable) return;
+    // Remove handlers are inline (onclick), so nothing to attach.
+  }
+
+  // ================================================================
+  // [LB-08] OTHER BILLS BLOCK — + ADD BILL (up to 7 per term/learner)
+  // ================================================================
+  function addOtherBillPrompt() {
+    const pin = window.__lbEditingPin || window.__lbViewingPin;
+    if (!pin) return;
+    const desc = prompt('Description of the other bill (e.g. Sports Fee):');
+    if (!desc) return;
+    const amtStr = prompt('Amount in Naira (digits only):');
+    if (!amtStr) return;
+    const amt = Number(String(amtStr).replace(/[^\d.\-]/g, ''));
+    if (isNaN(amt) || amt <= 0) { showToast('Invalid amount.', 'error'); return; }
+
+    if ((window.__lbOtherBills || []).length >= 7) {
+      showToast('Maximum of 7 other bills per term.', 'warning');
+      return;
+    }
+
+    showToast('Adding bill...');
+    callBackend('LB_addOtherBill', pin, ACTIVE_TERM, desc, amt).then(function (res) {
+      if (res && res.success) {
+        showToast('Bill added.', 'success');
+        openLearnerEditModal(pin);
+      } else {
+        showToast('Failed: ' + ((res && res.message) || 'unknown'), 'error');
+      }
+    });
+  }
+
+  function removeOtherBill(billId) {
+    if (!billId) return;
+    if (!confirm('Remove this bill?')) return;
+    const pin = window.__lbEditingPin || window.__lbViewingPin;
+    showToast('Removing...');
+    callBackend('LB_removeOtherBill', billId).then(function (res) {
+      if (res && res.success) {
+        showToast('Bill removed.', 'success');
+        openLearnerEditModal(pin);
+      } else {
+        showToast('Failed: ' + ((res && res.message) || 'unknown'), 'error');
+      }
+    });
+  }
+
+  // ================================================================
+  // [LB-09] UPDATE PAYMENT MODAL — per-learner
+  // ----------------------------------------------------------------
+  // Adds the NEXT unused installment (1st..5th) for the active term.
+  // If all 5 are filled, refuses politely.
+  // ================================================================
+  function openUpdatePaymentModal(pin) {
+    const learner = window.__lbLearner || {};
+    const rows = collectPartPayments(learner);
+    if (rows.length >= 5) {
+      showToast('All 5 part payments for this term are already recorded.', 'warning');
+      return;
+    }
+    const nextIdx = rows.length + 1;
+    const suffixes = ['1st', '2nd', '3rd', '4th', '5th'];
+    const nextSuffix = suffixes[nextIdx - 1];
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)LB.closeEditModal()">';
+    html += '<div class="modal-box" style="max-width:480px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Add ' + nextSuffix + ' Part Payment</h2>' +
+            '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
+    html += '<div style="font-size:12px;color:#666;margin-bottom:12px;">' + escapeHtml(ACTIVE_TERM) + ' — ' +
+            escapeHtml(learner['LEARNERS NAME'] || '') + ' (' + escapeHtml(pin) + ')</div>';
+    html += '<div class="form-group" style="margin-bottom:10px;"><label style="font-weight:600;font-size:12px;">Payment Date</label>';
+    html += '<input type="date" id="lb_pp_date" value="' + new Date().toISOString().slice(0, 10) + '" style="width:100%;"></div>';
+    html += '<div class="form-group" style="margin-bottom:10px;"><label style="font-weight:600;font-size:12px;">Amount (₦)</label>';
+    html += '<input type="number" id="lb_pp_amount" placeholder="e.g. 20000" style="width:100%;"></div>';
+    html += '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
+    html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Cancel</button>';
+    html += '<button class="btn btn-success" onclick="LB.savePayment(\'' + escapeAttr(pin) + '\', ' + nextIdx + ')">Save Payment</button>';
+    html += '</div></div></div>';
+
+    getModalHost().innerHTML = html;
+  }
+
+  function savePayment(pin, installmentIndex) {
+    const dateEl = document.getElementById('lb_pp_date');
+    const amtEl  = document.getElementById('lb_pp_amount');
+    if (!dateEl || !amtEl) return;
+    const date = dateEl.value;
+    const amount = Number(amtEl.value);
+    if (!date) { showToast('Pick a date.', 'warning'); return; }
+    if (!amount || amount <= 0) { showToast('Enter a valid amount.', 'warning'); return; }
+
+    showToast('Saving payment...');
+    callBackend('LB_addPartPayment', pin, ACTIVE_TERM, installmentIndex, date, amount).then(function (res) {
+      if (res && res.success) {
+        showToast('Payment recorded.', 'success');
+        openLearnerEditModal(pin);
+      } else {
+        showToast('Failed: ' + ((res && res.message) || 'unknown'), 'error');
+      }
+    });
+  }
+
+  // ================================================================
+  // [LB-10] PRINT LEARNER — A4 BANNER + 80mm THERMAL
+  // ----------------------------------------------------------------
+  // Presents a modal with two print choices:
+  //   - A4 (school banner header, A/B/C tables)
+  //   - 80mm thermal receipt
   // ================================================================
   async function printLearner(pin) {
     showToast('Preparing print...');
+    await resolveActiveTerm();
 
-    const [data, fieldMap, priority] = await Promise.all([
+    const [data, fieldMap, priority, otherBills] = await Promise.all([
       callBackend('LB_getLearnerFull', pin),
       callBackend('LB_getLearnerFieldMap'),
-      callBackend('LB_getContactPriority', pin)
+      callBackend('LB_getContactPriority', pin),
+      callBackend('LB_getOtherBills', pin, ACTIVE_TERM)
     ]);
 
     if (!data || !data.success) {
       showToast('Could not load learner for printing.', 'error');
       return;
     }
+    window.__lbPrintPayload = {
+      learner: data.learner,
+      fieldMap: fieldMap,
+      priority: priority,
+      otherBills: otherBills && otherBills.success ? (otherBills.bills || []) : [],
+      term: ACTIVE_TERM
+    };
 
-    const learner = data.learner;
-    const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
-    const titles = { A: 'A — Identity', B: 'B — Fees & Health', C: 'C — History & Origin' };
-    const learnerName = learner['LEARNERS NAME'] || learner['name'] || '';
-    const photoUrl = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
+    // Offer print options
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)LB.closeEditModal()">';
+    html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Print Learner</h2>' +
+            '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
+    html += '<p style="font-size:13px;margin-bottom:12px;">Choose a paper format:</p>';
+    html += '<div style="display:flex;gap:8px;justify-content:center;">';
+    html += '<button class="btn btn-primary" onclick="LB.doPrintA4()">A4 (Banner)</button>';
+    html += '<button class="btn btn-warning" onclick="LB.doPrint80mm()">80mm Thermal</button>';
+    html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Cancel</button>';
+    html += '</div></div></div>';
+    getModalHost().innerHTML = html;
+  }
 
+  function doPrintA4() {
+    const p = window.__lbPrintPayload;
+    if (!p) return;
+    const html = buildPrintHTML(p, 'A4');
+    openPrintWindow(html);
+  }
+  function doPrint80mm() {
+    const p = window.__lbPrintPayload;
+    if (!p) return;
+    const html = buildPrintHTML(p, '80mm');
+    openPrintWindow(html);
+  }
+
+  function openPrintWindow(html) {
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
+  function buildPrintHTML(payload, format) {
+    const learner = payload.learner;
+    const usable  = (payload.fieldMap && payload.fieldMap.success) ? payload.fieldMap : { A: [], B: [], C: [] };
+    const priority = payload.priority || {};
+    const otherBills = payload.otherBills || [];
+    const term = payload.term;
+    const name  = learner['LEARNERS NAME'] || '';
+    const pin   = learner['PIN'] || '';
+    const cls   = learner['3RD TERM 2026 CLASS'] || '';
+    const photo = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
+
+    const isReceipt = format === '80mm';
+    const pageWidth = isReceipt ? '80mm' : '210mm';
 
     let html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
-    html += '<title>Learner — ' + escapeHtml(learnerName) + '</title>';
+    html += '<title>' + escapeHtml(name || pin) + '</title>';
     html += '<style>';
-    html += 'body{font-family:Arial,sans-serif;padding:20px;color:#000;}';
-    html += '.header{display:flex;gap:16px;align-items:center;border-bottom:3px solid #0d4d26;padding-bottom:12px;margin-bottom:16px;}';
-    html += '.header img{width:100px;height:100px;object-fit:cover;border-radius:50%;border:3px solid #0d4d26;}';
-    html += '.avatar-fallback{width:100px;height:100px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:900;}';
-    html += '.title{font-size:22px;font-weight:900;color:#0d4d26;margin-bottom:4px;}';
-    html += '.subtitle{font-size:13px;color:#333;}';
-    html += 'h3{background:#0d4d26;color:#fff;padding:6px 10px;font-size:13px;text-transform:uppercase;margin:16px 0 8px;letter-spacing:1px;}';
-    html += 'table{width:100%;border-collapse:collapse;}';
-    html += 'td{padding:5px 8px;border-bottom:1px solid #ccc;font-size:12px;vertical-align:top;}';
-    html += 'td:first-child{font-weight:700;color:#333;width:35%;}';
-    html += '.footer{margin-top:24px;font-size:11px;color:#555;text-align:center;border-top:1px solid #ccc;padding-top:8px;}';
+    if (isReceipt) {
+      html += '@page { size: 80mm auto; margin: 3mm; }';
+      html += 'body{font-family:Arial,sans-serif;width:74mm;font-size:11px;color:#000;margin:0;padding:0;}';
+    } else {
+      html += '@page { size: A4; margin: 12mm; }';
+      html += 'body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:12px;}';
+    }
+
+    html += '.banner{display:flex;gap:12px;align-items:center;justify-content:space-between;' +
+            'border-bottom:3px solid #0d4d26;padding-bottom:10px;margin-bottom:14px;}';
+    html += '.banner .logo{width:' + (isReceipt ? '50px' : '80px') + ';height:' + (isReceipt ? '50px' : '80px') + ';object-fit:contain;}';
+    html += '.banner .center{text-align:center;flex:1;}';
+    html += '.banner .school{font-size:' + (isReceipt ? '12px' : '20px') + ';font-weight:900;color:#0d4d26;letter-spacing:1px;}';
+    html += '.banner .motto{font-size:' + (isReceipt ? '9px' : '12px') + ';font-style:italic;color:#555;margin-top:2px;}';
+    html += '.header-photo{width:' + (isReceipt ? '60px' : '90px') + ';height:' + (isReceipt ? '60px' : '90px') + ';object-fit:cover;border-radius:50%;border:3px solid #0d4d26;}';
+    html += '.avatar-fallback{width:' + (isReceipt ? '60px' : '90px') + ';height:' + (isReceipt ? '60px' : '90px') + ';border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:' + (isReceipt ? '26px' : '38px') + ';font-weight:900;}';
+    html += '.learner-name{font-size:' + (isReceipt ? '14px' : '22px') + ';font-weight:900;color:#0d4d26;}';
+    html += '.learner-meta{font-size:' + (isReceipt ? '10px' : '13px') + ';color:#333;margin-top:3px;}';
+    html += 'h3{background:#0d4d26;color:#fff;padding:' + (isReceipt ? '3px 6px' : '6px 10px') + ';font-size:' + (isReceipt ? '10px' : '12px') + ';text-transform:uppercase;margin:14px 0 6px;letter-spacing:1px;}';
+    html += 'table{width:100%;border-collapse:collapse;font-size:' + (isReceipt ? '10px' : '12px') + ';}';
+    html += 'td{padding:' + (isReceipt ? '2px 3px' : '4px 6px') + ';border-bottom:1px solid #ccc;vertical-align:top;}';
+    html += 'td:first-child{font-weight:700;color:#333;width:38%;}';
+    html += '.total-row td{font-weight:900;background:#f0f0f0;}';
+    html += '.footer{margin-top:16px;font-size:' + (isReceipt ? '9px' : '11px') + ';color:#555;text-align:center;border-top:1px solid #ccc;padding-top:6px;}';
     html += '@media print {.no-print{display:none;}}';
     html += '</style></head><body>';
 
-    html += '<div class="header">';
-    if (photoUrl) {
-      html += '<img src="' + escapeAttr(photoUrl) + '" onerror="this.style.display=\'none\'">';
+    // ---- Banner with both logos ----
+    html += '<div class="banner">';
+    html += '<img class="logo" src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School">';
+    html += '<div class="center">';
+    html += '<div class="school">THE IDEAL SCHOOLS</div>';
+    html += '<div class="motto">Scientia est potentia</div>';
+    html += '</div>';
+    html += '<img class="logo" src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry">';
+    html += '</div>';
+
+    // ---- Learner header ----
+    html += '<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">';
+    if (photo) {
+      html += '<img class="header-photo" src="' + escapeAttr(photo) + '" onerror="this.outerHTML=\'<div class=&quot;avatar-fallback&quot;>' + escapeHtml((name || '?').charAt(0)) + '</div>\'">';
     } else {
-      html += '<div class="avatar-fallback">' + escapeHtml((learnerName || '?').charAt(0)) + '</div>';
+      html += '<div class="avatar-fallback">' + escapeHtml((name || '?').charAt(0)) + '</div>';
     }
     html += '<div>';
-    html += '<div class="title">' + escapeHtml(learnerName) + '</div>';
-    html += '<div class="subtitle">PIN: <b>' + escapeHtml(learner['PIN'] || '') + '</b> &nbsp;|&nbsp; Class: <b>' + escapeHtml(learner['3RD TERM 2026 CLASS'] || '') + '</b></div>';
-    html += '<div class="subtitle" style="margin-top:4px;">THE IDEAL SCHOOLS — Learner Record</div>';
+    html += '<div class="learner-name">' + escapeHtml(name) + '</div>';
+    html += '<div class="learner-meta">PIN: <b>' + escapeHtml(pin) + '</b></div>';
+    html += '<div class="learner-meta">Class: <b>' + escapeHtml(cls) + '</b></div>';
+    html += '<div class="learner-meta">Active Term: <b>' + escapeHtml(term) + '</b></div>';
     html += '</div></div>';
 
-    ['A', 'B', 'C'].forEach(function (sec) {
-      const fields = usable[sec] || [];
-      if (!fields.length) return;
-      html += '<h3>' + escapeHtml(titles[sec]) + '</h3><table>';
-      fields.forEach(function (f) {
-        const val = learner[f.header] !== undefined ? learner[f.header] : '';
-        html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(val || '—')) + '</td></tr>';
-      });
-      html += '</table>';
+    // ---- Section A ----
+    html += '<h3>Section A — Identity</h3><table>';
+    (usable.A || []).filter(function (f) {
+      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header);
+    }).forEach(function (f) {
+      html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
     });
+    html += '</table>';
 
+    // ---- Section B — Fees ----
+    html += '<h3>Section B — Fees (' + escapeHtml(term) + ')</h3><table>';
+
+    const balanceBF = learner[term + ' Balance B F'];
+    const bill      = learner[term + ' BILL'];
+    html += '<tr><td>Previous Term Balance B/F</td><td>' + fmtNaira(balanceBF) + '</td></tr>';
+    html += '<tr><td>Current Term Tuition (Bill)</td><td>' + fmtNaira(bill) + '</td></tr>';
+
+    // Other bills
+    let otherTotal = 0;
+    otherBills.forEach(function (b) {
+      const amt = Number(String(b.Amount || b.amount || '').replace(/[^\d.\-]/g, '')) || 0;
+      otherTotal += amt;
+      html += '<tr><td>Other Bill — ' + escapeHtml(b.Description || b.description || '') + '</td><td>' + fmtNaira(amt) + '</td></tr>';
+    });
+    html += '<tr class="total-row"><td>Other Bills Total</td><td>' + fmtNaira(otherTotal) + '</td></tr>';
+
+    // Part payments sub-table
+    const partRows = collectPartPayments(learner);
+    if (partRows.length) {
+      html += '<tr><td colspan="2" style="font-weight:700;background:#f0f0f0;">Part Payments</td></tr>';
+      let paidTotal = 0;
+      partRows.forEach(function (r) {
+        const amt = Number(String(r.amount || '').replace(/[^\d.\-]/g, '')) || 0;
+        paidTotal += amt;
+        html += '<tr><td>' + escapeHtml(r.suffix) + ' — ' + escapeHtml(r.date || '—') + '</td><td>' + fmtNaira(amt) + '</td></tr>';
+      });
+      html += '<tr class="total-row"><td>Total Part Payment</td><td>' + fmtNaira(paidTotal) + '</td></tr>';
+    }
+
+    const balanceCF = learner[term + ' BALANCE C F'];
+    html += '<tr><td>Balance C/F</td><td>' + fmtNaira(balanceCF) + '</td></tr>';
+    html += '<tr><td>Clearance Date</td><td>' + escapeHtml(learner[term + ' CLEARANCE'] || '—') + '</td></tr>';
+    html += '<tr><td>Cleared</td><td>' + escapeHtml(learner[term + ' Cleared'] || 'No') + '</td></tr>';
+    html += '</table>';
+
+    // ---- Section C ----
+    html += '<h3>Section C — History &amp; Origin</h3><table>';
+    (usable.C || []).forEach(function (f) {
+      html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
+    });
+    html += '</table>';
+
+    // Contact priority
     html += '<h3>Contact Priority</h3><table>';
     ['first', 'second', 'third'].forEach(function (rank, i) {
       const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
@@ -486,16 +850,13 @@
     html += '<button onclick="window.print()" style="padding:10px 24px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;">Print Now</button>';
     html += '<button onclick="window.close()" style="margin-left:8px;padding:10px 24px;font-size:14px;background:#666;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;">Close</button>';
     html += '</div>';
-    html += '<script>setTimeout(function(){window.print();},600);<\/script>';
+    html += '<script>setTimeout(function(){window.print();},700);<\/script>';
     html += '</body></html>';
-
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    return html;
   }
 
   // ================================================================
-  // [LB08] ADD NEW LEARNER
+  // [LB-11] ADD NEW LEARNER
   // ================================================================
   async function openAddLearnerModal() {
     showToast('Preparing form...');
@@ -551,7 +912,7 @@
   }
 
   // ================================================================
-  // [LB09] PHOTO PICKER
+  // [LB-12] PHOTO PICKER
   // ================================================================
   function pickPhoto(targetInputId) {
     const pin = window.__lbEditingPin;
@@ -582,11 +943,52 @@
   }
 
   // ================================================================
-  // [LB10] PUBLIC API EXPORT
+  // [LB-13] PUBLIC API EXPORT
   // ================================================================
   function closeEditModal() {
     const host = document.getElementById('lbModalHost');
     if (host) host.innerHTML = '';
+  }
+
+  async function saveLearnerEdit() {
+    const pin = window.__lbEditingPin;
+    if (!pin) return;
+    const inputs = document.querySelectorAll('#lbModalHost [data-field]');
+    const patch = {};
+    inputs.forEach(function (inp) { patch[inp.dataset.field] = inp.value; });
+
+    const prioFirst  = (document.getElementById('lb_prio_first')  || {}).value || 'father';
+    const prioSecond = (document.getElementById('lb_prio_second') || {}).value || 'mother';
+    const prioThird  = (document.getElementById('lb_prio_third')  || {}).value || 'guardian';
+
+    showToast('Saving...');
+    const updateRes = await callBackend('LB_updateLearner', pin, patch);
+    await callBackend('LB_setContactPriority', pin, prioFirst, prioSecond, prioThird);
+
+    if (updateRes && updateRes.success) {
+      showToast('Learner updated.', 'success');
+      closeEditModal();
+      if (typeof window.loadLearners === 'function') window.loadLearners();
+    } else {
+      showToast('Save failed: ' + ((updateRes && updateRes.message) || 'unknown'), 'error');
+    }
+  }
+
+  async function addHeaderToSection(section) {
+    const name = prompt('New header name for Section ' + section + ':');
+    if (!name) return;
+    const cleaned = String(name).trim();
+    if (!cleaned) return;
+    if (!confirm('Add column "' + cleaned + '" to the LEARNERS sheet?')) return;
+
+    showToast('Adding header...');
+    const res = await callBackend('LB_addHeader', cleaned);
+    if (res && res.success) {
+      showToast('Header added: ' + cleaned, 'success');
+      if (window.__lbEditingPin) openLearnerEditModal(window.__lbEditingPin);
+    } else {
+      showToast('Failed: ' + ((res && res.message) || 'unknown'), 'error');
+    }
   }
 
   window.LB = {
@@ -598,12 +1000,18 @@
     saveLearnerEdit: saveLearnerEdit,
     saveNewLearner: saveNewLearner,
     addHeaderToSection: addHeaderToSection,
+    addOtherBillPrompt: addOtherBillPrompt,
+    removeOtherBill: removeOtherBill,
+    openUpdatePaymentModal: openUpdatePaymentModal,
+    savePayment: savePayment,
+    printLearner: printLearner,
+    doPrintA4: doPrintA4,
+    doPrint80mm: doPrint80mm,
     closeEditModal: closeEditModal,
     pickPhoto: pickPhoto,
-    printLearner: printLearner,
     callBackend: callBackend
   };
 
-  console.log('[LB] Learner Bulk module loaded — JSONP bridge ready.');
+  console.log('[LB] Learner Bulk module loaded — JSONP bridge, A4+80mm print, smart fees.');
 
 })();
