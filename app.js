@@ -372,7 +372,6 @@
     renderLearners(State.cachedLearners);
     renderLearnerStats(State.cachedLearners);
   }
-
   function renderLearners(rows) {
     if (!rows || rows.length === 0) {
       setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
@@ -401,27 +400,31 @@
     });
     setHTML('learnersGrid', html);
 
-    // Attach listener to every button
     document.querySelectorAll('#learnersGrid [data-action]').forEach(function (btn) {
       btn.addEventListener('click', function (e) {
         e.preventDefault();
         e.stopPropagation();
         const pin = btn.dataset.pin;
         const action = btn.dataset.action;
-        console.log('[Learner]', action, pin);
-        if (action === 'view' || action === 'edit') {
+        if (action === 'view') {
+          if (window.LB && typeof window.LB.openLearnerViewModal === 'function') {
+            window.LB.openLearnerViewModal(pin);
+          } else {
+            const found = State.cachedLearners.find(l => l.pin === pin);
+            if (found) showLearnerModal(found);
+          }
+        } else if (action === 'edit') {
           if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
             window.LB.openLearnerEditModal(pin);
           } else {
             const found = State.cachedLearners.find(l => l.pin === pin);
             if (found) showLearnerModal(found);
-            else showToast('Learner not found', 'error');
           }
         } else if (action === 'print') {
           if (window.LB && typeof window.LB.printLearner === 'function') {
             window.LB.printLearner(pin);
           } else {
-            showToast('Print module not loaded.', 'error');
+            showToast('Print module not loaded. Refresh the page.', 'error');
           }
         }
       });
