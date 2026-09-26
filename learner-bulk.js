@@ -480,9 +480,16 @@
     html += buildViewField(phones.first.label, phones.first.value);
     html += '</div></div>';
 
-    // Section B — fees active term only, one phone (Mother priority)
+       // Section B — fees active term only, one phone (Mother priority)
     html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
     html += buildFeeBlock(learner, otherBills, false);
+    // Any remaining B-fields that survive the filter (Blood Group, Allergy, etc.)
+    const bFieldsFiltered = filterFeeFieldsToActiveTerm(usable.B || []);
+    bFieldsFiltered.forEach(function (f) {
+      if (/BALANCE B F|BILL|OTHER BILL|PART PAYMENT|BALANCE C F|CLEARANCE|CLEARED|TUITION/i.test(f.header)) return;
+      if (/PHONE NUMBER/i.test(f.header)) return;
+      html += buildViewField(f.header, learner[f.header]);
+    });
     html += buildViewField(phones.second.label, phones.second.value);
     html += '</div></div>';
 
