@@ -1139,6 +1139,32 @@
   // ================================================================
   // [20] PUBLIC API
   // ================================================================
+   // Global delegates for learner card buttons
+  window.LB_VIEW = function (pin) {
+    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
+      window.LB.openLearnerEditModal(pin);
+    } else {
+      const found = State.cachedLearners.find(l => l.pin === pin);
+      if (found) showLearnerModal(found);
+      else showToast('Learner not found', 'error');
+    }
+  };
+
+  window.LB_EDIT = function (pin) {
+    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
+      window.LB.openLearnerEditModal(pin);
+    } else {
+      showToast('Edit module not loaded. Refresh the page.', 'error');
+    }
+  };
+
+  window.LB_PRINT = function (pin) {
+    if (window.LB && typeof window.LB.printLearner === 'function') {
+      window.LB.printLearner(pin);
+    } else {
+      showToast('Print module not loaded. Refresh the page.', 'error');
+    }
+  };
   window.TIS = window.TIS || {};
   window.TIS.closeModal              = closeModal;
   window.TIS.switchTab               = switchTab;
