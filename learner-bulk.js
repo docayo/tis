@@ -5,19 +5,19 @@
 // SECTION MAP:
 //   [LB-01] BACKEND BRIDGE (JSONP)
 //   [LB-02] HELPERS
-//   [LB-02b] FIELD WHITELISTS (only active term + non-term fields)
+//   [LB-02b] FIELD WHITELISTS
 //   [LB-03] BULK DOWNLOAD TEMPLATE
 //   [LB-04] BULK UPLOAD UPDATES
 //   [LB-05] EDIT LEARNER MODAL
-//   [LB-06] VIEW LEARNER MODAL (collapsible, keyboard shortcuts)
-//   [LB-06b] KEYBOARD SHORTCUTS (view mode + learners tab)
-//   [LB-07] FEE BLOCK (active term only)
+//   [LB-06] VIEW LEARNER MODAL
+//   [LB-06b] KEYBOARD SHORTCUTS
+//   [LB-07] FEE BLOCK
 //   [LB-08] OTHER BILLS BLOCK
 //   [LB-09] UPDATE PAYMENT MODAL
-//   [LB-10] PRINT LEARNER (A4 + 80mm, section checkboxes)
-//   [LB-11] ADD NEW LEARNER (auto-bill, A/B/C)
+//   [LB-10] PRINT LEARNER
+//   [LB-11] ADD NEW LEARNER
 //   [LB-12] PHOTO PICKER
-//   [LB-13] HELP MODAL (shortcut reference)
+//   [LB-13] HELP MODAL
 //   [LB-14] PUBLIC API EXPORT
 // ================================================================
 
@@ -164,14 +164,6 @@
 
   // ================================================================
   // [LB-02b] FIELD WHITELISTS
-  // ----------------------------------------------------------------
-  // The LEARNERS sheet has dozens of term-specific columns.
-  // We only want NON-TERM fields in Section A and C, and only
-  // ACTIVE TERM fields inside the fee block.
-  //
-  // Anything matching a term pattern (e.g. "1ST TERM 2026/2027 ...")
-  // is EXCLUDED from Section A and C, and handled explicitly by
-  // the fee block. This stops the endless list of duplicate rows.
   // ================================================================
   const TERM_REGEX = /\b(1ST|2ND|3RD|FIRST|SECOND|THIRD)\s+TERM\s+\d{4}\/\d{4}\b/i;
 
@@ -303,7 +295,7 @@
     html += buildPrintBannerHTML();
     html += buildHeaderStrip(learner, phones, 'edit');
 
-    // Section A — only non-term, non-fee fields
+    // Section A
     html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
     (usable.A || []).filter(function (f) {
       const h = String(f.header || '');
@@ -317,7 +309,7 @@
     html += buildPhoneField('PHONE NUMBER — Priority 1', phones.first.label, phones.first.value);
     html += '</div></div>';
 
-    // Section B — fees for ACTIVE TERM only
+    // Section B
     html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
     html += buildFeeBlock(learner, otherBills, true);
     (usable.B || []).filter(function (f) {
@@ -331,7 +323,7 @@
     html += buildPhoneField('PHONE NUMBER — Priority 2', phones.second.label, phones.second.value);
     html += '</div></div>';
 
-    // Section C — history & origin, non-term fields only
+    // Section C
     html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
     (usable.C || []).filter(function (f) {
       const h = String(f.header || '');
@@ -368,8 +360,7 @@
     return html;
   }
 
-    // Clickable header strip — clicking in EDIT mode switches to VIEW.
-  // In VIEW mode, clicking does nothing (avoids close/reopen flicker).
+  // Clickable header strip — clickable only in EDIT mode, switches to VIEW.
   function buildHeaderStrip(learner, phones, mode) {
     const name = learner['LEARNERS NAME'] || '';
     const pin  = learner['PIN'] || '';
@@ -441,7 +432,7 @@
   }
 
   // ================================================================
-  // [LB-06] VIEW LEARNER MODAL — COLLAPSIBLE + SHORTCUT KEYS
+  // [LB-06] VIEW LEARNER MODAL
   // ================================================================
   async function openLearnerViewModal(pin) {
     showToast('Loading learner...');
@@ -480,7 +471,6 @@
     html += buildPrintBannerHTML();
     html += buildHeaderStrip(learner, phones, 'view');
 
-    // Keyboard hint strip
     html += '<div style="font-size:11px;color:#666;text-align:right;margin-bottom:8px;">' +
             'Keys: <b>E</b> expand all · <b>C</b> collapse all · <b>P</b> print · <b>Esc</b> close</div>';
 
@@ -548,12 +538,10 @@
   // [LB-06b] KEYBOARD SHORTCUTS
   // ================================================================
   function bindViewShortcuts(pin) {
-    // Remove any previous handler
     if (window.__lbViewHandler) {
       document.removeEventListener('keydown', window.__lbViewHandler);
     }
     window.__lbViewHandler = function (e) {
-      // Ignore if typing in an input
       if (e.target && /INPUT|TEXTAREA|SELECT/i.test(e.target.tagName)) return;
       const key = (e.key || '').toLowerCase();
 
@@ -580,13 +568,10 @@
     document.addEventListener('keydown', window.__lbViewHandler);
   }
 
-  // Learner tab shortcuts (only when learners tab is active and no modal open)
   function bindLearnerTabShortcuts() {
     if (window.__lbTabHandler) return;
     window.__lbTabHandler = function (e) {
-      // Ignore when typing in inputs
       if (e.target && /INPUT|TEXTAREA|SELECT/i.test(e.target.tagName)) return;
-      // Ignore when a modal is open
       const host = document.getElementById('lbModalHost');
       if (host && host.innerHTML.trim() !== '') return;
       const learnersVisible = document.getElementById('module-learners') &&
@@ -608,7 +593,7 @@
   }
 
   // ================================================================
-  // [LB-07] FEE BLOCK — ACTIVE TERM ONLY
+  // [LB-07] FEE BLOCK
   // ================================================================
   function collectPartPayments(learner) {
     const rows = [];
@@ -1019,7 +1004,7 @@
   }
 
   // ================================================================
-  // [LB-11] ADD NEW LEARNER — A/B/C + auto-bill generation
+  // [LB-11] ADD NEW LEARNER
   // ================================================================
   async function openAddLearnerModal() {
     showToast('Preparing form...');
@@ -1037,7 +1022,6 @@
 
     html += buildPrintBannerHTML();
 
-    // Section A
     html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
     (usable.A || []).filter(function (f) {
       const h = String(f.header || '');
@@ -1050,7 +1034,6 @@
     });
     html += '</div></div>';
 
-    // Section B — fee block placeholders (initial bill fields only)
     html += '<div class="expandable open"><div class="expandable-header">Section B — Initial Bill (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
     html += '<div class="form-group" style="margin-bottom:10px;"><label style="font-weight:600;font-size:12px;">Opening Balance (previous B/F)</label>';
     html += '<input type="number" data-field="__opening_balance" value="0" style="width:100%;"></div>';
@@ -1062,7 +1045,6 @@
     html += '<input type="date" data-field="__first_payment_date" value="" style="width:100%;"></div>';
     html += '</div></div>';
 
-    // Section C
     html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
     (usable.C || []).filter(function (f) {
       const h = String(f.header || '');
@@ -1095,7 +1077,6 @@
     });
     if (!row['PIN']) { showToast('PIN is required.'); return; }
 
-    // Save the learner
     showToast('Creating learner...');
     const res = await callBackend('LB_addNewLearner', row);
     if (!res || !res.success) {
@@ -1103,7 +1084,6 @@
       return;
     }
 
-    // Generate bill for the active term
     const billData = {
       pin: row['PIN'],
       term: ACTIVE_TERM,
@@ -1158,7 +1138,7 @@
   }
 
   // ================================================================
-  // [LB-13] HELP MODAL — Keyboard shortcut reference
+  // [LB-13] HELP MODAL
   // ================================================================
   function showHelpModal() {
     let html = '<div class="modal-overlay" onclick="if(event.target===this)LB.closeEditModal()">';
@@ -1183,7 +1163,7 @@
 
     html += '<div style="font-weight:700;color:#0d4d26;margin-top:12px;margin-bottom:6px;">Mobile tips:</div>';
     html += '<div style="font-size:12px;color:#555;">';
-    html += '• Tap the learner name ribbon at the top of any modal to switch to View mode.<br>';
+    html += '• Tap the learner name ribbon in the Edit modal to switch to View mode.<br>';
     html += '• Tap any section title to expand or collapse it.<br>';
     html += '• Hold the phone horizontally for wider table view.';
     html += '</div></div>';
@@ -1196,7 +1176,7 @@
   }
 
   // ================================================================
-  // [LB-14] PUBLIC API EXPORT + boot binding
+  // [LB-14] PUBLIC API EXPORT
   // ================================================================
   function closeEditModal() {
     const host = document.getElementById('lbModalHost');
@@ -1225,13 +1205,13 @@
       showToast('Save failed: ' + ((updateRes && updateRes.message) || 'unknown'), 'error');
     }
   }
-  /* Close current modal and open the View modal for the same learner.
-     Used by the clickable name ribbon in Edit mode. */
+
   async function switchToView(pin) {
     if (!pin) return;
     closeEditModal();
     await openLearnerViewModal(pin);
   }
+
   async function addHeaderToSection(section) {
     const name = prompt('New header name for Section ' + section + ':');
     if (!name) return;
@@ -1255,6 +1235,7 @@
     openLearnerEditModal: openLearnerEditModal,
     openLearnerViewModal: openLearnerViewModal,
     openAddLearnerModal: openAddLearnerModal,
+    switchToView: switchToView,
     saveLearnerEdit: saveLearnerEdit,
     saveNewLearner: saveNewLearner,
     addHeaderToSection: addHeaderToSection,
@@ -1270,7 +1251,6 @@
     callBackend: callBackend
   };
 
-  // Bind tab-level shortcut handler once
   bindLearnerTabShortcuts();
 
   console.log('[LB] Learner Bulk module loaded — active term aware, keyboard shortcuts active.');
