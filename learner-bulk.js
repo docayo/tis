@@ -145,7 +145,24 @@
   function isBlank(v) {
     return v === '' || v === null || v === undefined || String(v).trim() === '';
   }
-
+  // Filter fee-related B fields to only the active term (and prior term's Balance B/F).
+  // Removes ALL other terms' Balance C F / Clearance / Cleared / Bill / Payment columns.
+  function filterFeeFieldsToActiveTerm(fields) {
+    if (!Array.isArray(fields)) return [];
+    const activePrefix = ACTIVE_TERM + ' ';
+    const prevPrefix   = PREV_TERM ? PREV_TERM + ' ' : '__never__';
+    return fields.filter(function (f) {
+      const h = String(f.header || '').toUpperCase();
+      // Keep anything that begins with the active term
+      if (h.indexOf(activePrefix.toUpperCase()) === 0) return true;
+      // Keep PREV TERM BALANCE C F (used as the "Previous Balance B/F" source)
+      if (h === prevPrefix.toUpperCase() + 'BALANCE C F') return true;
+      // Drop anything else that mentions any term (i.e. has TERM <year>/<year>)
+      if (/\b(1ST|2ND|3RD)\s+TERM\s+\d{4}\/\d{4}\b/i.test(h)) return false;
+      // Keep non-term fields (Blood Group, Allergy, etc.)
+      return true;
+    });
+  }
   // Priority-aware phone resolver.
   // Returns { first: {label, value}, second: {...}, third: {...} }
   function resolvePhones(learner, priority) {
