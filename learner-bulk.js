@@ -4,13 +4,15 @@
 // ================================================================
 // SECTION MAP:
 //   [LB01] BACKEND BRIDGE (JSONP)
-//   [LB02] HELPERS (toast, escape, modal host)
+//   [LB02] HELPERS
 //   [LB03] BULK DOWNLOAD TEMPLATE
 //   [LB04] BULK UPLOAD UPDATES
-//   [LB05] EDIT SINGLE LEARNER (A / B / C modal)
-//   [LB06] ADD NEW LEARNER
-//   [LB07] PHOTO PICKER
-//   [LB08] PUBLIC API EXPORT
+//   [LB05] EDIT LEARNER MODAL (editable A/B/C)
+//   [LB06] VIEW LEARNER MODAL (read-only A/B/C)
+//   [LB07] PRINT LEARNER (printable A/B/C)
+//   [LB08] ADD NEW LEARNER
+//   [LB09] PHOTO PICKER
+//   [LB10] PUBLIC API EXPORT
 // ================================================================
 
 (function () {
@@ -19,28 +21,22 @@
   // ================================================================
   // [LB01] BACKEND BRIDGE — JSONP
   // ----------------------------------------------------------------
-  // Apps Script Web App does not return CORS headers, so we cannot
-  // use fetch(). JSONP works: we inject a <script> tag whose src is
-  // the Apps Script URL with a callback= parameter, and the server
-  // responds with   callbackName({...json...});
+  // Apps Script Web App does not send CORS headers, so fetch() is
+  // blocked. JSONP works: we inject a <script> tag whose src is the
+  // Apps Script URL with callback=NAME. The server responds with
+  //   NAME({...json...});
+  // and the browser executes it, calling window[NAME].
   //
-  // The Apps Script doGet() must:
-  //   1. Read e.parameter.action, e.parameter.args, e.parameter.callback
-  //   2. Call the named function with the parsed args
-  //   3. Wrap the JSON result in the callback
-  //   4. Return ContentService.createTextOutput(...)
-  //      with MimeType.JAVASCRIPT
+  // Server side (doGet in Apps Script) must:
+  //   1. Read action, args, callback from e.parameter
+  //   2. Call the named function with parsed args
+  //   3. Wrap JSON in callback(...)
+  //   4. Return ContentService.createTextOutput with MimeType.JAVASCRIPT
   // ================================================================
 
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwp8WB7ZCYOiolA70SQAPi7--1cmclVwRQEMBaur6CwymD_8sDo9uL7dNNh9LFUkIZd/exec';
   const BACKEND_TIMEOUT_MS = 20000;
 
-  /**
-   * callBackend(fnName, ...args) → Promise<responseObject>
-   * Uses JSONP. Never throws. Always resolves to either:
-   *   - the parsed response object from the server
-   *   - { success: false, message: "..." } on failure
-   */
   function callBackend(fnName) {
     const args = Array.prototype.slice.call(arguments, 1);
     return new Promise(function (resolve) {
@@ -192,7 +188,7 @@
   }
 
   // ================================================================
-  // [LB05] EDIT SINGLE LEARNER — A / B / C MODAL
+  // [LB05] EDIT LEARNER — EDITABLE A/B/C MODAL
   // ================================================================
   async function openLearnerEditModal(pin) {
     showToast('Loading learner...');
@@ -219,7 +215,7 @@
   function renderEditModal(learner, fieldMap, priority) {
     const sections = ['A', 'B', 'C'];
     const titles = { A: 'A — Identity', B: 'B — Fees & Health', C: 'C — History & Origin' };
-    const fieldMapUsable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
+    const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
 
     let html = '<div class="modal-overlay" id="lbEditOverlay">';
     html += '<div class="modal-box" style="max-width:900px;max-height:90vh;overflow-y:auto;">';
@@ -228,7 +224,7 @@
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
     sections.forEach(function (sec) {
-      const fields = (fieldMapUsable[sec]) || [];
+      const fields = usable[sec] || [];
       if (!fields.length) return;
 
       html += '<div class="expandable open">';
@@ -258,7 +254,6 @@
       html += '</div></div>';
     });
 
-    // Contact priority block
     html += '<div class="expandable open"><div class="expandable-header">Contact Priority</div><div class="expandable-body">';
     ['first', 'second', 'third'].forEach(function (rank, i) {
       const id = 'lb_prio_' + rank;
@@ -295,7 +290,6 @@
     const prioThird  = (document.getElementById('lb_prio_third')  || {}).value || 'guardian';
 
     showToast('Saving...');
-
     const updateRes = await callBackend('LB_updateLearner', pin, patch);
     await callBackend('LB_setContactPriority', pin, prioFirst, prioSecond, prioThird);
 
@@ -326,15 +320,190 @@
   }
 
   // ================================================================
-  // [LB06] ADD NEW LEARNER
+  // [LB06] VIEW LEARNER — READ-ONLY A/B/C MODAL
+  // ================================================================
+  async function openLearnerViewModal(pin) {
+    showToast('Loading learner...');
+
+    const [data, fieldMap, priority] = await Promise.all([
+      callBackend('LB_getLearnerFull', pin),
+      callBackend('LB_getLearnerFieldMap'),
+      callBackend('LB_getContactPriority', pin)
+    ]);
+
+    if (!data || !data.success) {
+      showToast('Could not load learner: ' + ((data && data.message) || 'unknown'), 'error');
+      return;
+    }
+    renderViewModal(data.learner, fieldMap, priority);
+  }
+
+  function renderViewModal(learner, fieldMap, priority) {
+    const sections = ['A', 'B', 'C'];
+    const titles = { A: 'A — Identity', B: 'B — Fees & Health', C: 'C — History & Origin' };
+    const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
+
+    const learnerName = learner['LEARNERS NAME'] || learner['name'] || '';
+    const photoUrl = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
+    const pin = learner['PIN'] || '';
+    const cls = learner['3RD TERM 2026 CLASS'] || '';
+
+    let html = '<div class="modal-overlay" id="lbViewOverlay">';
+    html += '<div class="modal-box" style="max-width:900px;max-height:90vh;overflow-y:auto;">';
+    html += '<div class="modal-header">';
+    html += '<h2>' + escapeHtml(learnerName) + '</h2>';
+    html += '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button>';
+    html += '</div>';
+
+    // Header card with photo + key ID
+    html += '<div style="display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
+    if (photoUrl) {
+      html += '<img src="' + escapeAttr(photoUrl) + '" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid #0d4d26;" onerror="this.style.display=\'none\'">';
+    } else {
+      html += '<div style="width:80px;height:80px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;">' +
+              escapeHtml((learnerName || '?').charAt(0)) + '</div>';
+    }
+    html += '<div>';
+    html += '<div style="font-size:20px;font-weight:800;color:#0d4d26;">' + escapeHtml(learnerName) + '</div>';
+    html += '<div style="font-size:13px;color:#555;margin-top:4px;">PIN: <b>' + escapeHtml(pin) + '</b></div>';
+    html += '<div style="font-size:13px;color:#555;">Class: <b>' + escapeHtml(cls) + '</b></div>';
+    html += '</div></div>';
+
+    // Sections A, B, C — read-only
+    sections.forEach(function (sec) {
+      const fields = usable[sec] || [];
+      if (!fields.length) return;
+
+      html += '<div class="expandable open"><div class="expandable-header">' + escapeHtml(titles[sec]) + '</div><div class="expandable-body">';
+      fields.forEach(function (f) {
+        const val = learner[f.header] !== undefined ? learner[f.header] : '';
+        const shown = (val === '' || val === null || val === undefined) ? '—' : val;
+        html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;">';
+        html += '<span style="font-size:12px;color:#666;font-weight:600;">' + escapeHtml(f.header) + '</span>';
+        html += '<span style="font-size:13px;color:#000;font-weight:500;text-align:right;max-width:60%;">' + escapeHtml(String(shown)) + '</span>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+    });
+
+    // Contact priority — read-only
+    html += '<div class="expandable open"><div class="expandable-header">Contact Priority</div><div class="expandable-body">';
+    ['first', 'second', 'third'].forEach(function (rank, i) {
+      const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
+      html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;">';
+      html += '<span style="font-size:12px;color:#666;font-weight:600;">' +
+              (i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact</span>';
+      html += '<span style="font-size:13px;color:#000;font-weight:600;">' + escapeHtml(String(val).toUpperCase()) + '</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+
+    // Actions
+    html += '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
+    html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Close</button>';
+    html += '<button class="btn btn-gold" onclick="LB.printLearner(\'' + escapeAttr(pin) + '\')">Print</button>';
+    html += '<button class="btn btn-primary" onclick="LB.openLearnerEditModal(\'' + escapeAttr(pin) + '\')">Edit</button>';
+    html += '</div></div></div>';
+
+    getModalHost().innerHTML = html;
+  }
+
+  // ================================================================
+  // [LB07] PRINT LEARNER
+  // ================================================================
+  async function printLearner(pin) {
+    showToast('Preparing print...');
+
+    const [data, fieldMap, priority] = await Promise.all([
+      callBackend('LB_getLearnerFull', pin),
+      callBackend('LB_getLearnerFieldMap'),
+      callBackend('LB_getContactPriority', pin)
+    ]);
+
+    if (!data || !data.success) {
+      showToast('Could not load learner for printing.', 'error');
+      return;
+    }
+
+    const learner = data.learner;
+    const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
+    const titles = { A: 'A — Identity', B: 'B — Fees & Health', C: 'C — History & Origin' };
+    const learnerName = learner['LEARNERS NAME'] || learner['name'] || '';
+    const photoUrl = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+
+    let html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
+    html += '<title>Learner — ' + escapeHtml(learnerName) + '</title>';
+    html += '<style>';
+    html += 'body{font-family:Arial,sans-serif;padding:20px;color:#000;}';
+    html += '.header{display:flex;gap:16px;align-items:center;border-bottom:3px solid #0d4d26;padding-bottom:12px;margin-bottom:16px;}';
+    html += '.header img{width:100px;height:100px;object-fit:cover;border-radius:50%;border:3px solid #0d4d26;}';
+    html += '.avatar-fallback{width:100px;height:100px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:900;}';
+    html += '.title{font-size:22px;font-weight:900;color:#0d4d26;margin-bottom:4px;}';
+    html += '.subtitle{font-size:13px;color:#333;}';
+    html += 'h3{background:#0d4d26;color:#fff;padding:6px 10px;font-size:13px;text-transform:uppercase;margin:16px 0 8px;letter-spacing:1px;}';
+    html += 'table{width:100%;border-collapse:collapse;}';
+    html += 'td{padding:5px 8px;border-bottom:1px solid #ccc;font-size:12px;vertical-align:top;}';
+    html += 'td:first-child{font-weight:700;color:#333;width:35%;}';
+    html += '.footer{margin-top:24px;font-size:11px;color:#555;text-align:center;border-top:1px solid #ccc;padding-top:8px;}';
+    html += '@media print {.no-print{display:none;}}';
+    html += '</style></head><body>';
+
+    html += '<div class="header">';
+    if (photoUrl) {
+      html += '<img src="' + escapeAttr(photoUrl) + '" onerror="this.style.display=\'none\'">';
+    } else {
+      html += '<div class="avatar-fallback">' + escapeHtml((learnerName || '?').charAt(0)) + '</div>';
+    }
+    html += '<div>';
+    html += '<div class="title">' + escapeHtml(learnerName) + '</div>';
+    html += '<div class="subtitle">PIN: <b>' + escapeHtml(learner['PIN'] || '') + '</b> &nbsp;|&nbsp; Class: <b>' + escapeHtml(learner['3RD TERM 2026 CLASS'] || '') + '</b></div>';
+    html += '<div class="subtitle" style="margin-top:4px;">THE IDEAL SCHOOLS — Learner Record</div>';
+    html += '</div></div>';
+
+    ['A', 'B', 'C'].forEach(function (sec) {
+      const fields = usable[sec] || [];
+      if (!fields.length) return;
+      html += '<h3>' + escapeHtml(titles[sec]) + '</h3><table>';
+      fields.forEach(function (f) {
+        const val = learner[f.header] !== undefined ? learner[f.header] : '';
+        html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(val || '—')) + '</td></tr>';
+      });
+      html += '</table>';
+    });
+
+    html += '<h3>Contact Priority</h3><table>';
+    ['first', 'second', 'third'].forEach(function (rank, i) {
+      const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
+      html += '<tr><td>' + (i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact</td><td>' + escapeHtml(String(val).toUpperCase()) + '</td></tr>';
+    });
+    html += '</table>';
+
+    html += '<div class="footer">Printed: ' + new Date().toLocaleString() + ' &nbsp;·&nbsp; The Ideal Schools Operational Portal</div>';
+    html += '<div class="no-print" style="text-align:center;margin-top:20px;">';
+    html += '<button onclick="window.print()" style="padding:10px 24px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;">Print Now</button>';
+    html += '<button onclick="window.close()" style="margin-left:8px;padding:10px 24px;font-size:14px;background:#666;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;">Close</button>';
+    html += '</div>';
+    html += '<script>setTimeout(function(){window.print();},600);<\/script>';
+    html += '</body></html>';
+
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
+  // ================================================================
+  // [LB08] ADD NEW LEARNER
   // ================================================================
   async function openAddLearnerModal() {
     showToast('Preparing form...');
     const fieldMap = await callBackend('LB_getLearnerFieldMap');
-    const fieldMapUsable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
+    const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
 
     window.__lbEditingPin = null;
-    window.__lbFieldMap = fieldMapUsable;
+    window.__lbFieldMap = usable;
     window.__lbPriority = { first: 'father', second: 'mother', third: 'guardian' };
 
     let html = '<div class="modal-overlay" id="lbEditOverlay">';
@@ -343,7 +512,7 @@
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
     ['A','B','C'].forEach(function (sec) {
-      const fields = fieldMapUsable[sec] || [];
+      const fields = usable[sec] || [];
       if (!fields.length) return;
       html += '<div class="expandable open"><div class="expandable-header">Section ' + sec +
               '</div><div class="expandable-body">';
@@ -382,7 +551,7 @@
   }
 
   // ================================================================
-  // [LB07] PHOTO PICKER
+  // [LB09] PHOTO PICKER
   // ================================================================
   function pickPhoto(targetInputId) {
     const pin = window.__lbEditingPin;
@@ -413,7 +582,7 @@
   }
 
   // ================================================================
-  // [LB08] PUBLIC API EXPORT
+  // [LB10] PUBLIC API EXPORT
   // ================================================================
   function closeEditModal() {
     const host = document.getElementById('lbModalHost');
@@ -424,12 +593,14 @@
     downloadLearnerTemplate: downloadLearnerTemplate,
     uploadLearnerUpdates: uploadLearnerUpdates,
     openLearnerEditModal: openLearnerEditModal,
+    openLearnerViewModal: openLearnerViewModal,
     openAddLearnerModal: openAddLearnerModal,
     saveLearnerEdit: saveLearnerEdit,
     saveNewLearner: saveNewLearner,
     addHeaderToSection: addHeaderToSection,
     closeEditModal: closeEditModal,
     pickPhoto: pickPhoto,
+    printLearner: printLearner,
     callBackend: callBackend
   };
 
