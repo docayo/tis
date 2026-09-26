@@ -323,7 +323,7 @@
     renderLearnerStats(State.cachedLearners);
   }
 
-  function renderLearners(rows) {
+    function renderLearners(rows) {
     if (!rows || rows.length === 0) {
       setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
       return;
@@ -343,31 +343,14 @@
         '<div class="pin">' + esc(pin) + ' • ' + esc(cls) + '</div></div>' +
         '</div>' +
         '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">' +
-        '<button class="btn btn-sm btn-secondary" data-action="view" data-pin="' + escAttr(pin) + '"><i class="fas fa-eye"></i> View</button>' +
-        '<button class="btn btn-sm btn-primary" data-action="edit" data-pin="' + escAttr(pin) + '"><i class="fas fa-pen"></i> Edit</button>' +
-        '<button class="btn btn-sm btn-gold" data-action="print" data-pin="' + escAttr(pin) + '"><i class="fas fa-print"></i> Print</button>' +
+        '<button type="button" class="btn btn-sm btn-secondary" onclick="window.LB_VIEW(\'' + escAttr(pin) + '\')"><i class="fas fa-eye"></i> View</button>' +
+        '<button type="button" class="btn btn-sm btn-primary" onclick="window.LB_EDIT(\'' + escAttr(pin) + '\')"><i class="fas fa-pen"></i> Edit</button>' +
+        '<button type="button" class="btn btn-sm btn-gold" onclick="window.LB_PRINT(\'' + escAttr(pin) + '\')"><i class="fas fa-print"></i> Print</button>' +
         '</div>' +
         '</div>';
     });
     setHTML('learnersGrid', html);
-    document.querySelectorAll('#learnersGrid .student-card [data-action]').forEach(btn => {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        const pin = btn.dataset.pin;
-        const action = btn.dataset.action;
-        if (action === 'view') openLearnerProfile(pin);
-        else if (action === 'edit') {
-          if (window.LB && typeof window.LB.openLearnerEditModal === 'function') window.LB.openLearnerEditModal(pin);
-          else showToast('Edit module not loaded', 'error');
-        }
-        else if (action === 'print') {
-          if (window.LB && typeof window.LB.printLearner === 'function') window.LB.printLearner(pin);
-          else openLearnerProfile(pin);
-        }
-      });
-    });
   }
-
   function renderLearnerStats(rows) {
     const total = rows.length;
     let exited = 0;
