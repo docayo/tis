@@ -84,7 +84,6 @@
     setTimeout(() => t.classList.remove('show'), 4500);
   }
 
-  // Very small non-blocking loaders — just the corner spinner.
   let loaderCount = 0;
   function startLoader() {
     loaderCount++;
@@ -209,7 +208,6 @@
   }
 
   function enterDashboard() {
-    // NO blocking welcome loader. Just hide login, show dashboard.
     const lp = $('loginPage'); if (lp) lp.classList.add('hidden');
     const dh = $('dashboardHeader'); if (dh) dh.classList.remove('hidden');
     const mc = $('mainContainer'); if (mc) mc.classList.remove('hidden');
@@ -294,7 +292,6 @@
     const tgt = $('module-' + name);
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
-    // Fire the module's loader but don't await it — the view is already visible.
     try {
       if (name === 'learners') loadLearners();
       else if (name === 'staff') loadStaff();
@@ -344,11 +341,30 @@
         '<div class="card-avatar">' + (photo ? '<img src="' + esc(photo) + '">' : esc(name.charAt(0) || '?')) + '</div>' +
         '<div class="card-title"><h3 style="color:' + nameColor + ';">' + esc(name) + '</h3>' +
         '<div class="pin">' + esc(pin) + ' • ' + esc(cls) + '</div></div>' +
-        '</div></div>';
+        '</div>' +
+        '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">' +
+        '<button class="btn btn-sm btn-secondary" data-action="view" data-pin="' + escAttr(pin) + '"><i class="fas fa-eye"></i> View</button>' +
+        '<button class="btn btn-sm btn-primary" data-action="edit" data-pin="' + escAttr(pin) + '"><i class="fas fa-pen"></i> Edit</button>' +
+        '<button class="btn btn-sm btn-gold" data-action="print" data-pin="' + escAttr(pin) + '"><i class="fas fa-print"></i> Print</button>' +
+        '</div>' +
+        '</div>';
     });
     setHTML('learnersGrid', html);
-    document.querySelectorAll('#learnersGrid .student-card').forEach(card => {
-      card.addEventListener('click', () => openLearnerProfile(card.dataset.pin));
+    document.querySelectorAll('#learnersGrid .student-card [data-action]').forEach(btn => {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const pin = btn.dataset.pin;
+        const action = btn.dataset.action;
+        if (action === 'view') openLearnerProfile(pin);
+        else if (action === 'edit') {
+          if (window.LB && typeof window.LB.openLearnerEditModal === 'function') window.LB.openLearnerEditModal(pin);
+          else showToast('Edit module not loaded', 'error');
+        }
+        else if (action === 'print') {
+          if (window.LB && typeof window.LB.printLearner === 'function') window.LB.printLearner(pin);
+          else openLearnerProfile(pin);
+        }
+      });
     });
   }
 
@@ -363,6 +379,12 @@
   }
 
   async function openLearnerProfile(pin) {
+    // Delegating to learner-bulk.js for the full A/B/C read-only modal
+    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
+      window.LB.openLearnerEditModal(pin);
+      return;
+    }
+    // Fallback (only used if learner-bulk.js failed to load)
     const found = State.cachedLearners.find(l => l.pin === pin);
     if (!found) { showToast('Learner not found', 'error'); return; }
     showLearnerModal(found);
@@ -374,6 +396,12 @@
   }
 
   function showLearnerModal(d) {
+    // Delegating to learner-bulk.js — that modal includes Section C and Edit support
+    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
+      window.LB.openLearnerEditModal(d.pin);
+      return;
+    }
+    // Legacy fallback (used only if learner-bulk.js is not loaded)
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" onclick="event.stopPropagation()">' +
       '<div class="modal-header"><h2>' + esc(d.name) + '</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
@@ -413,6 +441,32 @@
     }
     const rl = $('btnRefreshLearners'); if (rl) rl.addEventListener('click', loadLearners);
     const pl = $('btnPrintLearners');   if (pl) pl.addEventListener('click', printLearners);
+
+    // Bulk module buttons
+    const dl = $('btnDownloadTemplate');
+    if (dl) dl.addEventListener('click', function () {
+      if (window.LB && typeof window.LB.downloadLearnerTemplate === 'function') window.LB.downloadLearnerTemplate();
+      else showToast('Bulk module not loaded', 'error');
+    });
+
+    const ul = $('btnUploadUpdates');
+    const fileInput = $('learnerUploadFile');
+    if (ul && fileInput) {
+      ul.addEventListener('click', function () { fileInput.click(); });
+      fileInput.addEventListener('change', function (e) {
+        const f = e.target.files[0];
+        if (f && window.LB && typeof window.LB.uploadLearnerUpdates === 'function') {
+          window.LB.uploadLearnerUpdates(f);
+        }
+        fileInput.value = '';
+      });
+    }
+
+    const al = $('btnAddLearner');
+    if (al) al.addEventListener('click', function () {
+      if (window.LB && typeof window.LB.openAddLearnerModal === 'function') window.LB.openAddLearnerModal();
+      else showToast('Bulk module not loaded', 'error');
+    });
   }
 
   function printLearners() {
@@ -1074,8 +1128,6 @@
     initUsersTab();
   }
 
-  // Safety sweep: removes any stray blocking overlay that might
-  // have been left behind by a previous version of the app.
   function safetySweep() {
     const ls = $('loadingScreen');
     if (ls) ls.classList.add('hidden');
