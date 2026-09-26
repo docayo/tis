@@ -1,22 +1,34 @@
 // ================================================================
-// TIS EMIS — APPLICATION LOGIC
-// File: app.js
+// TIS EMIS — APPLICATION LOGIC (app.js)
 // ================================================================
-// Full file. One IIFE. One close.
-//
-// Design rules (locked):
-//   - NO full-screen overlays that can get stuck.
-//   - NO async call on tab switch that can block the UI.
-//   - Every event handler is wrapped so a thrown error can't
-//     kill subsequent clicks.
-//   - A safety sweep runs at boot and clears any stray overlay.
+// SECTION MAP:
+//   [S01] STATE & CONSTANTS
+//   [S02] UTILITIES
+//   [S03] PERMISSIONS
+//   [S04] AUTHENTICATION
+//   [S05] PASSWORD CHANGE
+//   [S06] NAVIGATION
+//   [S07] LEARNERS — load, render, view, edit, print, bulk
+//   [S08] STAFF
+//   [S09] TERMS
+//   [S10] ATTENDANCE
+//   [S11] STAFF ATTENDANCE
+//   [S12] CALENDAR
+//   [S13] CALENDAR IMPORT
+//   [S14] QR
+//   [S15] REPORTS
+//   [S16] CLASSES
+//   [S17] USERS
+//   [S18] PLACEHOLDERS
+//   [S19] EVENT WIRING & BOOT
+//   [S20] PUBLIC API
 // ================================================================
 
 (function () {
   'use strict';
 
   // ================================================================
-  // [01] STATE
+  // [S01] STATE & CONSTANTS
   // ================================================================
   const State = {
     profile: null,
@@ -33,8 +45,46 @@
     'classes', 'users'
   ];
 
+  // A/B/C field groups for the learner modal
+  const LEARNER_FIELD_GROUPS = {
+    A: [
+      '3RD TERM 2026 CLASS',
+      'PIN',
+      'LEARNERS NAME',
+      'GENDER',
+      'PHOTO',
+      'PHOTO ',
+      'FATHERS PHONE NUMBER',
+      'MOTHERS PHONE NUMBER',
+      'MOTHERS PHONE NUMBER ',
+      'GUARDIAN PHONE NUMBER',
+      'ACCOUNT NUMBER'
+    ],
+    B: [
+      'BLOOD GROUP / GENOTYPE',
+      'Allergy'
+    ],
+    C: [
+      'CLASS BEFORE ADMISSION',
+      'DATE OF ADMISSION',
+      'CLASS ADMITTED INTO',
+      'CLASS ADMITTED INTO ',
+      'DATE OF WITHDRAWAL',
+      'CLASS AS AT WITHDRAWAL',
+      'LIN',
+      'RELIGION',
+      'DATE OF BIRTH',
+      'PARENTS NAME',
+      'ADDRESS',
+      'STATE OF ORIGIN',
+      'LGA OF ORIGIN',
+      'STATE OF BIRTH',
+      'LGA OF BIRTH'
+    ]
+  };
+
   // ================================================================
-  // [02] UTILITIES
+  // [S02] UTILITIES
   // ================================================================
   function $(id) { return document.getElementById(id); }
   function setHTML(id, html) { const el = $(id); if (el) el.innerHTML = html; }
@@ -127,7 +177,7 @@
   }
 
   // ================================================================
-  // [03] PERMISSIONS
+  // [S03] PERMISSIONS
   // ================================================================
   function isSuperAdmin() {
     return !!(State.profile && State.profile.role === 'super_admin');
@@ -156,7 +206,7 @@
   }
 
   // ================================================================
-  // [04] AUTH
+  // [S04] AUTHENTICATION
   // ================================================================
   async function doLogin() {
     const idEl = $('loginId');
@@ -232,7 +282,7 @@
   }
 
   // ================================================================
-  // [05] CHANGE PASSWORD
+  // [S05] PASSWORD CHANGE
   // ================================================================
   function openChangePasswordModal() {
     const html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
@@ -275,7 +325,7 @@
   }
 
   // ================================================================
-  // [06] NAVIGATION
+  // [S06] NAVIGATION
   // ================================================================
   function switchTab(name) {
     if (!hasPermission('read_' + name)) {
@@ -310,7 +360,7 @@
   }
 
   // ================================================================
-  // [07] LEARNERS
+  // [S07] LEARNERS
   // ================================================================
   async function loadLearners() {
     setHTML('learnersGrid', pageLoaderHTML('Loading learners...'));
@@ -323,7 +373,7 @@
     renderLearnerStats(State.cachedLearners);
   }
 
-    function renderLearners(rows) {
+  function renderLearners(rows) {
     if (!rows || rows.length === 0) {
       setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
       return;
@@ -343,14 +393,41 @@
         '<div class="pin">' + esc(pin) + ' • ' + esc(cls) + '</div></div>' +
         '</div>' +
         '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">' +
-        '<button type="button" class="btn btn-sm btn-secondary" onclick="window.LB_VIEW(\'' + escAttr(pin) + '\')"><i class="fas fa-eye"></i> View</button>' +
-        '<button type="button" class="btn btn-sm btn-primary" onclick="window.LB_EDIT(\'' + escAttr(pin) + '\')"><i class="fas fa-pen"></i> Edit</button>' +
-        '<button type="button" class="btn btn-sm btn-gold" onclick="window.LB_PRINT(\'' + escAttr(pin) + '\')"><i class="fas fa-print"></i> Print</button>' +
+        '<button type="button" class="btn btn-sm btn-secondary" data-action="view" data-pin="' + escAttr(pin) + '"><i class="fas fa-eye"></i> View</button>' +
+        '<button type="button" class="btn btn-sm btn-primary" data-action="edit" data-pin="' + escAttr(pin) + '"><i class="fas fa-pen"></i> Edit</button>' +
+        '<button type="button" class="btn btn-sm btn-gold" data-action="print" data-pin="' + escAttr(pin) + '"><i class="fas fa-print"></i> Print</button>' +
         '</div>' +
         '</div>';
     });
     setHTML('learnersGrid', html);
+
+    // Attach listener to every button
+    document.querySelectorAll('#learnersGrid [data-action]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const pin = btn.dataset.pin;
+        const action = btn.dataset.action;
+        console.log('[Learner]', action, pin);
+        if (action === 'view' || action === 'edit') {
+          if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
+            window.LB.openLearnerEditModal(pin);
+          } else {
+            const found = State.cachedLearners.find(l => l.pin === pin);
+            if (found) showLearnerModal(found);
+            else showToast('Learner not found', 'error');
+          }
+        } else if (action === 'print') {
+          if (window.LB && typeof window.LB.printLearner === 'function') {
+            window.LB.printLearner(pin);
+          } else {
+            showToast('Print module not loaded.', 'error');
+          }
+        }
+      });
+    });
   }
+
   function renderLearnerStats(rows) {
     const total = rows.length;
     let exited = 0;
@@ -361,51 +438,58 @@
       '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value">' + (total - exited) + '</div></div>');
   }
 
-  async function openLearnerProfile(pin) {
-    // Delegating to learner-bulk.js for the full A/B/C read-only modal
-    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
-      window.LB.openLearnerEditModal(pin);
-      return;
-    }
-    // Fallback (only used if learner-bulk.js failed to load)
-    const found = State.cachedLearners.find(l => l.pin === pin);
-    if (!found) { showToast('Learner not found', 'error'); return; }
-    showLearnerModal(found);
-  }
-
   function infoRow(label, value) {
     const v = (value !== undefined && value !== null && value !== '') ? esc(value) : '—';
     return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + v + '</span></div>';
   }
 
   function showLearnerModal(d) {
-    // Delegating to learner-bulk.js — that modal includes Section C and Edit support
+    // If learner-bulk.js is loaded, use its richer A/B/C modal.
     if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
       window.LB.openLearnerEditModal(d.pin);
       return;
     }
-    // Legacy fallback (used only if learner-bulk.js is not loaded)
+    // Otherwise, render a self-contained A/B/C modal here.
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" onclick="event.stopPropagation()">' +
       '<div class="modal-header"><h2>' + esc(d.name) + '</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    // Section A
     html += '<div class="expandable open"><div class="expandable-header">A — Identity</div><div class="expandable-body">';
     html += infoRow('Class', d.class_name);
     html += infoRow('PIN', d.pin);
+    html += infoRow('Learners Name', d.name);
     html += infoRow('Gender', d.gender);
-    html += infoRow('Father Phone', d.father_phone);
-    html += infoRow('Mother Phone', d.mother_phone);
-    html += infoRow('Guardian Phone', d.guardian_phone);
-    html += infoRow('Account', d.account_number);
+    html += infoRow('1st Phone', d.father_phone);
+    html += infoRow('Account Number', d.account_number);
     html += '</div></div>';
-    html += '<div class="expandable open"><div class="expandable-header">B — Bio</div><div class="expandable-body">';
+
+    // Section B
+    html += '<div class="expandable open"><div class="expandable-header">B — Fees &amp; Health</div><div class="expandable-body">';
+    html += infoRow('Blood Group / Genotype', d.blood_group);
+    html += infoRow('Allergy', d.allergy);
+    html += '</div></div>';
+
+    // Section C
+    html += '<div class="expandable open"><div class="expandable-header">C — History &amp; Origin</div><div class="expandable-body">';
+    html += infoRow('Class Before Admission', d.class_before_admission);
     html += infoRow('Date of Admission', fmtDate(d.date_of_admission));
-    html += infoRow('Date of Birth', fmtDate(d.date_of_birth));
-    html += infoRow('Blood Group', d.blood_group);
+    html += infoRow('Class Admitted Into', d.class_admitted_into);
+    html += infoRow('Date of Withdrawal', fmtDate(d.date_of_withdrawal));
+    html += infoRow('Class as at Withdrawal', d.class_as_at_withdrawal);
+    html += infoRow('LIN', d.lin);
     html += infoRow('Religion', d.religion);
+    html += infoRow('Date of Birth', fmtDate(d.date_of_birth));
     html += infoRow('Parents Name', d.parents_name);
     html += infoRow('Address', d.address);
-    html += infoRow('Allergy', d.allergy);
-    html += '</div></div></div></div>';
+    html += infoRow('State of Origin', d.state_of_origin);
+    html += infoRow('LGA of Origin', d.lga_of_origin);
+    html += infoRow('State of Birth', d.state_of_birth);
+    html += infoRow('LGA of Birth', d.lga_of_birth);
+    html += infoRow('3rd Phone', d.guardian_phone);
+    html += '</div></div>';
+
+    html += '</div></div>';
     setHTML('modalContainer', html);
   }
 
@@ -425,7 +509,6 @@
     const rl = $('btnRefreshLearners'); if (rl) rl.addEventListener('click', loadLearners);
     const pl = $('btnPrintLearners');   if (pl) pl.addEventListener('click', printLearners);
 
-    // Bulk module buttons
     const dl = $('btnDownloadTemplate');
     if (dl) dl.addEventListener('click', function () {
       if (window.LB && typeof window.LB.downloadLearnerTemplate === 'function') window.LB.downloadLearnerTemplate();
@@ -468,7 +551,7 @@
   }
 
   // ================================================================
-  // [08] STAFF
+  // [S08] STAFF
   // ================================================================
   async function loadStaff() {
     setHTML('staffGrid', pageLoaderHTML('Loading staff...'));
@@ -601,7 +684,7 @@
   }
 
   // ================================================================
-  // [09] TERMS
+  // [S09] TERMS
   // ================================================================
   async function initTermsTab() {
     await loadTerms();
@@ -689,7 +772,7 @@
   }
 
   // ================================================================
-  // [10] LEARNER ATTENDANCE
+  // [S10] ATTENDANCE
   // ================================================================
   async function initLearnerAttendanceTab() {
     await populateAttendanceClasses();
@@ -761,7 +844,7 @@
   }
 
   // ================================================================
-  // [11] STAFF ATTENDANCE
+  // [S11] STAFF ATTENDANCE
   // ================================================================
   async function initStaffAttendanceTab() {
     const r1 = $('btnRefreshStaffAtt'); if (r1) r1.addEventListener('click', refreshStaffAttendance);
@@ -857,7 +940,7 @@
   }
 
   // ================================================================
-  // [12] CALENDAR
+  // [S12] CALENDAR
   // ================================================================
   async function loadCalendar() {
     setHTML('calendarContent', pageLoaderHTML('Loading calendar...'));
@@ -883,7 +966,7 @@
   }
 
   // ================================================================
-  // [13] CALENDAR IMPORT
+  // [S13] CALENDAR IMPORT
   // ================================================================
   async function loadCalendarImportHistory() {
     setHTML('ci_history', emptyHTML('fa-file-import', 'No imports yet'));
@@ -903,7 +986,7 @@
   }
 
   // ================================================================
-  // [14] QR
+  // [S14] QR
   // ================================================================
   async function loadActiveQR() {
     setHTML('qrContent', pageLoaderHTML('Loading QR code...'));
@@ -940,7 +1023,7 @@
   }
 
   // ================================================================
-  // [15] REPORTS
+  // [S15] REPORTS
   // ================================================================
   function initReportsTab() {
     const btn = $('btnGenerateReport');
@@ -951,7 +1034,7 @@
   }
 
   // ================================================================
-  // [16] CLASSES
+  // [S16] CLASSES
   // ================================================================
   async function loadClasses() {
     setHTML('classesContent', pageLoaderHTML('Loading classes...'));
@@ -1051,7 +1134,7 @@
   }
 
   // ================================================================
-  // [17] USERS
+  // [S17] USERS
   // ================================================================
   async function loadUsers() {
     setHTML('usersContent', pageLoaderHTML('Loading users...'));
@@ -1072,7 +1155,7 @@
   }
 
   // ================================================================
-  // [18] PLACEHOLDERS
+  // [S18] PLACEHOLDERS
   // ================================================================
   function initBroadSheetTab() {
     const r1 = $('btnLoadBroadSheet'); if (r1) r1.addEventListener('click', () => showToast('Broad sheet data coming with the API layer', 'info'));
@@ -1080,7 +1163,7 @@
   }
 
   // ================================================================
-  // [19] WIRE + BOOT
+  // [S19] EVENT WIRING & BOOT
   // ================================================================
   function wireEventListeners() {
     const loginBtn = $('loginBtn'); if (loginBtn) loginBtn.addEventListener('click', doLogin);
@@ -1137,34 +1220,8 @@
   }
 
   // ================================================================
-  // [20] PUBLIC API
+  // [S20] PUBLIC API
   // ================================================================
-   // Global delegates for learner card buttons
-  window.LB_VIEW = function (pin) {
-    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
-      window.LB.openLearnerEditModal(pin);
-    } else {
-      const found = State.cachedLearners.find(l => l.pin === pin);
-      if (found) showLearnerModal(found);
-      else showToast('Learner not found', 'error');
-    }
-  };
-
-  window.LB_EDIT = function (pin) {
-    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
-      window.LB.openLearnerEditModal(pin);
-    } else {
-      showToast('Edit module not loaded. Refresh the page.', 'error');
-    }
-  };
-
-  window.LB_PRINT = function (pin) {
-    if (window.LB && typeof window.LB.printLearner === 'function') {
-      window.LB.printLearner(pin);
-    } else {
-      showToast('Print module not loaded. Refresh the page.', 'error');
-    }
-  };
   window.TIS = window.TIS || {};
   window.TIS.closeModal              = closeModal;
   window.TIS.switchTab               = switchTab;
