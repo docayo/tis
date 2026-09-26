@@ -368,15 +368,21 @@
     return html;
   }
 
-  // Clickable header strip — clicking opens the View modal
+    // Clickable header strip — clicking in EDIT mode switches to VIEW.
+  // In VIEW mode, clicking does nothing (avoids close/reopen flicker).
   function buildHeaderStrip(learner, phones, mode) {
     const name = learner['LEARNERS NAME'] || '';
     const pin  = learner['PIN'] || '';
     const cls  = getCurrentTermClass(learner);
     const photo = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
 
-    let html = '<div onclick="LB.openLearnerViewModal(\'' + escapeAttr(pin) + '\')" ' +
-               'style="cursor:pointer;display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
+    const clickable = (mode === 'edit');
+    const clickAttr = clickable
+      ? ' onclick="LB.switchToView(\'' + escapeAttr(pin) + '\')" title="Tap to view read-only profile"'
+      : '';
+
+    let html = '<div' + clickAttr +
+               ' style="cursor:' + (clickable ? 'pointer' : 'default') + ';display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
     if (photo) {
       html += '<img src="' + escapeAttr(photo) + '" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid #0d4d26;" onerror="this.outerHTML=\'<div style=&quot;width:80px;height:80px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;&quot;>' + escapeHtml((name || '?').charAt(0)) + '</div>\'">';
     } else {
@@ -388,6 +394,9 @@
     html += '<div style="font-size:13px;color:#555;margin-top:4px;">PIN: <b>' + escapeHtml(pin) + '</b></div>';
     html += '<div style="font-size:13px;color:#555;">Class: <b>' + escapeHtml(cls) + '</b></div>';
     html += '<div style="font-size:12px;color:#777;">Active Term: <b>' + escapeHtml(ACTIVE_TERM) + '</b></div>';
+    if (clickable) {
+      html += '<div style="font-size:11px;color:#0d4d26;font-weight:700;margin-top:4px;">👆 Tap to view profile</div>';
+    }
     html += '</div></div>';
     return html;
   }
@@ -1216,7 +1225,13 @@
       showToast('Save failed: ' + ((updateRes && updateRes.message) || 'unknown'), 'error');
     }
   }
-
+  /* Close current modal and open the View modal for the same learner.
+     Used by the clickable name ribbon in Edit mode. */
+  async function switchToView(pin) {
+    if (!pin) return;
+    closeEditModal();
+    await openLearnerViewModal(pin);
+  }
   async function addHeaderToSection(section) {
     const name = prompt('New header name for Section ' + section + ':');
     if (!name) return;
