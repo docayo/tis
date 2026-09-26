@@ -312,10 +312,18 @@
     });
     html += buildPhoneField('PHONE NUMBER — Priority 1', phones.first.label, phones.first.value);
     html += '</div></div>';
-
-    // ---- Section B: fees for ACTIVE TERM only, ONE phone (Mother) ----
+    
+       // ---- Section B: fees for ACTIVE TERM only, ONE phone (Mother) ----
     html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
     html += buildFeeBlock(learner, otherBills, true);
+    // Any remaining B-fields that survive the filter (Blood Group, Allergy, etc.)
+    const bFieldsFiltered = filterFeeFieldsToActiveTerm(usable.B || []);
+    bFieldsFiltered.forEach(function (f) {
+      // Skip fields already rendered by buildFeeBlock
+      if (/BALANCE B F|BILL|OTHER BILL|PART PAYMENT|BALANCE C F|CLEARANCE|CLEARED|TUITION/i.test(f.header)) return;
+      if (/PHONE NUMBER/i.test(f.header)) return;
+      html += buildEditableField(f, learner[f.header]);
+    });
     html += buildPhoneField('PHONE NUMBER — Priority 2', phones.second.label, phones.second.value);
     html += '</div></div>';
 
