@@ -5,17 +5,20 @@
 // SECTION MAP:
 //   [LB-01] BACKEND BRIDGE (JSONP)
 //   [LB-02] HELPERS
+//   [LB-02b] FIELD WHITELISTS (only active term + non-term fields)
 //   [LB-03] BULK DOWNLOAD TEMPLATE
 //   [LB-04] BULK UPLOAD UPDATES
-//   [LB-05] EDIT LEARNER MODAL (editable A/B/C)
-//   [LB-06] VIEW LEARNER MODAL (read-only A/B/C)
-//   [LB-07] FEE BLOCK (active term only, dynamic)
+//   [LB-05] EDIT LEARNER MODAL
+//   [LB-06] VIEW LEARNER MODAL (collapsible, keyboard shortcuts)
+//   [LB-06b] KEYBOARD SHORTCUTS (view mode + learners tab)
+//   [LB-07] FEE BLOCK (active term only)
 //   [LB-08] OTHER BILLS BLOCK
 //   [LB-09] UPDATE PAYMENT MODAL
-//   [LB-10] PRINT LEARNER (A4 + 80mm, A/B/C checkboxes)
-//   [LB-11] ADD NEW LEARNER
+//   [LB-10] PRINT LEARNER (A4 + 80mm, section checkboxes)
+//   [LB-11] ADD NEW LEARNER (auto-bill, A/B/C)
 //   [LB-12] PHOTO PICKER
-//   [LB-13] PUBLIC API EXPORT
+//   [LB-13] HELP MODAL (shortcut reference)
+//   [LB-14] PUBLIC API EXPORT
 // ================================================================
 
 (function () {
@@ -96,25 +99,20 @@
     return host;
   }
 
-  // Active term and the term before it — resolved from backend once per session.
   let ACTIVE_TERM = '1ST TERM 2026/2027';
   let PREV_TERM   = '3RD TERM 2025/2026';
 
   function derivePrevTerm(activeLabel) {
-    // Parse "<Nth> TERM <year1>/<year2>"
     const m = String(activeLabel).match(/^(\d)(?:ST|ND|RD|TH)\s+TERM\s+(\d{4})\/(\d{4})/i);
     if (!m) return '';
     const n = parseInt(m[1], 10);
     const y1 = m[2], y2 = m[3];
-    // 1ST -> previous is 3RD of previous session
     if (n === 1) {
       const prevY2 = String(parseInt(y1, 10) - 1);
       const prevY1 = String(parseInt(prevY2, 10) - 1);
       return '3RD TERM ' + prevY1 + '/' + prevY2;
     }
-    // 2ND -> previous is 1ST of same session
     if (n === 2) return '1ST TERM ' + y1 + '/' + y2;
-    // 3RD -> previous is 2ND of same session
     if (n === 3) return '2ND TERM ' + y1 + '/' + y2;
     return '';
   }
@@ -145,26 +143,7 @@
   function isBlank(v) {
     return v === '' || v === null || v === undefined || String(v).trim() === '';
   }
-  // Filter fee-related B fields to only the active term (and prior term's Balance B/F).
-  // Removes ALL other terms' Balance C F / Clearance / Cleared / Bill / Payment columns.
-  function filterFeeFieldsToActiveTerm(fields) {
-    if (!Array.isArray(fields)) return [];
-    const activePrefix = ACTIVE_TERM + ' ';
-    const prevPrefix   = PREV_TERM ? PREV_TERM + ' ' : '__never__';
-    return fields.filter(function (f) {
-      const h = String(f.header || '').toUpperCase();
-      // Keep anything that begins with the active term
-      if (h.indexOf(activePrefix.toUpperCase()) === 0) return true;
-      // Keep PREV TERM BALANCE C F (used as the "Previous Balance B/F" source)
-      if (h === prevPrefix.toUpperCase() + 'BALANCE C F') return true;
-      // Drop anything else that mentions any term (i.e. has TERM <year>/<year>)
-      if (/\b(1ST|2ND|3RD)\s+TERM\s+\d{4}\/\d{4}\b/i.test(h)) return false;
-      // Keep non-term fields (Blood Group, Allergy, etc.)
-      return true;
-    });
-  }
-  // Priority-aware phone resolver.
-  // Returns { first: {label, value}, second: {...}, third: {...} }
+
   function resolvePhones(learner, priority) {
     const map = {
       father:   { label: 'Fathers Phone',   value: learner['FATHERS PHONE NUMBER'] || '' },
@@ -181,6 +160,32 @@
       second: map[order[1]] || map.mother,
       third:  map[order[2]] || map.guardian
     };
+  }
+
+  // ================================================================
+  // [LB-02b] FIELD WHITELISTS
+  // ----------------------------------------------------------------
+  // The LEARNERS sheet has dozens of term-specific columns.
+  // We only want NON-TERM fields in Section A and C, and only
+  // ACTIVE TERM fields inside the fee block.
+  //
+  // Anything matching a term pattern (e.g. "1ST TERM 2026/2027 ...")
+  // is EXCLUDED from Section A and C, and handled explicitly by
+  // the fee block. This stops the endless list of duplicate rows.
+  // ================================================================
+  const TERM_REGEX = /\b(1ST|2ND|3RD|FIRST|SECOND|THIRD)\s+TERM\s+\d{4}\/\d{4}\b/i;
+
+  function isTermSpecific(header) {
+    return TERM_REGEX.test(String(header || ''));
+  }
+
+  function isFeeField(header) {
+    return /BALANCE B F|BILL|OTHER BILL|PART PAYMENT|BALANCE C F|CLEARANCE|CLEARED|TUITION|SCHOLARSHIP|ADJUSTED/i
+      .test(String(header || ''));
+  }
+
+  function isIdentityOrHistoryField(header) {
+    return !isTermSpecific(header) && !isFeeField(header);
   }
 
   // ================================================================
@@ -260,7 +265,7 @@
   }
 
   // ================================================================
-  // [LB-05] EDIT LEARNER MODAL — EDITABLE A / B / C
+  // [LB-05] EDIT LEARNER MODAL
   // ================================================================
   async function openLearnerEditModal(pin) {
     showToast('Loading learner...');
@@ -295,42 +300,45 @@
     html += '<div class="modal-header"><h2>Edit Learner</h2>' +
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
-    // ---- Banner (School Logo, Name, Motto, both schools, Ministry Logo) ----
     html += buildPrintBannerHTML();
+    html += buildHeaderStrip(learner, phones, 'edit');
 
-    // ---- Learner identity strip ----
-    html += buildHeaderStrip(learner, phones);
-
-    // ---- Section A: identity, minus PHOTO/PIN/NAME/CLASS/S-N; ONE phone (Father) ----
+    // Section A — only non-term, non-fee fields
     html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
-    const identityFields = (usable.A || []).filter(function (f) {
-      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header)
-          && !/PHONE NUMBER/i.test(f.header);
-    });
-    identityFields.forEach(function (f) {
+    (usable.A || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      if (!isIdentityOrHistoryField(h)) return false;
+      return true;
+    }).forEach(function (f) {
       html += buildEditableField(f, learner[f.header]);
     });
     html += buildPhoneField('PHONE NUMBER — Priority 1', phones.first.label, phones.first.value);
     html += '</div></div>';
-    
-       // ---- Section B: fees for ACTIVE TERM only, ONE phone (Mother) ----
+
+    // Section B — fees for ACTIVE TERM only
     html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
     html += buildFeeBlock(learner, otherBills, true);
-    // Any remaining B-fields that survive the filter (Blood Group, Allergy, etc.)
-    const bFieldsFiltered = filterFeeFieldsToActiveTerm(usable.B || []);
-    bFieldsFiltered.forEach(function (f) {
-      // Skip fields already rendered by buildFeeBlock
-      if (/BALANCE B F|BILL|OTHER BILL|PART PAYMENT|BALANCE C F|CLEARANCE|CLEARED|TUITION/i.test(f.header)) return;
-      if (/PHONE NUMBER/i.test(f.header)) return;
+    (usable.B || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (isTermSpecific(h) || isFeeField(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      return true;
+    }).forEach(function (f) {
       html += buildEditableField(f, learner[f.header]);
     });
     html += buildPhoneField('PHONE NUMBER — Priority 2', phones.second.label, phones.second.value);
     html += '</div></div>';
 
-    // ---- Section C: history & origin, ONE phone (Guardian) ----
+    // Section C — history & origin, non-term fields only
     html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
-    (usable.C || []).forEach(function (f) {
-      if (/PHONE NUMBER/i.test(f.header)) return;
+    (usable.C || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (isTermSpecific(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      return true;
+    }).forEach(function (f) {
       html += buildEditableField(f, learner[f.header]);
     });
     html += buildPhoneField('PHONE NUMBER — Priority 3', phones.third.label, phones.third.value);
@@ -344,7 +352,6 @@
     getModalHost().innerHTML = html;
   }
 
-  // ---- Shared: print banner (logos, school names, motto) ----
   function buildPrintBannerHTML() {
     let html = '<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;' +
                'border-bottom:3px solid #0d4d26;padding-bottom:10px;margin-bottom:14px;">';
@@ -361,14 +368,15 @@
     return html;
   }
 
-  // ---- Learner identity strip (photo + name + PIN + CLASS + term) ----
-  function buildHeaderStrip(learner, phones) {
+  // Clickable header strip — clicking opens the View modal
+  function buildHeaderStrip(learner, phones, mode) {
     const name = learner['LEARNERS NAME'] || '';
     const pin  = learner['PIN'] || '';
     const cls  = getCurrentTermClass(learner);
     const photo = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
 
-    let html = '<div style="display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
+    let html = '<div onclick="LB.openLearnerViewModal(\'' + escapeAttr(pin) + '\')" ' +
+               'style="cursor:pointer;display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
     if (photo) {
       html += '<img src="' + escapeAttr(photo) + '" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid #0d4d26;" onerror="this.outerHTML=\'<div style=&quot;width:80px;height:80px;border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;&quot;>' + escapeHtml((name || '?').charAt(0)) + '</div>\'">';
     } else {
@@ -384,21 +392,16 @@
     return html;
   }
 
-  // ---- Get current-term class name from learner row (dynamic) ----
   function getCurrentTermClass(learner) {
-    // Try the ACTIVE_TERM CLASS column first
     const activeClsKey = ACTIVE_TERM + ' CLASS';
     if (learner[activeClsKey]) return learner[activeClsKey];
-    // Fallback to the class column of the term right before it
     const prevClsKey = PREV_TERM + ' CLASS';
     if (learner[prevClsKey]) return learner[prevClsKey];
-    // Last resort: first *CLASS column found
     const keys = Object.keys(learner);
     const clsKey = keys.find(function (k) { return /CLASS$/i.test(k) && !/ADMITTED|BEFORE/i.test(k); });
     return clsKey ? learner[clsKey] : '';
   }
 
-  // ---- Editable field ----
   function buildEditableField(f, val) {
     const v = val === undefined || val === null ? '' : val;
     const inputId = 'lb_field_' + f.col;
@@ -417,7 +420,6 @@
     return html;
   }
 
-  // ---- Editable phone field (labeled for the priority rank) ----
   function buildPhoneField(label, sourceHeader, value) {
     const inputId = 'lb_phone_' + sourceHeader.replace(/[^A-Za-z]/g, '_');
     let html = '<div class="form-group" style="margin-bottom:10px;">';
@@ -430,7 +432,7 @@
   }
 
   // ================================================================
-  // [LB-06] VIEW LEARNER MODAL — READ-ONLY A / B / C
+  // [LB-06] VIEW LEARNER MODAL — COLLAPSIBLE + SHORTCUT KEYS
   // ================================================================
   async function openLearnerViewModal(pin) {
     showToast('Loading learner...');
@@ -453,6 +455,7 @@
     window.__lbOtherBills = otherBills && otherBills.success ? (otherBills.bills || []) : [];
 
     renderViewModal(data.learner, fieldMap, priority, window.__lbOtherBills);
+    bindViewShortcuts(pin);
   }
 
   function renderViewModal(learner, fieldMap, priority, otherBills) {
@@ -466,46 +469,57 @@
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
     html += buildPrintBannerHTML();
-    html += buildHeaderStrip(learner, phones);
+    html += buildHeaderStrip(learner, phones, 'view');
 
-    // Section A — one phone (Father priority)
-    html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
-    const identityFields = (usable.A || []).filter(function (f) {
-      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header)
-          && !/PHONE NUMBER/i.test(f.header);
-    });
-    identityFields.forEach(function (f) {
+    // Keyboard hint strip
+    html += '<div style="font-size:11px;color:#666;text-align:right;margin-bottom:8px;">' +
+            'Keys: <b>E</b> expand all · <b>C</b> collapse all · <b>P</b> print · <b>Esc</b> close</div>';
+
+    // Section A
+    html += '<details class="lb-section" open><summary style="cursor:pointer;font-weight:700;color:#fff;background:#0d4d26;padding:8px 12px;border-radius:4px;">Section A — Identity</summary><div style="padding:10px 4px;">';
+    (usable.A || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      if (!isIdentityOrHistoryField(h)) return false;
+      return true;
+    }).forEach(function (f) {
       html += buildViewField(f.header, learner[f.header]);
     });
     html += buildViewField(phones.first.label, phones.first.value);
-    html += '</div></div>';
+    html += '</div></details>';
 
-       // Section B — fees active term only, one phone (Mother priority)
-    html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
+    // Section B
+    html += '<details class="lb-section" open><summary style="cursor:pointer;font-weight:700;color:#fff;background:#0d4d26;padding:8px 12px;border-radius:4px;margin-top:8px;">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</summary><div style="padding:10px 4px;">';
     html += buildFeeBlock(learner, otherBills, false);
-    // Any remaining B-fields that survive the filter (Blood Group, Allergy, etc.)
-    const bFieldsFiltered = filterFeeFieldsToActiveTerm(usable.B || []);
-    bFieldsFiltered.forEach(function (f) {
-      if (/BALANCE B F|BILL|OTHER BILL|PART PAYMENT|BALANCE C F|CLEARANCE|CLEARED|TUITION/i.test(f.header)) return;
-      if (/PHONE NUMBER/i.test(f.header)) return;
+    (usable.B || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (isTermSpecific(h) || isFeeField(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      return true;
+    }).forEach(function (f) {
       html += buildViewField(f.header, learner[f.header]);
     });
     html += buildViewField(phones.second.label, phones.second.value);
-    html += '</div></div>';
+    html += '</div></details>';
 
-    // Section C — history & origin, one phone (Guardian priority)
-    html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
-    (usable.C || []).forEach(function (f) {
-      if (/PHONE NUMBER/i.test(f.header)) return;
+    // Section C
+    html += '<details class="lb-section" open><summary style="cursor:pointer;font-weight:700;color:#fff;background:#0d4d26;padding:8px 12px;border-radius:4px;margin-top:8px;">Section C — History &amp; Origin</summary><div style="padding:10px 4px;">';
+    (usable.C || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (isTermSpecific(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      return true;
+    }).forEach(function (f) {
       html += buildViewField(f.header, learner[f.header]);
     });
     html += buildViewField(phones.third.label, phones.third.value);
-    html += '</div></div>';
+    html += '</div></details>';
 
     html += '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
-    html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Close</button>';
+    html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Close (Esc)</button>';
     html += '<button class="btn btn-warning" onclick="LB.openUpdatePaymentModal(\'' + escapeAttr(pin) + '\')">Update Payment</button>';
-    html += '<button class="btn btn-gold" onclick="LB.printLearner(\'' + escapeAttr(pin) + '\')">Print</button>';
+    html += '<button class="btn btn-gold" onclick="LB.printLearner(\'' + escapeAttr(pin) + '\')">Print (P)</button>';
     html += '<button class="btn btn-primary" onclick="LB.openLearnerEditModal(\'' + escapeAttr(pin) + '\')">Edit</button>';
     html += '</div></div></div>';
 
@@ -519,6 +533,69 @@
     html += '<span style="font-size:13px;color:#000;font-weight:500;text-align:right;max-width:60%;">' + escapeHtml(String(shown)) + '</span>';
     html += '</div>';
     return html;
+  }
+
+  // ================================================================
+  // [LB-06b] KEYBOARD SHORTCUTS
+  // ================================================================
+  function bindViewShortcuts(pin) {
+    // Remove any previous handler
+    if (window.__lbViewHandler) {
+      document.removeEventListener('keydown', window.__lbViewHandler);
+    }
+    window.__lbViewHandler = function (e) {
+      // Ignore if typing in an input
+      if (e.target && /INPUT|TEXTAREA|SELECT/i.test(e.target.tagName)) return;
+      const key = (e.key || '').toLowerCase();
+
+      if (key === 'escape') {
+        closeEditModal();
+        document.removeEventListener('keydown', window.__lbViewHandler);
+        window.__lbViewHandler = null;
+        return;
+      }
+      if (key === 'e') {
+        document.querySelectorAll('#lbModalHost details.lb-section').forEach(function (d) { d.open = true; });
+        return;
+      }
+      if (key === 'c') {
+        document.querySelectorAll('#lbModalHost details.lb-section').forEach(function (d) { d.open = false; });
+        return;
+      }
+      if (key === 'p' || (e.ctrlKey && key === 'p')) {
+        e.preventDefault();
+        printLearner(pin);
+        return;
+      }
+    };
+    document.addEventListener('keydown', window.__lbViewHandler);
+  }
+
+  // Learner tab shortcuts (only when learners tab is active and no modal open)
+  function bindLearnerTabShortcuts() {
+    if (window.__lbTabHandler) return;
+    window.__lbTabHandler = function (e) {
+      // Ignore when typing in inputs
+      if (e.target && /INPUT|TEXTAREA|SELECT/i.test(e.target.tagName)) return;
+      // Ignore when a modal is open
+      const host = document.getElementById('lbModalHost');
+      if (host && host.innerHTML.trim() !== '') return;
+      const learnersVisible = document.getElementById('module-learners') &&
+                              !document.getElementById('module-learners').classList.contains('hidden');
+      if (!learnersVisible) return;
+
+      const key = (e.key || '').toLowerCase();
+      if (key === 'a') {
+        e.preventDefault();
+        openAddLearnerModal();
+      } else if (key === '?' || key === '/') {
+        e.preventDefault();
+        showHelpModal();
+      } else if (key === 'escape') {
+        closeEditModal();
+      }
+    };
+    document.addEventListener('keydown', window.__lbTabHandler);
   }
 
   // ================================================================
@@ -542,7 +619,6 @@
   function buildFeeBlock(learner, otherBills, editable) {
     const balanceBFKey  = PREV_TERM + ' BALANCE C F';
     const billKey       = ACTIVE_TERM + ' BILL';
-    const totalPaidKey  = ACTIVE_TERM + ' TOTAL PART PAYMENT';
     const balanceCFKey  = ACTIVE_TERM + ' BALANCE C F';
     const clearanceKey  = ACTIVE_TERM + ' CLEARANCE';
     const clearedKey    = ACTIVE_TERM + ' Cleared';
@@ -563,11 +639,9 @@
 
     let html = '';
 
-    // Previous term Balance B/F (label carries prior term name)
     html += buildViewField('Previous Term Balance B/F — ' + PREV_TERM, fmtNaira(learner[balanceBFKey]));
     html += buildViewField('Current Term Tuition (Bill) — ' + ACTIVE_TERM, fmtNaira(learner[billKey]));
 
-    // Other Bills
     html += '<div style="margin-top:10px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Other Bills (' + escapeHtml(ACTIVE_TERM) + ')</div>';
     if (otherBills && otherBills.length) {
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
@@ -601,7 +675,6 @@
       html += '<div style="margin:6px 0;"><button type="button" class="btn btn-sm btn-primary" onclick="LB.addOtherBillPrompt()">+ Add Bill</button></div>';
     }
 
-    // Part payments
     html += '<div style="margin-top:16px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Part Payments (' + escapeHtml(ACTIVE_TERM) + ')</div>';
     if (rows.length === 0) {
       html += '<div style="padding:6px 0;font-size:12px;color:#888;">No payments recorded for this term yet.</div>';
@@ -730,7 +803,7 @@
   }
 
   // ================================================================
-  // [LB-10] PRINT LEARNER — A4 + 80mm, A/B/C CHECKBOXES
+  // [LB-10] PRINT LEARNER
   // ================================================================
   async function printLearner(pin) {
     showToast('Preparing print...');
@@ -756,7 +829,6 @@
       prevTerm: PREV_TERM
     };
 
-    // Print options modal (checkboxes + format)
     let html = '<div class="modal-overlay" onclick="if(event.target===this)LB.closeEditModal()">';
     html += '<div class="modal-box" style="max-width:460px;" onclick="event.stopPropagation()">';
     html += '<div class="modal-header"><h2>Print Learner</h2>' +
@@ -844,7 +916,6 @@
     html += '@media print {.no-print{display:none;}}';
     html += '</style></head><body>';
 
-    // Banner
     html += '<div class="banner">';
     html += '<img class="logo" src="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w200" alt="School">';
     html += '<div class="center">';
@@ -855,7 +926,6 @@
     html += '<img class="logo" src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry">';
     html += '</div>';
 
-    // Learner header
     html += '<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">';
     if (photo) {
       html += '<img class="header-photo" src="' + escapeAttr(photo) + '" onerror="this.outerHTML=\'<div class=&quot;avatar-fallback&quot;>' + escapeHtml((name || '?').charAt(0)) + '</div>\'">';
@@ -869,12 +939,14 @@
     html += '<div class="learner-meta">Active Term: <b>' + escapeHtml(term) + '</b></div>';
     html += '</div></div>';
 
-    // Section A
     if (sectionsToPrint.A) {
       html += '<h3>Section A — Identity</h3><table>';
       (usable.A || []).filter(function (f) {
-        return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header)
-            && !/PHONE NUMBER/i.test(f.header);
+        const h = String(f.header || '');
+        if (/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(h)) return false;
+        if (/PHONE NUMBER/i.test(h)) return false;
+        if (!isIdentityOrHistoryField(h)) return false;
+        return true;
       }).forEach(function (f) {
         html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
       });
@@ -882,7 +954,6 @@
       html += '</table>';
     }
 
-    // Section B
     if (sectionsToPrint.B) {
       html += '<h3>Section B — Fees (' + escapeHtml(term) + ')</h3><table>';
       html += '<tr><td>Previous Term Balance B/F (' + escapeHtml(prevTerm) + ')</td><td>' + fmtNaira(learner[prevTerm + ' BALANCE C F']) + '</td></tr>';
@@ -914,11 +985,14 @@
       html += '</table>';
     }
 
-    // Section C
     if (sectionsToPrint.C) {
       html += '<h3>Section C — History &amp; Origin</h3><table>';
-      (usable.C || []).forEach(function (f) {
-        if (/PHONE NUMBER/i.test(f.header)) return;
+      (usable.C || []).filter(function (f) {
+        const h = String(f.header || '');
+        if (isTermSpecific(h)) return false;
+        if (/PHONE NUMBER/i.test(h)) return false;
+        return true;
+      }).forEach(function (f) {
         html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
       });
       html += '<tr><td>' + escapeHtml(phones.third.label) + '</td><td>' + escapeHtml(phones.third.value || '—') + '</td></tr>';
@@ -936,7 +1010,7 @@
   }
 
   // ================================================================
-  // [LB-11] ADD NEW LEARNER
+  // [LB-11] ADD NEW LEARNER — A/B/C + auto-bill generation
   // ================================================================
   async function openAddLearnerModal() {
     showToast('Preparing form...');
@@ -948,27 +1022,52 @@
     window.__lbPriority = { first: 'father', second: 'mother', third: 'guardian' };
 
     let html = '<div class="modal-overlay" id="lbEditOverlay">';
-    html += '<div class="modal-box" style="max-width:900px;max-height:90vh;overflow-y:auto;">';
+    html += '<div class="modal-box" style="max-width:1000px;max-height:92vh;overflow-y:auto;">';
     html += '<div class="modal-header"><h2>Add New Learner</h2>' +
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
-    ['A','B','C'].forEach(function (sec) {
-      const fields = usable[sec] || [];
-      if (!fields.length) return;
-      html += '<div class="expandable open"><div class="expandable-header">Section ' + sec +
-              '</div><div class="expandable-body">';
-      fields.forEach(function (f) {
-        html += '<div class="form-group" style="margin-bottom:10px;">';
-        html += '<label style="font-weight:600;font-size:12px;">' + escapeHtml(f.header) + '</label>';
-        html += '<input type="text" data-field="' + escapeAttr(f.header) + '" value="" style="width:100%;">';
-        html += '</div>';
-      });
-      html += '</div></div>';
+    html += buildPrintBannerHTML();
+
+    // Section A
+    html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
+    (usable.A || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (/S\/N/i.test(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      if (!isIdentityOrHistoryField(h) && !/PHOTO|PIN|LEARNERS NAME|CLASS$/i.test(h)) return false;
+      return true;
+    }).forEach(function (f) {
+      html += buildEditableField(f, '');
     });
+    html += '</div></div>';
+
+    // Section B — fee block placeholders (initial bill fields only)
+    html += '<div class="expandable open"><div class="expandable-header">Section B — Initial Bill (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
+    html += '<div class="form-group" style="margin-bottom:10px;"><label style="font-weight:600;font-size:12px;">Opening Balance (previous B/F)</label>';
+    html += '<input type="number" data-field="__opening_balance" value="0" style="width:100%;"></div>';
+    html += '<div class="form-group" style="margin-bottom:10px;"><label style="font-weight:600;font-size:12px;">' + escapeHtml(ACTIVE_TERM) + ' Tuition (Bill)</label>';
+    html += '<input type="number" data-field="__initial_bill" value="0" style="width:100%;"></div>';
+    html += '<div class="form-group" style="margin-bottom:10px;"><label style="font-weight:600;font-size:12px;">First Payment Amount (optional)</label>';
+    html += '<input type="number" data-field="__first_payment_amount" value="" style="width:100%;"></div>';
+    html += '<div class="form-group" style="margin-bottom:10px;"><label style="font-weight:600;font-size:12px;">First Payment Date (optional)</label>';
+    html += '<input type="date" data-field="__first_payment_date" value="" style="width:100%;"></div>';
+    html += '</div></div>';
+
+    // Section C
+    html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
+    (usable.C || []).filter(function (f) {
+      const h = String(f.header || '');
+      if (isTermSpecific(h)) return false;
+      if (/PHONE NUMBER/i.test(h)) return false;
+      return true;
+    }).forEach(function (f) {
+      html += buildEditableField(f, '');
+    });
+    html += '</div></div>';
 
     html += '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
     html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Cancel</button>';
-    html += '<button class="btn btn-success" onclick="LB.saveNewLearner()">Create Learner</button>';
+    html += '<button class="btn btn-success" onclick="LB.saveNewLearner()">Create Learner &amp; Generate Bill</button>';
     html += '</div></div></div>';
 
     getModalHost().innerHTML = html;
@@ -977,18 +1076,45 @@
   async function saveNewLearner() {
     const inputs = document.querySelectorAll('#lbModalHost [data-field]');
     const row = {};
-    inputs.forEach(function (inp) { row[inp.dataset.field] = inp.value; });
+    const extras = {};
+    inputs.forEach(function (inp) {
+      if (inp.dataset.field.indexOf('__') === 0) {
+        extras[inp.dataset.field] = inp.value;
+      } else {
+        row[inp.dataset.field] = inp.value;
+      }
+    });
     if (!row['PIN']) { showToast('PIN is required.'); return; }
 
-    showToast('Creating...');
+    // Save the learner
+    showToast('Creating learner...');
     const res = await callBackend('LB_addNewLearner', row);
-    if (res && res.success) {
-      showToast('Learner created.', 'success');
-      closeEditModal();
-      if (typeof window.loadLearners === 'function') window.loadLearners();
-    } else {
+    if (!res || !res.success) {
       showToast('Failed: ' + ((res && res.message) || 'unknown'), 'error');
+      return;
     }
+
+    // Generate bill for the active term
+    const billData = {
+      pin: row['PIN'],
+      term: ACTIVE_TERM,
+      opening_balance: Number(extras['__opening_balance'] || 0),
+      tuition: Number(extras['__initial_bill'] || 0),
+      first_payment_amount: Number(extras['__first_payment_amount'] || 0),
+      first_payment_date: extras['__first_payment_date'] || ''
+    };
+
+    showToast('Generating bill...');
+    const billRes = await callBackend('LB_generateBillForNewLearner', billData);
+    if (billRes && billRes.success) {
+      showToast('Learner created and bill generated.', 'success');
+    } else {
+      showToast('Learner created, but bill generation failed: ' +
+                ((billRes && billRes.message) || 'unknown'), 'warning');
+    }
+
+    closeEditModal();
+    if (typeof window.loadLearners === 'function') window.loadLearners();
   }
 
   // ================================================================
@@ -1023,11 +1149,53 @@
   }
 
   // ================================================================
-  // [LB-13] PUBLIC API EXPORT
+  // [LB-13] HELP MODAL — Keyboard shortcut reference
+  // ================================================================
+  function showHelpModal() {
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)LB.closeEditModal()">';
+    html += '<div class="modal-box" style="max-width:520px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Keyboard Shortcuts</h2>' +
+            '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
+
+    html += '<div style="font-size:13px;line-height:1.8;">';
+    html += '<div style="font-weight:700;color:#0d4d26;margin-bottom:6px;">On Learners tab (no modal open):</div>';
+    html += '<table style="width:100%;font-size:13px;border-collapse:collapse;">';
+    html += '<tr><td style="padding:4px;font-weight:700;width:100px;"><kbd>A</kbd></td><td>Add New Learner</td></tr>';
+    html += '<tr><td style="padding:4px;font-weight:700;"><kbd>?</kbd> or <kbd>/</kbd></td><td>Show this help</td></tr>';
+    html += '</table>';
+
+    html += '<div style="font-weight:700;color:#0d4d26;margin-top:12px;margin-bottom:6px;">In View / Edit modal:</div>';
+    html += '<table style="width:100%;font-size:13px;border-collapse:collapse;">';
+    html += '<tr><td style="padding:4px;font-weight:700;width:100px;"><kbd>E</kbd></td><td>Expand all sections</td></tr>';
+    html += '<tr><td style="padding:4px;font-weight:700;"><kbd>C</kbd></td><td>Collapse all sections</td></tr>';
+    html += '<tr><td style="padding:4px;font-weight:700;"><kbd>P</kbd> or <kbd>Ctrl+P</kbd></td><td>Print learner</td></tr>';
+    html += '<tr><td style="padding:4px;font-weight:700;"><kbd>Esc</kbd></td><td>Close modal</td></tr>';
+    html += '</table>';
+
+    html += '<div style="font-weight:700;color:#0d4d26;margin-top:12px;margin-bottom:6px;">Mobile tips:</div>';
+    html += '<div style="font-size:12px;color:#555;">';
+    html += '• Tap the learner name ribbon at the top of any modal to switch to View mode.<br>';
+    html += '• Tap any section title to expand or collapse it.<br>';
+    html += '• Hold the phone horizontally for wider table view.';
+    html += '</div></div>';
+
+    html += '<div style="margin-top:16px;text-align:right;">';
+    html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Close</button>';
+    html += '</div></div></div>';
+
+    getModalHost().innerHTML = html;
+  }
+
+  // ================================================================
+  // [LB-14] PUBLIC API EXPORT + boot binding
   // ================================================================
   function closeEditModal() {
     const host = document.getElementById('lbModalHost');
     if (host) host.innerHTML = '';
+    if (window.__lbViewHandler) {
+      document.removeEventListener('keydown', window.__lbViewHandler);
+      window.__lbViewHandler = null;
+    }
   }
 
   async function saveLearnerEdit() {
@@ -1083,9 +1251,13 @@
     performPrint: performPrint,
     closeEditModal: closeEditModal,
     pickPhoto: pickPhoto,
+    showHelpModal: showHelpModal,
     callBackend: callBackend
   };
 
-  console.log('[LB] Learner Bulk module loaded — JSONP, active term aware, A/B/C print checkboxes.');
+  // Bind tab-level shortcut handler once
+  bindLearnerTabShortcuts();
+
+  console.log('[LB] Learner Bulk module loaded — active term aware, keyboard shortcuts active.');
 
 })();
