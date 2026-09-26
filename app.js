@@ -1,17 +1,18 @@
 // ================================================================
-// TIS EMIS — APPLICATION LOGIC (app.js)
+// TIS EMIS — APPLICATION LOGIC
+// File: app.js
 // ================================================================
 // SECTION MAP:
-//   [S01] STATE & CONSTANTS
+//   [S01] STATE
 //   [S02] UTILITIES
 //   [S03] PERMISSIONS
-//   [S04] AUTHENTICATION
+//   [S04] AUTH
 //   [S05] PASSWORD CHANGE
 //   [S06] NAVIGATION
-//   [S07] LEARNERS — load, render, view, edit, print, bulk
+//   [S07] LEARNERS
 //   [S08] STAFF
 //   [S09] TERMS
-//   [S10] ATTENDANCE
+//   [S10] LEARNER ATTENDANCE
 //   [S11] STAFF ATTENDANCE
 //   [S12] CALENDAR
 //   [S13] CALENDAR IMPORT
@@ -20,7 +21,7 @@
 //   [S16] CLASSES
 //   [S17] USERS
 //   [S18] PLACEHOLDERS
-//   [S19] EVENT WIRING & BOOT
+//   [S19] WIRE + BOOT
 //   [S20] PUBLIC API
 // ================================================================
 
@@ -28,7 +29,7 @@
   'use strict';
 
   // ================================================================
-  // [S01] STATE & CONSTANTS
+  // [S01] STATE
   // ================================================================
   const State = {
     profile: null,
@@ -44,44 +45,6 @@
     'broadsheet', 'calendar', 'calimport', 'qr', 'reports',
     'classes', 'users'
   ];
-
-  // A/B/C field groups for the learner modal
-  const LEARNER_FIELD_GROUPS = {
-    A: [
-      '3RD TERM 2026 CLASS',
-      'PIN',
-      'LEARNERS NAME',
-      'GENDER',
-      'PHOTO',
-      'PHOTO ',
-      'FATHERS PHONE NUMBER',
-      'MOTHERS PHONE NUMBER',
-      'MOTHERS PHONE NUMBER ',
-      'GUARDIAN PHONE NUMBER',
-      'ACCOUNT NUMBER'
-    ],
-    B: [
-      'BLOOD GROUP / GENOTYPE',
-      'Allergy'
-    ],
-    C: [
-      'CLASS BEFORE ADMISSION',
-      'DATE OF ADMISSION',
-      'CLASS ADMITTED INTO',
-      'CLASS ADMITTED INTO ',
-      'DATE OF WITHDRAWAL',
-      'CLASS AS AT WITHDRAWAL',
-      'LIN',
-      'RELIGION',
-      'DATE OF BIRTH',
-      'PARENTS NAME',
-      'ADDRESS',
-      'STATE OF ORIGIN',
-      'LGA OF ORIGIN',
-      'STATE OF BIRTH',
-      'LGA OF BIRTH'
-    ]
-  };
 
   // ================================================================
   // [S02] UTILITIES
@@ -206,7 +169,7 @@
   }
 
   // ================================================================
-  // [S04] AUTHENTICATION
+  // [S04] AUTH
   // ================================================================
   async function doLogin() {
     const idEl = $('loginId');
@@ -372,6 +335,7 @@
     renderLearners(State.cachedLearners);
     renderLearnerStats(State.cachedLearners);
   }
+
   function renderLearners(rows) {
     if (!rows || rows.length === 0) {
       setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
@@ -407,25 +371,14 @@
         const pin = btn.dataset.pin;
         const action = btn.dataset.action;
         if (action === 'view') {
-          if (window.LB && typeof window.LB.openLearnerViewModal === 'function') {
-            window.LB.openLearnerViewModal(pin);
-          } else {
-            const found = State.cachedLearners.find(l => l.pin === pin);
-            if (found) showLearnerModal(found);
-          }
+          if (window.LB && typeof window.LB.openLearnerViewModal === 'function') window.LB.openLearnerViewModal(pin);
+          else { const f = State.cachedLearners.find(l => l.pin === pin); if (f) showLearnerModal(f); }
         } else if (action === 'edit') {
-          if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
-            window.LB.openLearnerEditModal(pin);
-          } else {
-            const found = State.cachedLearners.find(l => l.pin === pin);
-            if (found) showLearnerModal(found);
-          }
+          if (window.LB && typeof window.LB.openLearnerEditModal === 'function') window.LB.openLearnerEditModal(pin);
+          else { const f = State.cachedLearners.find(l => l.pin === pin); if (f) showLearnerModal(f); }
         } else if (action === 'print') {
-          if (window.LB && typeof window.LB.printLearner === 'function') {
-            window.LB.printLearner(pin);
-          } else {
-            showToast('Print module not loaded. Refresh the page.', 'error');
-          }
+          if (window.LB && typeof window.LB.printLearner === 'function') window.LB.printLearner(pin);
+          else showToast('Print module not loaded. Refresh the page.', 'error');
         }
       });
     });
@@ -447,51 +400,18 @@
   }
 
   function showLearnerModal(d) {
-    // If learner-bulk.js is loaded, use its richer A/B/C modal.
-    if (window.LB && typeof window.LB.openLearnerEditModal === 'function') {
-      window.LB.openLearnerEditModal(d.pin);
+    if (window.LB && typeof window.LB.openLearnerViewModal === 'function') {
+      window.LB.openLearnerViewModal(d.pin);
       return;
     }
-    // Otherwise, render a self-contained A/B/C modal here.
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" onclick="event.stopPropagation()">' +
       '<div class="modal-header"><h2>' + esc(d.name) + '</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-
-    // Section A
     html += '<div class="expandable open"><div class="expandable-header">A — Identity</div><div class="expandable-body">';
     html += infoRow('Class', d.class_name);
     html += infoRow('PIN', d.pin);
-    html += infoRow('Learners Name', d.name);
     html += infoRow('Gender', d.gender);
-    html += infoRow('1st Phone', d.father_phone);
-    html += infoRow('Account Number', d.account_number);
     html += '</div></div>';
-
-    // Section B
-    html += '<div class="expandable open"><div class="expandable-header">B — Fees &amp; Health</div><div class="expandable-body">';
-    html += infoRow('Blood Group / Genotype', d.blood_group);
-    html += infoRow('Allergy', d.allergy);
-    html += '</div></div>';
-
-    // Section C
-    html += '<div class="expandable open"><div class="expandable-header">C — History &amp; Origin</div><div class="expandable-body">';
-    html += infoRow('Class Before Admission', d.class_before_admission);
-    html += infoRow('Date of Admission', fmtDate(d.date_of_admission));
-    html += infoRow('Class Admitted Into', d.class_admitted_into);
-    html += infoRow('Date of Withdrawal', fmtDate(d.date_of_withdrawal));
-    html += infoRow('Class as at Withdrawal', d.class_as_at_withdrawal);
-    html += infoRow('LIN', d.lin);
-    html += infoRow('Religion', d.religion);
-    html += infoRow('Date of Birth', fmtDate(d.date_of_birth));
-    html += infoRow('Parents Name', d.parents_name);
-    html += infoRow('Address', d.address);
-    html += infoRow('State of Origin', d.state_of_origin);
-    html += infoRow('LGA of Origin', d.lga_of_origin);
-    html += infoRow('State of Birth', d.state_of_birth);
-    html += infoRow('LGA of Birth', d.lga_of_birth);
-    html += infoRow('3rd Phone', d.guardian_phone);
-    html += '</div></div>';
-
     html += '</div></div>';
     setHTML('modalContainer', html);
   }
@@ -511,13 +431,10 @@
     }
     const rl = $('btnRefreshLearners'); if (rl) rl.addEventListener('click', loadLearners);
     const pl = $('btnPrintLearners');   if (pl) pl.addEventListener('click', printLearners);
-
-    const dl = $('btnDownloadTemplate');
-    if (dl) dl.addEventListener('click', function () {
+    const dl = $('btnDownloadTemplate'); if (dl) dl.addEventListener('click', function () {
       if (window.LB && typeof window.LB.downloadLearnerTemplate === 'function') window.LB.downloadLearnerTemplate();
       else showToast('Bulk module not loaded', 'error');
     });
-
     const ul = $('btnUploadUpdates');
     const fileInput = $('learnerUploadFile');
     if (ul && fileInput) {
@@ -530,9 +447,7 @@
         fileInput.value = '';
       });
     }
-
-    const al = $('btnAddLearner');
-    if (al) al.addEventListener('click', function () {
+    const al = $('btnAddLearner'); if (al) al.addEventListener('click', function () {
       if (window.LB && typeof window.LB.openAddLearnerModal === 'function') window.LB.openAddLearnerModal();
       else showToast('Bulk module not loaded', 'error');
     });
@@ -775,7 +690,7 @@
   }
 
   // ================================================================
-  // [S10] ATTENDANCE
+  // [S10] LEARNER ATTENDANCE
   // ================================================================
   async function initLearnerAttendanceTab() {
     await populateAttendanceClasses();
@@ -1166,7 +1081,7 @@
   }
 
   // ================================================================
-  // [S19] EVENT WIRING & BOOT
+  // [S19] WIRE + BOOT
   // ================================================================
   function wireEventListeners() {
     const loginBtn = $('loginBtn'); if (loginBtn) loginBtn.addEventListener('click', doLogin);
