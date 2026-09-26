@@ -4,15 +4,15 @@
 // ================================================================
 // SECTION MAP:
 //   [LB-01] BACKEND BRIDGE (JSONP)
-//   [LB-02] HELPERS (toast, escape, modal host, term resolver)
+//   [LB-02] HELPERS
 //   [LB-03] BULK DOWNLOAD TEMPLATE
 //   [LB-04] BULK UPLOAD UPDATES
 //   [LB-05] EDIT LEARNER MODAL (editable A/B/C)
 //   [LB-06] VIEW LEARNER MODAL (read-only A/B/C)
-//   [LB-07] PART PAYMENT BLOCK (smart sub-table)
-//   [LB-08] OTHER BILLS BLOCK (+ Add Bill, up to 7)
-//   [LB-09] UPDATE PAYMENT MODAL (per-learner)
-//   [LB-10] PRINT LEARNER (A4 banner + 80mm thermal)
+//   [LB-07] FEE BLOCK (active term only, dynamic)
+//   [LB-08] OTHER BILLS BLOCK
+//   [LB-09] UPDATE PAYMENT MODAL
+//   [LB-10] PRINT LEARNER (A4 + 80mm, A/B/C checkboxes)
 //   [LB-11] ADD NEW LEARNER
 //   [LB-12] PHOTO PICKER
 //   [LB-13] PUBLIC API EXPORT
@@ -23,12 +23,7 @@
 
   // ================================================================
   // [LB-01] BACKEND BRIDGE — JSONP
-  // ----------------------------------------------------------------
-  // Apps Script Web App has no CORS headers, so fetch() is blocked.
-  // JSONP: inject <script src=...&callback=NAME> and the server
-  // replies with  NAME({...json...});
   // ================================================================
-
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwp8WB7ZCYOiolA70SQAPi7--1cmclVwRQEMBaur6CwymD_8sDo9uL7dNNh9LFUkIZd/exec';
   const BACKEND_TIMEOUT_MS = 20000;
 
@@ -101,8 +96,29 @@
     return host;
   }
 
-  // Active term label — drives which fee columns are shown.
+  // Active term and the term before it — resolved from backend once per session.
   let ACTIVE_TERM = '1ST TERM 2026/2027';
+  let PREV_TERM   = '3RD TERM 2025/2026';
+
+  function derivePrevTerm(activeLabel) {
+    // Parse "<Nth> TERM <year1>/<year2>"
+    const m = String(activeLabel).match(/^(\d)(?:ST|ND|RD|TH)\s+TERM\s+(\d{4})\/(\d{4})/i);
+    if (!m) return '';
+    const n = parseInt(m[1], 10);
+    const y1 = m[2], y2 = m[3];
+    // 1ST -> previous is 3RD of previous session
+    if (n === 1) {
+      const prevY2 = String(parseInt(y1, 10) - 1);
+      const prevY1 = String(parseInt(prevY2, 10) - 1);
+      return '3RD TERM ' + prevY1 + '/' + prevY2;
+    }
+    // 2ND -> previous is 1ST of same session
+    if (n === 2) return '1ST TERM ' + y1 + '/' + y2;
+    // 3RD -> previous is 2ND of same session
+    if (n === 3) return '2ND TERM ' + y1 + '/' + y2;
+    return '';
+  }
+
   async function resolveActiveTerm() {
     const r = await callBackend('getActiveTerm');
     if (r && r.success && r.data) {
@@ -112,6 +128,7 @@
         ACTIVE_TERM = r.data.term_type.toUpperCase() + ' TERM ' + r.data.year;
       }
     }
+    PREV_TERM = derivePrevTerm(ACTIVE_TERM);
     return ACTIVE_TERM;
   }
 
@@ -127,6 +144,26 @@
   }
   function isBlank(v) {
     return v === '' || v === null || v === undefined || String(v).trim() === '';
+  }
+
+  // Priority-aware phone resolver.
+  // Returns { first: {label, value}, second: {...}, third: {...} }
+  function resolvePhones(learner, priority) {
+    const map = {
+      father:   { label: 'Fathers Phone',   value: learner['FATHERS PHONE NUMBER'] || '' },
+      mother:   { label: 'Mothers Phone',   value: learner['MOTHERS PHONE NUMBER'] || learner['MOTHERS PHONE NUMBER '] || '' },
+      guardian: { label: 'Guardians Phone', value: learner['GUARDIAN PHONE NUMBER'] || '' }
+    };
+    const order = [
+      (priority && priority.first)  || 'father',
+      (priority && priority.second) || 'mother',
+      (priority && priority.third)  || 'guardian'
+    ];
+    return {
+      first:  map[order[0]] || map.father,
+      second: map[order[1]] || map.mother,
+      third:  map[order[2]] || map.guardian
+    };
   }
 
   // ================================================================
@@ -234,50 +271,44 @@
 
   function renderEditModal(learner, fieldMap, priority, otherBills) {
     const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
+    const phones = resolvePhones(learner, priority);
 
     let html = '<div class="modal-overlay" id="lbEditOverlay">';
     html += '<div class="modal-box" style="max-width:1000px;max-height:92vh;overflow-y:auto;">';
-    html += '<div class="modal-header"><h2>Edit — ' +
-            escapeHtml(learner['LEARNERS NAME'] || '') + '</h2>' +
+    html += '<div class="modal-header"><h2>Edit Learner</h2>' +
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
-    // ---- Header strip (photo, name, PIN, class) ----
-    html += buildHeaderStrip(learner);
+    // ---- Banner (School Logo, Name, Motto, both schools, Ministry Logo) ----
+    html += buildPrintBannerHTML();
 
-    // ---- Section A: simple single-value fields, editable ----
+    // ---- Learner identity strip ----
+    html += buildHeaderStrip(learner, phones);
+
+    // ---- Section A: identity, minus PHOTO/PIN/NAME/CLASS/S-N; ONE phone (Father) ----
     html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
     const identityFields = (usable.A || []).filter(function (f) {
-      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header);
+      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header)
+          && !/PHONE NUMBER/i.test(f.header);
     });
     identityFields.forEach(function (f) {
       html += buildEditableField(f, learner[f.header]);
     });
+    html += buildPhoneField('PHONE NUMBER — Priority 1', phones.first.label, phones.first.value);
     html += '</div></div>';
 
-    // ---- Section B: intelligent fee block ----
+    // ---- Section B: fees for ACTIVE TERM only, ONE phone (Mother) ----
     html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
     html += buildFeeBlock(learner, otherBills, true);
+    html += buildPhoneField('PHONE NUMBER — Priority 2', phones.second.label, phones.second.value);
     html += '</div></div>';
 
-    // ---- Section C: history & origin, editable ----
+    // ---- Section C: history & origin, ONE phone (Guardian) ----
     html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
     (usable.C || []).forEach(function (f) {
+      if (/PHONE NUMBER/i.test(f.header)) return;
       html += buildEditableField(f, learner[f.header]);
     });
-    html += '</div></div>';
-
-    // ---- Contact priority ----
-    html += '<div class="expandable open"><div class="expandable-header">Contact Priority</div><div class="expandable-body">';
-    ['first', 'second', 'third'].forEach(function (rank, i) {
-      const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
-      html += '<div class="form-group" style="margin-bottom:10px;">';
-      html += '<label style="font-weight:600;font-size:12px;">' + (i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact</label>';
-      html += '<select id="lb_prio_' + rank + '" style="width:100%;">';
-      ['father','mother','guardian'].forEach(function (opt) {
-        html += '<option value="' + opt + '"' + (opt === val ? ' selected' : '') + '>' + opt.toUpperCase() + '</option>';
-      });
-      html += '</select></div>';
-    });
+    html += buildPhoneField('PHONE NUMBER — Priority 3', phones.third.label, phones.third.value);
     html += '</div></div>';
 
     html += '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
@@ -286,14 +317,30 @@
     html += '</div></div></div>';
 
     getModalHost().innerHTML = html;
-    attachFeeBlockHandlers(true);
   }
 
-  // ---- Header strip (photo, name, PIN, class) ----
-  function buildHeaderStrip(learner) {
+  // ---- Shared: print banner (logos, school names, motto) ----
+  function buildPrintBannerHTML() {
+    let html = '<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;' +
+               'border-bottom:3px solid #0d4d26;padding-bottom:10px;margin-bottom:14px;">';
+    html += '<img src="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w200" ' +
+            'style="width:70px;height:70px;object-fit:contain;" alt="School">';
+    html += '<div style="text-align:center;flex:1;">';
+    html += '<div style="font-size:20px;font-weight:900;color:#0d4d26;letter-spacing:1px;">THE IDEAL SCHOOLS</div>';
+    html += '<div style="font-size:12px;font-style:italic;color:#555;margin-top:2px;">Scientia est potentia</div>';
+    html += '<div style="font-size:11px;color:#333;margin-top:2px;">The Ideal Secondary School &mdash; The Ideal Kiddies School</div>';
+    html += '</div>';
+    html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" ' +
+            'style="width:70px;height:70px;object-fit:contain;" alt="Ministry">';
+    html += '</div>';
+    return html;
+  }
+
+  // ---- Learner identity strip (photo + name + PIN + CLASS + term) ----
+  function buildHeaderStrip(learner, phones) {
     const name = learner['LEARNERS NAME'] || '';
     const pin  = learner['PIN'] || '';
-    const cls  = learner['3RD TERM 2026 CLASS'] || learner['CLASS'] || '';
+    const cls  = getCurrentTermClass(learner);
     const photo = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
 
     let html = '<div style="display:flex;gap:16px;align-items:center;padding:12px;background:#f3f9ff;border-radius:8px;margin-bottom:16px;">';
@@ -312,6 +359,20 @@
     return html;
   }
 
+  // ---- Get current-term class name from learner row (dynamic) ----
+  function getCurrentTermClass(learner) {
+    // Try the ACTIVE_TERM CLASS column first
+    const activeClsKey = ACTIVE_TERM + ' CLASS';
+    if (learner[activeClsKey]) return learner[activeClsKey];
+    // Fallback to the class column of the term right before it
+    const prevClsKey = PREV_TERM + ' CLASS';
+    if (learner[prevClsKey]) return learner[prevClsKey];
+    // Last resort: first *CLASS column found
+    const keys = Object.keys(learner);
+    const clsKey = keys.find(function (k) { return /CLASS$/i.test(k) && !/ADMITTED|BEFORE/i.test(k); });
+    return clsKey ? learner[clsKey] : '';
+  }
+
   // ---- Editable field ----
   function buildEditableField(f, val) {
     const v = val === undefined || val === null ? '' : val;
@@ -327,6 +388,18 @@
       html += '<input type="text" id="' + inputId + '" value="' + escapeAttr(v) +
               '" data-field="' + escapeAttr(f.header) + '" data-col="' + f.col + '" style="width:100%;">';
     }
+    html += '</div>';
+    return html;
+  }
+
+  // ---- Editable phone field (labeled for the priority rank) ----
+  function buildPhoneField(label, sourceHeader, value) {
+    const inputId = 'lb_phone_' + sourceHeader.replace(/[^A-Za-z]/g, '_');
+    let html = '<div class="form-group" style="margin-bottom:10px;">';
+    html += '<label style="font-weight:600;font-size:12px;">' + escapeHtml(label) + '</label>';
+    html += '<div style="font-size:11px;color:#666;margin-bottom:3px;">(Sheet column: ' + escapeHtml(sourceHeader) + ')</div>';
+    html += '<input type="text" id="' + inputId + '" value="' + escapeAttr(value) +
+            '" data-field="' + escapeAttr(sourceHeader) + '" style="width:100%;">';
     html += '</div>';
     return html;
   }
@@ -360,46 +433,43 @@
   function renderViewModal(learner, fieldMap, priority, otherBills) {
     const usable = (fieldMap && fieldMap.success) ? fieldMap : { A: [], B: [], C: [] };
     const pin = learner['PIN'] || '';
+    const phones = resolvePhones(learner, priority);
 
     let html = '<div class="modal-overlay" id="lbViewOverlay">';
     html += '<div class="modal-box" style="max-width:1000px;max-height:92vh;overflow-y:auto;">';
-    html += '<div class="modal-header"><h2>' + escapeHtml(learner['LEARNERS NAME'] || '') + '</h2>' +
+    html += '<div class="modal-header"><h2>Learner Profile</h2>' +
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
 
-    html += buildHeaderStrip(learner);
+    html += buildPrintBannerHTML();
+    html += buildHeaderStrip(learner, phones);
 
-    // Section A
+    // Section A — one phone (Father priority)
     html += '<div class="expandable open"><div class="expandable-header">Section A — Identity</div><div class="expandable-body">';
     const identityFields = (usable.A || []).filter(function (f) {
-      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header);
+      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header)
+          && !/PHONE NUMBER/i.test(f.header);
     });
     identityFields.forEach(function (f) {
       html += buildViewField(f.header, learner[f.header]);
     });
+    html += buildViewField(phones.first.label, phones.first.value);
     html += '</div></div>';
 
-    // Section B
+    // Section B — fees active term only, one phone (Mother priority)
     html += '<div class="expandable open"><div class="expandable-header">Section B — Fees (' + escapeHtml(ACTIVE_TERM) + ')</div><div class="expandable-body">';
     html += buildFeeBlock(learner, otherBills, false);
+    html += buildViewField(phones.second.label, phones.second.value);
     html += '</div></div>';
 
-    // Section C
+    // Section C — history & origin, one phone (Guardian priority)
     html += '<div class="expandable open"><div class="expandable-header">Section C — History &amp; Origin</div><div class="expandable-body">';
     (usable.C || []).forEach(function (f) {
+      if (/PHONE NUMBER/i.test(f.header)) return;
       html += buildViewField(f.header, learner[f.header]);
     });
+    html += buildViewField(phones.third.label, phones.third.value);
     html += '</div></div>';
 
-    // Contact priority
-    html += '<div class="expandable open"><div class="expandable-header">Contact Priority</div><div class="expandable-body">';
-    ['first', 'second', 'third'].forEach(function (rank, i) {
-      const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
-      html += buildViewField((i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact',
-                             String(val).toUpperCase());
-    });
-    html += '</div></div>';
-
-    // Actions
     html += '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
     html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Close</button>';
     html += '<button class="btn btn-warning" onclick="LB.openUpdatePaymentModal(\'' + escapeAttr(pin) + '\')">Update Payment</button>';
@@ -420,14 +490,7 @@
   }
 
   // ================================================================
-  // [LB-07] PART PAYMENT BLOCK — SMART SUB-TABLE
-  // ----------------------------------------------------------------
-  // Reads the 5 part-payment columns per term:
-  //   "1ST TERM 2026/2027 1st PART PAYMENT DATE"
-  //   "1ST TERM 2026/2027 1st PART PAYMENT AMOUNT"
-  //   ... through 5th.
-  // Only renders rows where DATE or AMOUNT is not blank.
-  // In edit mode, "+ Add Payment" adds the next unused installment.
+  // [LB-07] FEE BLOCK — ACTIVE TERM ONLY
   // ================================================================
   function collectPartPayments(learner) {
     const rows = [];
@@ -438,23 +501,15 @@
       const d = learner[dKey];
       const a = learner[aKey];
       if (!isBlank(d) || !isBlank(a)) {
-        rows.push({
-          index: i + 1,
-          suffix: suffix,
-          date: d || '',
-          amount: a || '',
-          dateKey: dKey,
-          amountKey: aKey
-        });
+        rows.push({ index: i + 1, suffix: suffix, date: d || '', amount: a || '' });
       }
     });
     return rows;
   }
 
   function buildFeeBlock(learner, otherBills, editable) {
-    const balanceBFKey  = ACTIVE_TERM + ' Balance B F';
+    const balanceBFKey  = PREV_TERM + ' BALANCE C F';
     const billKey       = ACTIVE_TERM + ' BILL';
-    const otherBillKey  = ACTIVE_TERM + ' OTHER BILL';
     const totalPaidKey  = ACTIVE_TERM + ' TOTAL PART PAYMENT';
     const balanceCFKey  = ACTIVE_TERM + ' BALANCE C F';
     const clearanceKey  = ACTIVE_TERM + ' CLEARANCE';
@@ -476,12 +531,12 @@
 
     let html = '';
 
-    // Balance B/F, Bill, Other Bill
-    html += buildViewField('Previous Term Balance B/F', fmtNaira(learner[balanceBFKey]));
-    html += buildViewField('Current Term Tuition (Bill)', fmtNaira(learner[billKey]));
+    // Previous term Balance B/F (label carries prior term name)
+    html += buildViewField('Previous Term Balance B/F — ' + PREV_TERM, fmtNaira(learner[balanceBFKey]));
+    html += buildViewField('Current Term Tuition (Bill) — ' + ACTIVE_TERM, fmtNaira(learner[billKey]));
 
-    // Other Bills sub-list
-    html += '<div style="margin-top:10px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Other Bills</div>';
+    // Other Bills
+    html += '<div style="margin-top:10px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Other Bills (' + escapeHtml(ACTIVE_TERM) + ')</div>';
     if (otherBills && otherBills.length) {
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
       html += '<thead><tr style="background:#f0f0f0;">' +
@@ -514,8 +569,8 @@
       html += '<div style="margin:6px 0;"><button type="button" class="btn btn-sm btn-primary" onclick="LB.addOtherBillPrompt()">+ Add Bill</button></div>';
     }
 
-    // Part payments sub-table
-    html += '<div style="margin-top:16px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Part Payments</div>';
+    // Part payments
+    html += '<div style="margin-top:16px;margin-bottom:6px;font-weight:700;font-size:12px;color:#0d4d26;">Part Payments (' + escapeHtml(ACTIVE_TERM) + ')</div>';
     if (rows.length === 0) {
       html += '<div style="padding:6px 0;font-size:12px;color:#888;">No payments recorded for this term yet.</div>';
     } else {
@@ -539,22 +594,15 @@
             '<span style="font-size:13px;">' + fmtNaira(totalPartPayment) + '</span>' +
             '</div>';
 
-    // Balance C/F, Clearance
-    html += buildViewField('Balance C/F', fmtNaira(balanceCF));
-    html += buildViewField('Clearance Date', fmtDate(learner[clearanceKey]));
-    html += buildViewField('Cleared', learner[clearedKey] || 'No');
+    html += buildViewField('Balance C/F — ' + ACTIVE_TERM, fmtNaira(balanceCF));
+    html += buildViewField('Clearance Date — ' + ACTIVE_TERM, fmtDate(learner[clearanceKey]));
+    html += buildViewField('Cleared — ' + ACTIVE_TERM, learner[clearedKey] || 'No');
 
     return html;
   }
 
-  // Attach handlers for editable mode (Other Bills remove buttons + payment buttons)
-  function attachFeeBlockHandlers(editable) {
-    if (!editable) return;
-    // Remove handlers are inline (onclick), so nothing to attach.
-  }
-
   // ================================================================
-  // [LB-08] OTHER BILLS BLOCK — + ADD BILL (up to 7 per term/learner)
+  // [LB-08] OTHER BILLS BLOCK
   // ================================================================
   function addOtherBillPrompt() {
     const pin = window.__lbEditingPin || window.__lbViewingPin;
@@ -598,10 +646,7 @@
   }
 
   // ================================================================
-  // [LB-09] UPDATE PAYMENT MODAL — per-learner
-  // ----------------------------------------------------------------
-  // Adds the NEXT unused installment (1st..5th) for the active term.
-  // If all 5 are filled, refuses politely.
+  // [LB-09] UPDATE PAYMENT MODAL
   // ================================================================
   function openUpdatePaymentModal(pin) {
     const learner = window.__lbLearner || {};
@@ -653,11 +698,7 @@
   }
 
   // ================================================================
-  // [LB-10] PRINT LEARNER — A4 BANNER + 80mm THERMAL
-  // ----------------------------------------------------------------
-  // Presents a modal with two print choices:
-  //   - A4 (school banner header, A/B/C tables)
-  //   - 80mm thermal receipt
+  // [LB-10] PRINT LEARNER — A4 + 80mm, A/B/C CHECKBOXES
   // ================================================================
   async function printLearner(pin) {
     showToast('Preparing print...');
@@ -679,37 +720,46 @@
       fieldMap: fieldMap,
       priority: priority,
       otherBills: otherBills && otherBills.success ? (otherBills.bills || []) : [],
-      term: ACTIVE_TERM
+      term: ACTIVE_TERM,
+      prevTerm: PREV_TERM
     };
 
-    // Offer print options
+    // Print options modal (checkboxes + format)
     let html = '<div class="modal-overlay" onclick="if(event.target===this)LB.closeEditModal()">';
-    html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-box" style="max-width:460px;" onclick="event.stopPropagation()">';
     html += '<div class="modal-header"><h2>Print Learner</h2>' +
             '<button class="close-btn" onclick="LB.closeEditModal()">&times;</button></div>';
-    html += '<p style="font-size:13px;margin-bottom:12px;">Choose a paper format:</p>';
-    html += '<div style="display:flex;gap:8px;justify-content:center;">';
-    html += '<button class="btn btn-primary" onclick="LB.doPrintA4()">A4 (Banner)</button>';
-    html += '<button class="btn btn-warning" onclick="LB.doPrint80mm()">80mm Thermal</button>';
+
+    html += '<div style="margin-bottom:12px;font-size:13px;font-weight:600;color:#333;">Sections to print:</div>';
+    html += '<label style="display:block;margin-bottom:6px;"><input type="checkbox" id="lb_psec_a" checked> Section A — Identity</label>';
+    html += '<label style="display:block;margin-bottom:6px;"><input type="checkbox" id="lb_psec_b" checked> Section B — Fees</label>';
+    html += '<label style="display:block;margin-bottom:12px;"><input type="checkbox" id="lb_psec_c" checked> Section C — History &amp; Origin</label>';
+
+    html += '<div style="margin-bottom:12px;font-size:13px;font-weight:600;color:#333;">Paper format:</div>';
+    html += '<label style="display:block;margin-bottom:6px;"><input type="radio" name="lb_paper" value="A4" checked> A4 (banner header)</label>';
+    html += '<label style="display:block;margin-bottom:12px;"><input type="radio" name="lb_paper" value="80mm"> 80mm Thermal receipt</label>';
+
+    html += '<div style="text-align:right;display:flex;gap:8px;justify-content:flex-end;">';
     html += '<button class="btn btn-secondary" onclick="LB.closeEditModal()">Cancel</button>';
+    html += '<button class="btn btn-success" onclick="LB.performPrint()">Print Now</button>';
     html += '</div></div></div>';
+
     getModalHost().innerHTML = html;
   }
 
-  function doPrintA4() {
-    const p = window.__lbPrintPayload;
-    if (!p) return;
-    const html = buildPrintHTML(p, 'A4');
-    openPrintWindow(html);
-  }
-  function doPrint80mm() {
-    const p = window.__lbPrintPayload;
-    if (!p) return;
-    const html = buildPrintHTML(p, '80mm');
-    openPrintWindow(html);
-  }
+  function performPrint() {
+    const a = (document.getElementById('lb_psec_a') || {}).checked !== false;
+    const b = (document.getElementById('lb_psec_b') || {}).checked !== false;
+    const c = (document.getElementById('lb_psec_c') || {}).checked !== false;
+    const paperEls = document.querySelectorAll('input[name="lb_paper"]');
+    let paper = 'A4';
+    paperEls.forEach(function (el) { if (el.checked) paper = el.value; });
 
-  function openPrintWindow(html) {
+    if (!a && !b && !c) { showToast('Select at least one section to print.', 'warning'); return; }
+
+    const p = window.__lbPrintPayload;
+    if (!p) return;
+    const html = buildPrintHTML(p, paper, { A: a, B: b, C: c });
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
     w.document.open();
@@ -717,19 +767,20 @@
     w.document.close();
   }
 
-  function buildPrintHTML(payload, format) {
+  function buildPrintHTML(payload, format, sectionsToPrint) {
     const learner = payload.learner;
     const usable  = (payload.fieldMap && payload.fieldMap.success) ? payload.fieldMap : { A: [], B: [], C: [] };
     const priority = payload.priority || {};
     const otherBills = payload.otherBills || [];
     const term = payload.term;
+    const prevTerm = payload.prevTerm || '';
+    const phones = resolvePhones(learner, priority);
     const name  = learner['LEARNERS NAME'] || '';
     const pin   = learner['PIN'] || '';
-    const cls   = learner['3RD TERM 2026 CLASS'] || '';
+    const cls   = getCurrentTermClass(learner);
     const photo = learner['PHOTO'] || learner['PHOTO '] || learner['photo_url'] || '';
 
     const isReceipt = format === '80mm';
-    const pageWidth = isReceipt ? '80mm' : '210mm';
 
     let html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
     html += '<title>' + escapeHtml(name || pin) + '</title>';
@@ -741,13 +792,13 @@
       html += '@page { size: A4; margin: 12mm; }';
       html += 'body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:12px;}';
     }
-
-    html += '.banner{display:flex;gap:12px;align-items:center;justify-content:space-between;' +
+    html += '.banner{display:flex;gap:10px;align-items:center;justify-content:space-between;' +
             'border-bottom:3px solid #0d4d26;padding-bottom:10px;margin-bottom:14px;}';
-    html += '.banner .logo{width:' + (isReceipt ? '50px' : '80px') + ';height:' + (isReceipt ? '50px' : '80px') + ';object-fit:contain;}';
+    html += '.banner .logo{width:' + (isReceipt ? '50px' : '70px') + ';height:' + (isReceipt ? '50px' : '70px') + ';object-fit:contain;}';
     html += '.banner .center{text-align:center;flex:1;}';
-    html += '.banner .school{font-size:' + (isReceipt ? '12px' : '20px') + ';font-weight:900;color:#0d4d26;letter-spacing:1px;}';
+    html += '.banner .school{font-size:' + (isReceipt ? '13px' : '20px') + ';font-weight:900;color:#0d4d26;letter-spacing:1px;}';
     html += '.banner .motto{font-size:' + (isReceipt ? '9px' : '12px') + ';font-style:italic;color:#555;margin-top:2px;}';
+    html += '.banner .schools{font-size:' + (isReceipt ? '8px' : '11px') + ';color:#333;margin-top:2px;}';
     html += '.header-photo{width:' + (isReceipt ? '60px' : '90px') + ';height:' + (isReceipt ? '60px' : '90px') + ';object-fit:cover;border-radius:50%;border:3px solid #0d4d26;}';
     html += '.avatar-fallback{width:' + (isReceipt ? '60px' : '90px') + ';height:' + (isReceipt ? '60px' : '90px') + ';border-radius:50%;background:#0d4d26;color:#fff;display:flex;align-items:center;justify-content:center;font-size:' + (isReceipt ? '26px' : '38px') + ';font-weight:900;}';
     html += '.learner-name{font-size:' + (isReceipt ? '14px' : '22px') + ';font-weight:900;color:#0d4d26;}';
@@ -761,17 +812,18 @@
     html += '@media print {.no-print{display:none;}}';
     html += '</style></head><body>';
 
-    // ---- Banner with both logos ----
+    // Banner
     html += '<div class="banner">';
-    html += '<img class="logo" src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School">';
+    html += '<img class="logo" src="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w200" alt="School">';
     html += '<div class="center">';
     html += '<div class="school">THE IDEAL SCHOOLS</div>';
     html += '<div class="motto">Scientia est potentia</div>';
+    html += '<div class="schools">The Ideal Secondary School &mdash; The Ideal Kiddies School</div>';
     html += '</div>';
     html += '<img class="logo" src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry">';
     html += '</div>';
 
-    // ---- Learner header ----
+    // Learner header
     html += '<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">';
     if (photo) {
       html += '<img class="header-photo" src="' + escapeAttr(photo) + '" onerror="this.outerHTML=\'<div class=&quot;avatar-fallback&quot;>' + escapeHtml((name || '?').charAt(0)) + '</div>\'">';
@@ -785,65 +837,61 @@
     html += '<div class="learner-meta">Active Term: <b>' + escapeHtml(term) + '</b></div>';
     html += '</div></div>';
 
-    // ---- Section A ----
-    html += '<h3>Section A — Identity</h3><table>';
-    (usable.A || []).filter(function (f) {
-      return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header);
-    }).forEach(function (f) {
-      html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
-    });
-    html += '</table>';
-
-    // ---- Section B — Fees ----
-    html += '<h3>Section B — Fees (' + escapeHtml(term) + ')</h3><table>';
-
-    const balanceBF = learner[term + ' Balance B F'];
-    const bill      = learner[term + ' BILL'];
-    html += '<tr><td>Previous Term Balance B/F</td><td>' + fmtNaira(balanceBF) + '</td></tr>';
-    html += '<tr><td>Current Term Tuition (Bill)</td><td>' + fmtNaira(bill) + '</td></tr>';
-
-    // Other bills
-    let otherTotal = 0;
-    otherBills.forEach(function (b) {
-      const amt = Number(String(b.Amount || b.amount || '').replace(/[^\d.\-]/g, '')) || 0;
-      otherTotal += amt;
-      html += '<tr><td>Other Bill — ' + escapeHtml(b.Description || b.description || '') + '</td><td>' + fmtNaira(amt) + '</td></tr>';
-    });
-    html += '<tr class="total-row"><td>Other Bills Total</td><td>' + fmtNaira(otherTotal) + '</td></tr>';
-
-    // Part payments sub-table
-    const partRows = collectPartPayments(learner);
-    if (partRows.length) {
-      html += '<tr><td colspan="2" style="font-weight:700;background:#f0f0f0;">Part Payments</td></tr>';
-      let paidTotal = 0;
-      partRows.forEach(function (r) {
-        const amt = Number(String(r.amount || '').replace(/[^\d.\-]/g, '')) || 0;
-        paidTotal += amt;
-        html += '<tr><td>' + escapeHtml(r.suffix) + ' — ' + escapeHtml(r.date || '—') + '</td><td>' + fmtNaira(amt) + '</td></tr>';
+    // Section A
+    if (sectionsToPrint.A) {
+      html += '<h3>Section A — Identity</h3><table>';
+      (usable.A || []).filter(function (f) {
+        return !/S\/N|PHOTO|CLASS$|PIN|LEARNERS NAME$/i.test(f.header)
+            && !/PHONE NUMBER/i.test(f.header);
+      }).forEach(function (f) {
+        html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
       });
-      html += '<tr class="total-row"><td>Total Part Payment</td><td>' + fmtNaira(paidTotal) + '</td></tr>';
+      html += '<tr><td>' + escapeHtml(phones.first.label) + '</td><td>' + escapeHtml(phones.first.value || '—') + '</td></tr>';
+      html += '</table>';
     }
 
-    const balanceCF = learner[term + ' BALANCE C F'];
-    html += '<tr><td>Balance C/F</td><td>' + fmtNaira(balanceCF) + '</td></tr>';
-    html += '<tr><td>Clearance Date</td><td>' + escapeHtml(learner[term + ' CLEARANCE'] || '—') + '</td></tr>';
-    html += '<tr><td>Cleared</td><td>' + escapeHtml(learner[term + ' Cleared'] || 'No') + '</td></tr>';
-    html += '</table>';
+    // Section B
+    if (sectionsToPrint.B) {
+      html += '<h3>Section B — Fees (' + escapeHtml(term) + ')</h3><table>';
+      html += '<tr><td>Previous Term Balance B/F (' + escapeHtml(prevTerm) + ')</td><td>' + fmtNaira(learner[prevTerm + ' BALANCE C F']) + '</td></tr>';
+      html += '<tr><td>Current Term Tuition (' + escapeHtml(term) + ')</td><td>' + fmtNaira(learner[term + ' BILL']) + '</td></tr>';
+      let otherTotal = 0;
+      otherBills.forEach(function (bl) {
+        const amt = Number(String(bl.Amount || bl.amount || '').replace(/[^\d.\-]/g, '')) || 0;
+        otherTotal += amt;
+        html += '<tr><td>Other Bill — ' + escapeHtml(bl.Description || bl.description || '') + '</td><td>' + fmtNaira(amt) + '</td></tr>';
+      });
+      html += '<tr class="total-row"><td>Other Bills Total</td><td>' + fmtNaira(otherTotal) + '</td></tr>';
 
-    // ---- Section C ----
-    html += '<h3>Section C — History &amp; Origin</h3><table>';
-    (usable.C || []).forEach(function (f) {
-      html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
-    });
-    html += '</table>';
+      const partRows = collectPartPayments(learner);
+      if (partRows.length) {
+        html += '<tr><td colspan="2" style="font-weight:700;background:#f0f0f0;">Part Payments</td></tr>';
+        let paidTotal = 0;
+        partRows.forEach(function (r) {
+          const amt = Number(String(r.amount || '').replace(/[^\d.\-]/g, '')) || 0;
+          paidTotal += amt;
+          html += '<tr><td>' + escapeHtml(r.suffix) + ' — ' + escapeHtml(r.date || '—') + '</td><td>' + fmtNaira(amt) + '</td></tr>';
+        });
+        html += '<tr class="total-row"><td>Total Part Payment</td><td>' + fmtNaira(paidTotal) + '</td></tr>';
+      }
 
-    // Contact priority
-    html += '<h3>Contact Priority</h3><table>';
-    ['first', 'second', 'third'].forEach(function (rank, i) {
-      const val = priority && priority[rank] ? priority[rank] : ['father','mother','guardian'][i];
-      html += '<tr><td>' + (i === 0 ? '1st' : i === 1 ? '2nd' : '3rd') + ' Contact</td><td>' + escapeHtml(String(val).toUpperCase()) + '</td></tr>';
-    });
-    html += '</table>';
+      html += '<tr><td>Balance C/F</td><td>' + fmtNaira(learner[term + ' BALANCE C F']) + '</td></tr>';
+      html += '<tr><td>Clearance Date</td><td>' + escapeHtml(learner[term + ' CLEARANCE'] || '—') + '</td></tr>';
+      html += '<tr><td>Cleared</td><td>' + escapeHtml(learner[term + ' Cleared'] || 'No') + '</td></tr>';
+      html += '<tr><td>' + escapeHtml(phones.second.label) + '</td><td>' + escapeHtml(phones.second.value || '—') + '</td></tr>';
+      html += '</table>';
+    }
+
+    // Section C
+    if (sectionsToPrint.C) {
+      html += '<h3>Section C — History &amp; Origin</h3><table>';
+      (usable.C || []).forEach(function (f) {
+        if (/PHONE NUMBER/i.test(f.header)) return;
+        html += '<tr><td>' + escapeHtml(f.header) + '</td><td>' + escapeHtml(String(learner[f.header] || '—')) + '</td></tr>';
+      });
+      html += '<tr><td>' + escapeHtml(phones.third.label) + '</td><td>' + escapeHtml(phones.third.value || '—') + '</td></tr>';
+      html += '</table>';
+    }
 
     html += '<div class="footer">Printed: ' + new Date().toLocaleString() + ' &nbsp;·&nbsp; The Ideal Schools Operational Portal</div>';
     html += '<div class="no-print" style="text-align:center;margin-top:20px;">';
@@ -957,13 +1005,8 @@
     const patch = {};
     inputs.forEach(function (inp) { patch[inp.dataset.field] = inp.value; });
 
-    const prioFirst  = (document.getElementById('lb_prio_first')  || {}).value || 'father';
-    const prioSecond = (document.getElementById('lb_prio_second') || {}).value || 'mother';
-    const prioThird  = (document.getElementById('lb_prio_third')  || {}).value || 'guardian';
-
     showToast('Saving...');
     const updateRes = await callBackend('LB_updateLearner', pin, patch);
-    await callBackend('LB_setContactPriority', pin, prioFirst, prioSecond, prioThird);
 
     if (updateRes && updateRes.success) {
       showToast('Learner updated.', 'success');
@@ -1005,13 +1048,12 @@
     openUpdatePaymentModal: openUpdatePaymentModal,
     savePayment: savePayment,
     printLearner: printLearner,
-    doPrintA4: doPrintA4,
-    doPrint80mm: doPrint80mm,
+    performPrint: performPrint,
     closeEditModal: closeEditModal,
     pickPhoto: pickPhoto,
     callBackend: callBackend
   };
 
-  console.log('[LB] Learner Bulk module loaded — JSONP bridge, A4+80mm print, smart fees.');
+  console.log('[LB] Learner Bulk module loaded — JSONP, active term aware, A/B/C print checkboxes.');
 
 })();
