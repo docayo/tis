@@ -3357,9 +3357,8 @@
     const payload = base + '?qrtoken=' + encodeURIComponent(token);
     const imgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=10&data=' +
                    encodeURIComponent(payload);
-
-const generated = row.generated_at ? new Date(row.generated_at).toLocaleString() : '—';
-const expires   = row.expires_at   ? new Date(row.expires_at).toLocaleDateString()  : '—';
+    const generated = row.generated_at ? new Date(row.generated_at).toLocaleString() : '—';
+    const expires   = row.expires_at   ? new Date(row.expires_at).toLocaleDateString()  : '—';
 
     let html = '<div class="card-bg qr-box" style="text-align:center;padding:24px;">';
     html += '<img src="' + esc(imgUrl) + '" alt="QR code" style="max-width:340px;width:100%;border:6px solid #d4a017;border-radius:14px;background:#fff;padding:8px;">';
