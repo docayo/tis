@@ -1143,9 +1143,8 @@
     html += '</tbody></table></body></html>';
     w.document.write(html); w.document.close(); w.print();
   }
-
-     // ================================================================
-  // [S09] TERMS
+  // ================================================================
+  // [S09] TERMS  (promotion: term + year, class-based + special)
   // ================================================================
   async function initTermsTab() {
     await loadTerms();
@@ -1171,8 +1170,7 @@
     let html = '';
     State.cachedTerms.forEach(function (t) {
       const activeBadge = t.is_active
-        ? '<span class="card-badge" style="background:#27ae60;color:#fff;">ACTIVE</span>'
-        : '';
+        ? '<span class="card-badge" style="background:#27ae60;color:#fff;">ACTIVE</span>' : '';
       const fmt = function (d) {
         if (!d) return '—';
         const dt = new Date(d + 'T00:00:00');
@@ -1196,16 +1194,13 @@
       html += '</div>';
       html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
       if (t.is_active) {
-        html += '<button class="btn btn-sm btn-primary" onclick="openPromotionChooser(' + t.id + ')">' +
-                'Promote Learners</button>';
+        html += '<button class="btn btn-sm btn-primary" onclick="openPromotionWizard()">Promote Learners</button>';
         html += '<span style="color:#27ae60;font-weight:700;font-size:12px;align-self:center;">✓ Currently active</span>';
       } else {
         html += '<button class="btn btn-sm btn-success" ' +
-                'onclick="activateTerm(' + t.id + ', \'' + escAttr(t.label) + '\')">' +
-                'Set Active</button>';
+                'onclick="activateTerm(' + t.id + ', \'' + escAttr(t.label) + '\')">Set Active</button>';
       }
-      html += '</div>';
-      html += '</div>';
+      html += '</div></div>';
     });
 
     setHTML('termsList', html);
@@ -1216,12 +1211,8 @@
     startLoader();
     const r = await window.TIS.setActiveTerm(id);
     stopLoader();
-    if (r && r.ok) {
-      showToast('Active term set: ' + label, 'success');
-      loadTerms();
-    } else {
-      showToast('Could not set active: ' + ((r && r.error) || 'unknown'), 'error');
-    }
+    if (r && r.ok) { showToast('Active term set: ' + label, 'success'); loadTerms(); }
+    else showToast('Could not set active: ' + ((r && r.error) || 'unknown'), 'error');
   }
 
   async function loadArchives() {
@@ -1232,190 +1223,461 @@
   function initTermsWiring() { /* no-op */ }
 
   // ================================================================
-  // PROMOTION CHOOSER
+  // PROMOTION WIZARD — three screens in a single modal
+  //   1. Choose mode: Term promotion | Year promotion
+  //   2. If Year:  class-based bulk OR special single-learner
+  //   3. Confirm and apply
   // ================================================================
-  let promotionState = null;
+  let pw = null;   // promotion wizard state
 
-  async function openPromotionChooser(activeTermId) {
+  async function openPromotionWizard() {
     startLoader();
     const activeR = await window.TIS.getActiveTerm();
-    const learnersR = await window.TIS.listLearners();
     const classesR = await window.TIS.listClasses();
     stopLoader();
-
     if (!activeR || !activeR.ok || !activeR.data) { showToast('No active term', 'error'); return; }
-    if (!learnersR || !learnersR.ok) { showToast('Could not load learners', 'error'); return; }
     if (!classesR || !classesR.ok) { showToast('Could not load classes', 'error'); return; }
 
-    const activeTerm = activeR.data;
-    const learners = learnersR.data || [];
-    const classes = classesR.data || [];
-
-    const nextMap = {};
-    classes.forEach(function (c) { nextMap[c.name] = c.next_class || null; });
-
-    const eligible = learners.filter(function (l) {
-      if (!l.class_name) return false;
-      const w = (l.date_of_withdrawal || '').toString().trim();
-      if (w && w !== '' && w !== 'N/A') return false;
-      return true;
-    });
-
-    promotionState = {
-      activeTerm: activeTerm,
-      learners: eligible,
-      nextMap: nextMap,
-      choices: {},
-      filter: ''
+    pw = {
+      step: 1,
+      mode: null,                     // 'term' | 'year'
+      activeTerm: activeR.data,
+      classes: classesR.data || [],
+      // for year promotion
+      sourceClasses: [],              // selected source class names
+      learners: [],                   // learners in those classes
+      choices: {},                    // learnerId → new class name (or 'KEEP')
+      specialQuery: '',
+      specialLearner: null,
+      specialTarget: ''
     };
-    eligible.forEach(function (l) { promotionState.choices[l.id] = 'next'; });
-
-    renderPromotionChooser();
+    renderPromotionWizard();
   }
 
-  function renderPromotionChooser() {
-    if (!promotionState) return;
-    const st = promotionState;
-    const filter = (st.filter || '').toLowerCase();
-    const shown = st.learners.filter(function (l) {
-      if (!filter) return true;
-      return (l.name || '').toLowerCase().indexOf(filter) !== -1 ||
-             (l.pin || '').toLowerCase().indexOf(filter) !== -1 ||
-             (l.class_name || '').toLowerCase().indexOf(filter) !== -1;
-    });
+  function nextTermOf(activeTerm) {
+    if (activeTerm.term_type === '1st') return { term_type: '2nd', year: activeTerm.year };
+    if (activeTerm.term_type === '2nd') return { term_type: '3rd', year: activeTerm.year };
+    return { term_type: '1st', year: Number(activeTerm.year) + 1 };
+  }
 
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closePromotionChooser()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()" style="max-width:900px;">';
-    html += '<div class="modal-header">';
-    html += '<h2>Promote Learners — ' + esc(st.activeTerm.label) + '</h2>';
-    html += '<button class="close-btn" onclick="closePromotionChooser()">&times;</button>';
-    html += '</div>';
+  function renderPromotionWizard() {
+    if (!pw) return;
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closePromotionWizard()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()" style="max-width:960px;">';
+    html += '<div class="modal-header"><h2>Promotion</h2>' +
+            '<button class="close-btn" onclick="closePromotionWizard()">&times;</button></div>';
+    html += '<div style="padding:14px 18px;" id="pwBody">';
 
-    html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">';
-    html += '<input type="text" id="promoFilter" placeholder="Filter by name, PIN, or class…" ' +
-            'value="' + escAttr(st.filter) + '" oninput="applyPromotionFilter(this.value)" style="flex:1;min-width:200px;">';
-    html += '<button class="btn btn-sm btn-secondary" onclick="setAllPromotionChoices(\'next\')">All Next</button>';
-    html += '<button class="btn btn-sm btn-secondary" onclick="setAllPromotionChoices(\'keep\')">All Keep</button>';
-    html += '</div>';
+    // ---------- STEP 1: choose mode ----------
+    if (pw.step === 1) {
+      const next = nextTermOf(pw.activeTerm);
+      html += '<p style="font-size:13px;margin:0 0 12px;">Active term: <strong>' +
+              esc(pw.activeTerm.label) + '</strong></p>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
 
-    html += '<div style="max-height:55vh;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead style="position:sticky;top:0;background:#0d4d26;color:#fff;z-index:1;">';
-    html += '<tr>';
-    html += '<th style="text-align:left;padding:6px;">PIN</th>';
-    html += '<th style="text-align:left;padding:6px;">Name</th>';
-    html += '<th style="text-align:left;padding:6px;">Current</th>';
-    html += '<th style="text-align:center;padding:6px;">Action</th>';
-    html += '</tr></thead><tbody>';
+      html += '<div class="card-bg" style="cursor:pointer;" onclick="pwSetMode(\'term\')">';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">📆 Term promotion</h4>';
+      html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">';
+      html += 'Move all active learners from <b>' + esc(pw.activeTerm.label) + '</b> to ';
+      html += '<b>' + esc(next.term_type.toUpperCase()) + ' TERM ' + esc(next.year) + '</b>. ';
+      html += 'No class change — same class, same learners, new fee block.</p>';
+      html += '<button class="btn btn-primary" onclick="event.stopPropagation();pwSetMode(\'term\')">Choose Term Promotion</button>';
+      html += '</div>';
 
-    shown.forEach(function (l) {
-      const current = l.class_name || '';
-      const next = st.nextMap[current] || null;
-      const choice = st.choices[l.id] || 'next';
-      const nextDisabled = !next || next.toLowerCase() === 'graduated';
-      const nextLabel = next || '—';
+      html += '<div class="card-bg" style="cursor:pointer;" onclick="pwSetMode(\'year\')">';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">🎓 Year promotion</h4>';
+      html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">';
+      html += 'Change learners\' class to the next (or any) class. End-of-year move.</p>';
+      html += '<button class="btn btn-primary" onclick="event.stopPropagation();pwSetMode(\'year\')">Choose Year Promotion</button>';
+      html += '</div>';
 
-      html += '<tr>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.pin || '') + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.name || '') + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(current) + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">';
-      if (nextDisabled) {
-        html += '<span style="color:#888;font-size:11px;">Graduated / no next class — will keep</span>';
-      } else {
-        const nextChecked = choice === 'next' ? ' checked' : '';
-        const keepChecked = choice === 'keep' ? ' checked' : '';
-        html += '<label style="margin-right:8px;font-size:11px;">';
-        html += '<input type="radio" name="promo_' + l.id + '" value="next" ' + nextChecked +
-                ' onchange="setPromotionChoice(' + l.id + ',\'next\')"> Next (' + esc(nextLabel) + ')';
-        html += '</label>';
-        html += '<label style="font-size:11px;">';
-        html += '<input type="radio" name="promo_' + l.id + '" value="keep" ' + keepChecked +
-                ' onchange="setPromotionChoice(' + l.id + ',\'keep\')"> Keep';
-        html += '</label>';
+      html += '</div>';
+    }
+
+    // ---------- STEP 2 (term): pick learners ----------
+    else if (pw.step === 2 && pw.mode === 'term') {
+      const next = nextTermOf(pw.activeTerm);
+      html += '<p style="font-size:13px;margin:0 0 8px;">';
+      html += 'Promoting from <b>' + esc(pw.activeTerm.label) + '</b> to <b>' +
+              esc(next.term_type.toUpperCase()) + ' TERM ' + esc(next.year) + '</b>.</p>';
+      html += '<p style="font-size:12px;margin:0 0 12px;color:#666;">';
+      html += 'Every active learner will get a new fee row for the next term. ' +
+              'Balance C/F carries forward as the next term\'s Balance B/F.</p>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+      html += '<button class="btn btn-primary" onclick="pwTermPreview()">Load Learners</button>';
+      html += '<button class="btn btn-secondary" onclick="pwBack()">Back</button>';
+      html += '</div>';
+      html += '<div id="pwTermPreview" style="margin-top:14px;"></div>';
+    }
+
+    // ---------- STEP 2 (year): flow chooser ----------
+    else if (pw.step === 2 && pw.mode === 'year') {
+      html += '<p style="font-size:13px;margin:0 0 12px;">Year promotion — change class assignments.</p>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+      html += '<div class="card-bg">';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">🏫 Class-based (bulk)</h4>';
+      html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">Pick source classes. Every learner in them appears with a per-learner destination dropdown. Apply.</p>';
+      html += '<button class="btn btn-primary" onclick="pwYearGoClassBased()">Go Class-Based</button>';
+      html += '</div>';
+      html += '<div class="card-bg">';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">🔍 Special (single learner)</h4>';
+      html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">Search one learner by PIN or name. Promote to any class — non-standard moves warn but proceed.</p>';
+      html += '<button class="btn btn-primary" onclick="pwYearGoSpecial()">Go Special</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '<div style="margin-top:12px;"><button class="btn btn-secondary" onclick="pwBack()">Back</button></div>';
+    }
+
+    // ---------- STEP 3 (year/class-based): pick classes ----------
+    else if (pw.step === 3 && pw.mode === 'year' && pw.flow === 'classbased') {
+      html += '<p style="font-size:13px;margin:0 0 8px;">Pick source classes.</p>';
+      html += '<div style="max-height:260px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;padding:8px;margin-bottom:12px;">';
+      pw.classes.forEach(function (c) {
+        const checked = pw.sourceClasses.indexOf(c.name) !== -1 ? ' checked' : '';
+        html += '<label style="display:block;padding:4px 0;font-size:12px;">' +
+                '<input type="checkbox" class="pwSrcChk" value="' + escAttr(c.name) + '"' + checked +
+                ' onchange="pwToggleSourceClass(this.value, this.checked)"> ' +
+                esc(c.name) + ' <span style="color:#888;">→ ' + esc(c.next_class || '—') + '</span>' +
+                '</label>';
+      });
+      html += '</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+      html += '<button class="btn btn-primary" onclick="pwLoadClassBased()">Load Learners</button>';
+      html += '<button class="btn btn-secondary" onclick="pwBack()">Back</button>';
+      html += '</div>';
+    }
+
+    // ---------- STEP 4 (year/class-based): per-learner destination ----------
+    else if (pw.step === 4 && pw.mode === 'year' && pw.flow === 'classbased') {
+      const nextMap = {};
+      pw.classes.forEach(function (c) { nextMap[c.name] = c.next_class || null; });
+
+      html += '<p style="font-size:13px;margin:0 0 8px;">' + pw.learners.length +
+              ' learner(s) loaded. Adjust per-row destination or mark Keep.</p>';
+      html += '<div style="max-height:55vh;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead style="position:sticky;top:0;background:#0d4d26;color:#fff;">';
+      html += '<tr><th style="text-align:left;padding:6px;">PIN</th>' +
+              '<th style="text-align:left;padding:6px;">Name</th>' +
+              '<th style="text-align:left;padding:6px;">Current</th>' +
+              '<th style="text-align:left;padding:6px;">Destination</th></tr></thead><tbody>';
+
+      const classNames = pw.classes.map(function (c) { return c.name; }).concat(['—KEEP—']);
+      pw.learners.forEach(function (l) {
+        const current = l.class_name || '';
+        const auto = nextMap[current] || '';
+        const chosen = pw.choices[l.id] || auto || '—KEEP—';
+        html += '<tr>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.pin || '') + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.name || '') + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(current) + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">';
+        html += '<select onchange="pwSetChoice(' + l.id + ', this.value)" style="width:100%;">';
+        classNames.forEach(function (c) {
+          const sel = (chosen === c) ? ' selected' : '';
+          const label = c === '—KEEP—' ? 'Keep in current class' : c;
+          html += '<option value="' + escAttr(c) + '"' + sel + '>' + esc(label) + '</option>';
+        });
+        html += '</select>';
+        html += '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div style="margin-top:12px;text-align:right;">';
+      html += '<button class="btn btn-secondary" onclick="pwBack()">Back</button> ';
+      html += '<button class="btn btn-success" onclick="pwApplyYear()">Apply Promotion</button>';
+      html += '</div>';
+    }
+
+    // ---------- STEP 3 (year/special): search ----------
+    else if (pw.step === 3 && pw.mode === 'year' && pw.flow === 'special') {
+      html += '<p style="font-size:13px;margin:0 0 8px;">Search one learner to promote specially.</p>';
+      html += '<div style="display:flex;gap:8px;">';
+      html += '<input type="text" id="pwSpecialQuery" placeholder="Enter PIN or name…" ' +
+              'value="' + escAttr(pw.specialQuery) + '" oninput="pwSpecialQueryChanged(this.value)" style="flex:1;">';
+      html += '<button class="btn btn-primary" onclick="pwSearchSpecial()">Search</button>';
+      html += '<button class="btn btn-secondary" onclick="pwBack()">Back</button>';
+      html += '</div>';
+      html += '<div id="pwSpecialResults" style="margin-top:12px;"></div>';
+      if (pw.specialLearner) {
+        html += '<div style="margin-top:16px;background:#f7fbf7;padding:12px;border-radius:8px;">';
+        html += '<p style="margin:0 0 8px;font-size:13px;">' +
+                '<b>' + esc(pw.specialLearner.name) + '</b> — ' + esc(pw.specialLearner.pin) +
+                ' (currently: ' + esc(pw.specialLearner.class_name || '—') + ')</p>';
+        html += '<div class="form-group"><label>Destination class</label>';
+        html += '<select id="pwSpecialTarget" onchange="pw.specialTarget = this.value" style="width:100%;">';
+        html += '<option value="">— Select class —</option>';
+        pw.classes.forEach(function (c) {
+          const sel = (pw.specialTarget === c.name) ? ' selected' : '';
+          html += '<option value="' + escAttr(c.name) + '"' + sel + '>' + esc(c.name) + '</option>';
+        });
+        html += '</select></div>';
+        html += '<div id="pwSpecialWarn" style="font-size:12px;color:#b8860b;margin-top:6px;"></div>';
+        html += '<div style="text-align:right;margin-top:10px;">';
+        html += '<button class="btn btn-success" onclick="pwApplySpecial()">Apply Special Promotion</button>';
+        html += '</div>';
+        html += '</div>';
       }
-      html += '</td></tr>';
-    });
+    }
 
-    html += '</tbody></table></div>';
-
-    html += '<div style="margin-top:12px;text-align:right;">';
-    html += '<span style="margin-right:12px;font-size:12px;color:#666;">' +
-            shown.length + ' learner(s) shown</span>';
-    html += '<button class="btn btn-secondary" onclick="closePromotionChooser()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="applyPromotion()">Apply Promotion</button>';
-    html += '</div>';
-
-    html += '</div></div>';
+    html += '</div></div></div>';
     setHTML('modalContainer', html);
   }
 
-  function applyPromotionFilter(val) {
-    if (!promotionState) return;
-    promotionState.filter = val || '';
-    renderPromotionChooser();
-    setTimeout(function () {
-      const inp = document.getElementById('promoFilter');
-      if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
-    }, 0);
+  // ---------- Wizard handlers ----------
+  function pwSetMode(m) { pw.mode = m; pw.step = 2; renderPromotionWizard(); }
+  function pwBack() {
+    if (pw.step === 3 || pw.step === 4) { pw.step = 2; }
+    else if (pw.step === 2) { pw.step = 1; pw.mode = null; }
+    renderPromotionWizard();
+  }
+  function pwYearGoClassBased() { pw.flow = 'classbased'; pw.step = 3; pw.sourceClasses = []; renderPromotionWizard(); }
+  function pwYearGoSpecial() { pw.flow = 'special'; pw.step = 3; renderPromotionWizard(); }
+
+  function pwToggleSourceClass(name, on) {
+    const idx = pw.sourceClasses.indexOf(name);
+    if (on && idx === -1) pw.sourceClasses.push(name);
+    if (!on && idx !== -1) pw.sourceClasses.splice(idx, 1);
   }
 
-  function setPromotionChoice(learnerId, choice) {
-    if (!promotionState) return;
-    promotionState.choices[learnerId] = choice;
+  async function pwLoadClassBased() {
+    if (pw.sourceClasses.length === 0) { showToast('Pick at least one class', 'warning'); return; }
+    startLoader();
+    const r = await window.TIS.getLearnersForClasses(pw.sourceClasses);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Could not load learners: ' + ((r && r.error) || ''), 'error'); return; }
+    pw.learners = r.data || [];
+    pw.choices = {};
+    pw.step = 4;
+    renderPromotionWizard();
   }
 
-  function setAllPromotionChoices(choice) {
-    if (!promotionState) return;
-    promotionState.learners.forEach(function (l) { promotionState.choices[l.id] = choice; });
-    renderPromotionChooser();
+  function pwSetChoice(learnerId, value) {
+    pw.choices[learnerId] = value;
   }
 
-  async function applyPromotion() {
-    if (!promotionState) return;
-    const st = promotionState;
+  async function pwApplyYear() {
+    const nextMap = {};
+    pw.classes.forEach(function (c) { nextMap[c.name] = c.next_class || null; });
+
     const promotions = [];
-
-    st.learners.forEach(function (l) {
-      if (st.choices[l.id] === 'keep') return;
-      const next = st.nextMap[l.class_name] || null;
-      if (!next || next.toLowerCase() === 'graduated') return;
-      promotions.push({ learnerId: l.id, newClassName: next });
+    pw.learners.forEach(function (l) {
+      const chosen = pw.choices[l.id] || nextMap[l.class_name] || '—KEEP—';
+      if (chosen === '—KEEP—') return;
+      if (chosen === l.class_name) return;
+      promotions.push({ learnerId: l.id, newClassName: chosen });
     });
 
-    if (promotions.length === 0) {
-      showToast('Nothing to promote — every learner is marked Keep.', 'info');
-      return;
-    }
+    if (promotions.length === 0) { showToast('Nothing to promote', 'info'); return; }
 
-    if (!confirm('Promote ' + promotions.length + ' learner(s) to their next class?\n\n' +
-                 'This updates learners.class_name in Supabase.')) return;
+    // Non-standard move summary
+    const nonStandard = promotions.filter(function (p) {
+      const l = pw.learners.find(function (x) { return x.id === p.learnerId; });
+      const auto = nextMap[l.class_name];
+      return auto !== p.newClassName;
+    });
+
+    let msg = 'Promote ' + promotions.length + ' learner(s)?';
+    if (nonStandard.length > 0) {
+      msg += '\n\n⚠ ' + nonStandard.length + ' non-standard move(s) detected.\n' +
+             'These do not follow the standard next-class mapping but will proceed.';
+    }
+    if (!confirm(msg)) return;
 
     startLoader();
-    const r = await window.TIS.promoteLearners(promotions);
+    const r = await window.TIS.yearPromote(promotions);
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Promoted ' + r.data.applied + ' learner(s).', 'success');
+      closePromotionWizard();
+      loadLearners();
+    } else {
+      showToast('Promotion failed: ' + ((r && r.error) || ''), 'error');
+    }
+  }
+
+  async function pwTermPreview() {
+    startLoader();
+    const r = await window.TIS.getLearnersForClasses(null);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Could not load learners', 'error'); return; }
+    pw.learners = r.data || [];
+    const next = nextTermOf(pw.activeTerm);
+    let html = '<p style="font-size:12px;color:#555;margin:0 0 8px;">' +
+               pw.learners.length + ' active learner(s) will receive a fee row for ' +
+               esc(next.term_type.toUpperCase()) + ' TERM ' + esc(next.year) + '.</p>';
+    html += '<div style="max-height:280px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    pw.learners.slice(0, 40).forEach(function (l) {
+      html += '<tr><td style="padding:4px;">' + esc(l.pin || '') + '</td>' +
+              '<td style="padding:4px;">' + esc(l.name || '') + '</td>' +
+              '<td style="padding:4px;">' + esc(l.class_name || '') + '</td></tr>';
+    });
+    if (pw.learners.length > 40) {
+      html += '<tr><td colspan="3" style="padding:4px;color:#888;">… and ' +
+              (pw.learners.length - 40) + ' more</td></tr>';
+    }
+    html += '</table></div>';
+    html += '<div style="margin-top:12px;text-align:right;">';
+    html += '<button class="btn btn-success" onclick="pwApplyTerm()">Apply Term Promotion</button>';
+    html += '</div>';
+    document.getElementById('pwTermPreview').innerHTML = html;
+  }
+
+  async function pwApplyTerm() {
+    if (!pw.learners.length) { showToast('Load the learners first', 'warning'); return; }
+    const next = nextTermOf(pw.activeTerm);
+    const ids = pw.learners.map(function (l) { return l.id; });
+    if (!confirm('Term promotion: create ' + ids.length + ' new fee row(s) for ' +
+                 next.term_type.toUpperCase() + ' TERM ' + next.year + '?\n\n' +
+                 'Balance C/F carries forward as the next term\'s Balance B/F.')) return;
+
+    startLoader();
+    const r = await window.TIS.termPromote(
+      pw.activeTerm.term_type, pw.activeTerm.year,
+      next.term_type, next.year, ids);
     stopLoader();
 
     if (r && r.ok) {
-      showToast('Promoted ' + r.data.applied + ' learner(s).', 'success');
-      closePromotionChooser();
-      loadLearners();
+      showToast('Created ' + r.data.created + ' next-term row(s).', 'success');
+      closePromotionWizard();
+      loadTerms();
+      checkPromotionBanner();
     } else {
-      showToast('Promotion failed: ' + ((r && r.error) || 'unknown'), 'error');
+      showToast('Term promotion failed: ' + ((r && r.error) || ''), 'error');
     }
   }
 
-  function closePromotionChooser() {
-    promotionState = null;
+  // ---------- Special (single learner) ----------
+  function pwSpecialQueryChanged(val) { pw.specialQuery = val || ''; }
+
+  async function pwSearchSpecial() {
+    const q = (pw.specialQuery || '').trim();
+    if (!q) { showToast('Enter a name or PIN', 'warning'); return; }
+    startLoader();
+    const r = await window.TIS.searchLearners(q);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Search failed: ' + ((r && r.error) || ''), 'error'); return; }
+    const results = r.data || [];
+    const box = document.getElementById('pwSpecialResults');
+    if (!box) return;
+    if (results.length === 0) {
+      box.innerHTML = '<p style="color:#888;font-size:12px;">No matches.</p>';
+      return;
+    }
+    let h = '<div style="max-height:220px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+    results.forEach(function (l) {
+      h += '<div style="padding:6px 10px;border-bottom:1px solid #eee;cursor:pointer;" ' +
+           'onclick="pwPickSpecial(' + l.id + ')">' +
+           '<b>' + esc(l.name) + '</b> — ' + esc(l.pin) +
+           ' <span style="color:#888;">(currently ' + esc(l.class_name || '—') + ')</span></div>';
+    });
+    h += '</div>';
+    box.innerHTML = h;
+    pw.specialResults = results;
+  }
+
+  function pwPickSpecial(learnerId) {
+    const l = (pw.specialResults || []).find(function (x) { return x.id === learnerId; });
+    if (!l) return;
+    pw.specialLearner = l;
+    pw.specialTarget = '';
+    renderPromotionWizard();
+  }
+
+  async function pwApplySpecial() {
+    if (!pw.specialLearner) { showToast('Pick a learner first', 'warning'); return; }
+    const target = (pw.specialTarget || '').trim();
+    if (!target) { showToast('Pick a destination class', 'warning'); return; }
+
+    // Warning check for non-standard moves.
+    const nextMap = {};
+    pw.classes.forEach(function (c) { nextMap[c.name] = c.next_class || null; });
+    const auto = nextMap[pw.specialLearner.class_name] || null;
+    if (auto !== target) {
+      const w = 'Non-standard promotion:\n\n' +
+                pw.specialLearner.name + ' is in ' + (pw.specialLearner.class_name || '—') + '.\n' +
+                'Standard next class: ' + (auto || '—') + '.\n' +
+                'You are promoting to: ' + target + '.\n\nProceed?';
+      if (!confirm(w)) return;
+    } else {
+      if (!confirm('Promote ' + pw.specialLearner.name + ' to ' + target + '?')) return;
+    }
+
+    startLoader();
+    const r = await window.TIS.yearPromote([{ learnerId: pw.specialLearner.id, newClassName: target }]);
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Promoted ' + pw.specialLearner.name + ' to ' + target + '.', 'success');
+      closePromotionWizard();
+      loadLearners();
+    } else {
+      showToast('Promotion failed: ' + ((r && r.error) || ''), 'error');
+    }
+  }
+
+  function closePromotionWizard() {
+    pw = null;
     setHTML('modalContainer', '');
   }
 
+  // ================================================================
+  // PROMOTION BANNER — persistent reminder when a term promotion is due
+  // ================================================================
+  async function checkPromotionBanner() {
+    let bar = document.getElementById('promotionBanner');
+    try {
+      const r = await window.TIS.getPromotionStatus();
+      if (!r || !r.ok || !r.data || !r.data.needsTermPromotion) {
+        if (bar) bar.remove();
+        return;
+      }
+      const t = r.data;
+      const msg = '⚠ You have not yet promoted some learners into ' +
+                  t.nextTerm.term_type.toUpperCase() + ' TERM ' + t.nextTerm.year +
+                  ' (' + t.pendingLearners + ' pending).';
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'promotionBanner';
+        bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#f39c12;' +
+                            'color:#fff;padding:10px 18px;font-size:13px;font-weight:600;' +
+                            'text-align:center;z-index:9999;box-shadow:0 -4px 12px rgba(0,0,0,0.15);';
+        bar.innerHTML = msg + ' <button onclick="document.getElementById(\'promotionBanner\').remove()" ' +
+                        'style="background:transparent;border:1px solid #fff;color:#fff;' +
+                        'border-radius:4px;padding:2px 8px;margin-left:12px;cursor:pointer;">Dismiss</button>';
+        document.body.appendChild(bar);
+      } else {
+        bar.innerHTML = msg + ' <button onclick="document.getElementById(\'promotionBanner\').remove()" ' +
+                        'style="background:transparent;border:1px solid #fff;color:#fff;' +
+                        'border-radius:4px;padding:2px 8px;margin-left:12px;cursor:pointer;">Dismiss</button>';
+      }
+    } catch (e) { /* silent */ }
+  }
+
+  // Check once at boot and every 10 minutes
+  document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(checkPromotionBanner, 3000);
+    setInterval(checkPromotionBanner, 10 * 60 * 1000);
+  });
+
+  // ---------- Globals ----------
   window.activateTerm = activateTerm;
-  window.openPromotionChooser = openPromotionChooser;
-  window.applyPromotionFilter = applyPromotionFilter;
-  window.setPromotionChoice = setPromotionChoice;
-  window.setAllPromotionChoices = setAllPromotionChoices;
-  window.applyPromotion = applyPromotion;
-  window.closePromotionChooser = closePromotionChooser;
+  window.openPromotionWizard = openPromotionWizard;
+  window.closePromotionWizard = closePromotionWizard;
+  window.pwSetMode = pwSetMode;
+  window.pwBack = pwBack;
+  window.pwYearGoClassBased = pwYearGoClassBased;
+  window.pwYearGoSpecial = pwYearGoSpecial;
+  window.pwToggleSourceClass = pwToggleSourceClass;
+  window.pwLoadClassBased = pwLoadClassBased;
+  window.pwSetChoice = pwSetChoice;
+  window.pwApplyYear = pwApplyYear;
+  window.pwTermPreview = pwTermPreview;
+  window.pwApplyTerm = pwApplyTerm;
+  window.pwSpecialQueryChanged = pwSpecialQueryChanged;
+  window.pwSearchSpecial = pwSearchSpecial;
+  window.pwPickSpecial = pwPickSpecial;
+  window.pwApplySpecial = pwApplySpecial;
+  window.checkPromotionBanner = checkPromotionBanner;
   // ================================================================
   // [S10] LEARNER ATTENDANCE
   // ================================================================
