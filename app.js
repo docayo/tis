@@ -852,39 +852,100 @@
     setHTML('archiveList', emptyHTML('fa-history', 'No archived months yet'));
   }
 
-  // ================================================================
-  // [S12] CALENDAR — delegated to calendar-module.js
+   // ================================================================
+  // [S12] CALENDAR
   // ================================================================
   async function loadCalendar() {
-    if (window.CAL && typeof window.CAL.renderCalendarTab === 'function') {
-      window.CAL.renderCalendarTab();
+    setHTML('calendarContent', pageLoaderHTML('Loading calendar…'));
+
+    const r = await window.TIS.getCalendar();
+    if (!r || !r.ok) {
+      setHTML('calendarContent', errorHTML('Could not load calendar', r && r.error));
       return;
     }
-    setHTML('calendarContent', errorHTML('Calendar module not loaded', 'Refresh the page.'));
+
+    const events = r.data || [];
+    if (!events.length) {
+      setHTML('calendarContent', emptyHTML('fa-calendar', 'No calendar events yet',
+        'Import one from the Calendar Import tab.'));
+      return;
+    }
+
+    // Group by academic_year, then by term.
+    const byYear = {};
+    events.forEach(function (e) {
+      const y = e.academic_year || 'Unknown';
+      if (!byYear[y]) byYear[y] = {};
+      const t = e.term_type || 'General';
+      if (!byYear[y][t]) byYear[y][t] = [];
+      byYear[y][t].push(e);
+    });
+
+    const years = Object.keys(byYear).sort().reverse();
+
+    let html = '';
+    years.forEach(function (y, yi) {
+      const yearEvents = Object.values(byYear[y]).flat();
+      const openAttr = yi === 0 ? ' open' : '';
+      html += '<details class="cal-year"' + openAttr + ' style="margin-bottom:12px;">';
+      html += '<summary style="cursor:pointer;font-weight:700;font-size:15px;' +
+              'background:#0d4d26;color:#fff;padding:10px 14px;border-radius:6px;">';
+      html += '📅 ' + esc(y) + ' — ' + yearEvents.length + ' events';
+      html += '</summary>';
+
+      // Sort term order: 1st, 2nd, 3rd, General
+      const termOrder = { '1st': 1, '2nd': 2, '3rd': 3, 'General': 99 };
+      const terms = Object.keys(byYear[y]).sort(function (a, b) {
+        return (termOrder[a] || 50) - (termOrder[b] || 50);
+      });
+
+      terms.forEach(function (t) {
+        const list = byYear[y][t].slice().sort(function (a, b) {
+          return (a.event_date || '').localeCompare(b.event_date || '');
+        });
+        html += '<div style="margin:10px 0 4px;font-size:12px;font-weight:700;' +
+                'color:#0d4d26;text-transform:uppercase;">' + esc(t) + ' Term</div>';
+        html += '<div class="card-bg" style="padding:0;overflow-x:auto;">';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+        html += '<thead><tr style="background:#f0f0f0;">' +
+                '<th style="text-align:left;padding:6px;">Date</th>' +
+                '<th style="text-align:left;padding:6px;">Day</th>' +
+                '<th style="text-align:left;padding:6px;">Type</th>' +
+                '<th style="text-align:left;padding:6px;">Description</th>' +
+                '<th style="text-align:center;padding:6px;">Holiday</th>' +
+                '</tr></thead><tbody>';
+        list.forEach(function (e) {
+          const d = new Date((e.event_date || '') + 'T00:00:00');
+          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const dateStr = isNaN(d.getTime()) ? e.event_date :
+            (d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear());
+          const isHoliday = e.is_holiday === true;
+          html += '<tr>';
+          html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(dateStr) + '</td>';
+          html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(e.day_name || '') + '</td>';
+          html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(e.event_type || '') + '</td>';
+          html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(e.description || '') + '</td>';
+          html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+                  (isHoliday ? '✅' : '—') + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+      });
+
+      html += '</details>';
+    });
+
+    setHTML('calendarContent', html);
   }
 
   function initCalendarTab() {
-    const up = $('btnUploadCalendar');
-    if (up) up.addEventListener('click', function () {
-      if (window.CAL && typeof window.CAL.openUploadModal === 'function') {
-        window.CAL.openUploadModal();
-      } else {
-        showToast('Calendar module not loaded. Refresh the page.', 'error');
-      }
-    });
-
     const rf = $('btnRefreshCalendar');
-    if (rf) rf.addEventListener('click', function () {
-      if (window.CAL && typeof window.CAL.renderCalendarTab === 'function') {
-        window.CAL.renderCalendarTab();
-      }
-    });
-
-    if (window.CAL && typeof window.CAL.renderCalendarTab === 'function') {
-      window.CAL.renderCalendarTab();
+    if (rf) rf.addEventListener('click', loadCalendar);
+    // Load once on boot if the module is already the active tab.
+    if (!$('module-calendar') || !$('module-calendar').classList.contains('hidden')) {
+      loadCalendar();
     }
   }
-
   // ================================================================
   // [S13] CALENDAR IMPORT
   // ================================================================
