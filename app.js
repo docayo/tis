@@ -1057,10 +1057,11 @@
     loadClasses();
   }
 
-   // ================================================================
+     // ================================================================
   // [S17] USERS + PERMISSIONS
   // ================================================================
   const PERM_ACTIONS = ['read', 'write', 'print'];
+  const __usrExpanded = {};
 
   async function loadUsers() {
     setHTML('usersContent', pageLoaderHTML('Loading users…'));
@@ -1094,7 +1095,7 @@
     html += '</tr></thead><tbody>';
 
     users.forEach(function (u) {
-      const expanded = !!window.__usrExpanded[u.id];
+      const expanded = !!__usrExpanded[u.id];
       const arrow = expanded ? '▾' : '▸';
       html += '<tr class="usr-row" data-uid="' + esc(u.id) + '" style="cursor:pointer;">';
       html += '<td style="padding:8px;border-bottom:1px solid #eee;">' + esc(u.id) + '</td>';
@@ -1165,31 +1166,24 @@
   }
 
   function wireUsersTable() {
-    // Ensure the shared state object exists.
-    if (!window.__usrExpanded) window.__usrExpanded = {};
-
     document.querySelectorAll('.usr-row').forEach(function (row) {
       row.addEventListener('click', function () {
         const uid = row.dataset.uid;
-        window.__usrExpanded[uid] = !window.__usrExpanded[uid];
+        __usrExpanded[uid] = !__usrExpanded[uid];
         loadUsers();
       });
     });
-
-    // Prevent clicks inside the editor from collapsing the row.
     document.querySelectorAll('.usrPermBox').forEach(function (box) {
       box.addEventListener('click', function (e) { e.stopPropagation(); });
     });
   }
 
-  // Called by the All On / All Off buttons.
   window.setAllPerms = function (uid, value) {
     document.querySelectorAll('.usrPermBox[data-uid="' + uid + '"]').forEach(function (b) {
       b.checked = value;
     });
   };
 
-  // Called by Save Permissions on the expanded row.
   window.saveUserPerms = async function (uid) {
     const auth = {};
     document.querySelectorAll('.usrPermBox[data-uid="' + uid + '"]').forEach(function (b) {
@@ -1207,16 +1201,9 @@
     }
   };
 
-  // Reset PW button. Uses the existing adminResetPassword endpoint.
-  window.resetUserPassword = async function (uid) {
-    const np = prompt('New password for ' + uid + ':');
-    if (!np) return;
-    if (np.length < 4) { showToast('Use at least 4 characters', 'warning'); return; }
-    startLoader();
-    const r = await window.TIS.adminResetPassword(uid, np, (State.profile && State.profile.name) || 'Admin');
-    stopLoader();
-    if (r && r.ok) showToast('Password reset', 'success');
-    else showToast('Reset failed: ' + ((r && r.error) || 'unknown'), 'error');
+  window.resetUserPassword = function (uid) {
+    showToast('Password reset needs an Edge Function. ' +
+              'Tell the developer to deploy supabase/functions/reset-password.', 'info');
   };
 
   function initUsersTab() {
