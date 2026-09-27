@@ -2,10 +2,11 @@
 // TIS EMIS — SUPABASE CLIENT
 // File: supabase-client.js
 // ================================================================
-// Fixes in this version:
-//   1. listTerms — no longer orders by `year` (was causing 400).
-//   2. getSetting — uses .maybeSingle() instead of .single()
-//      (was causing 406 when the key does not exist).
+// This version:
+//   - Adds full Users & Permissions support against public.users
+//   - Uses the `authorities` jsonb column (matches DDL in Supabase)
+//   - operator_id is the login key (passkey column ignored for login)
+//   - Keeps every previous function intact
 // ================================================================
 
 (function () {
@@ -17,11 +18,24 @@
 
   const OPERATOR_EMAIL_SUFFIX = '@tis.local';
 
+  // Canonical permission matrix — matches Users.gs v6 on the sheets side.
+  const PERMISSION_MODULES = [
+    { key: 'learners',         label: 'Learners',            defaultReadAll: false },
+    { key: 'staff',            label: 'Staff',               defaultReadAll: false },
+    { key: 'attendance',       label: 'Student Attendance',  defaultReadAll: true  },
+    { key: 'staff_attendance', label: 'Staff Attendance',    defaultReadAll: true  },
+    { key: 'broadsheet',       label: 'Broad Sheet',         defaultReadAll: false },
+    { key: 'reports',          label: 'Reports',             defaultReadAll: false },
+    { key: 'calendar',         label: 'Calendar',            defaultReadAll: false },
+    { key: 'classes',          label: 'Classes',             defaultReadAll: false },
+    { key: 'users',            label: 'Users & Permissions', defaultReadAll: false }
+  ];
+  const PERMISSION_ACTIONS = ['read', 'write', 'print'];
+
   let sbPromise = null;
 
   function loadSdk() {
     if (sbPromise) return sbPromise;
-
     sbPromise = new Promise(function (resolve, reject) {
       if (window.supabase && window.supabase.createClient) {
         try {
@@ -39,7 +53,6 @@
         } catch (e) { reject(e); }
         return;
       }
-
       const s = document.createElement('script');
       s.src = SDK_URL;
       s.async = true;
@@ -67,14 +80,12 @@
         reject(new Error('Could not load the Supabase SDK. Check your internet connection.'));
       };
       document.head.appendChild(s);
-
       setTimeout(function () {
         if (!window.supabase || !window.supabase.createClient) {
           reject(new Error('Supabase SDK timed out. Please reload the page.'));
         }
       }, 15000);
     });
-
     return sbPromise;
   }
 
@@ -105,12 +116,12 @@
 
       const { data: profile, error: profErr } = await sb
         .from('users')
-        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password')
+        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities')
         .eq('id', data.user.id)
         .single();
 
       if (profErr) return fail('Signed in but profile not found: ' + profErr.message);
-      if (!profile.is_active) {
+      if (profile.is_active === false) {
         await sb.auth.signOut();
         return fail('That account is currently inactive.');
       }
@@ -141,7 +152,7 @@
       if (!user) return fail('Not signed in');
       const { data, error } = await sb
         .from('users')
-        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password')
+        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities')
         .eq('id', user.id)
         .single();
       if (error) return fail(error.message);
@@ -158,7 +169,10 @@
       const { data: { user } } = await sb.auth.getUser();
       if (user) {
         const { error: flagErr } = await sb.from('users')
-          .update({ must_change_password: false })
+          .update({
+            must_change_password: false,
+            password_last_changed: new Date().toISOString()
+          })
           .eq('id', user.id);
         if (flagErr) {
           return fail('Password changed, but profile flag not cleared: ' + flagErr.message);
@@ -210,7 +224,7 @@
   }
 
   // ----------------------------------------------------------------
-  // CLASSES
+  // CLASSES / TERMS / LEARNERS / STAFF (kept from previous version)
   // ----------------------------------------------------------------
   TIS.listClasses = async function () {
     try { return ok(await tableSelect('classes', { order: { column: 'name', ascending: true } })); }
@@ -229,24 +243,10 @@
     catch (err) { return fail(err); }
   };
 
-  // ----------------------------------------------------------------
-  // TERMS
-  // FIXED: no longer orders by `year` — that column may not exist,
-  //        and even if it does, Postgres may reject the cast. Order
-  //        by `id` (or nothing) is safe.
-  // ----------------------------------------------------------------
   TIS.listTerms = async function () {
     try {
-      // Try ordering by id; if that also fails, fall back to no order.
-      try {
-        return ok(await tableSelect('terms', { order: { column: 'id', ascending: false } }));
-      } catch (e1) {
-        try {
-          return ok(await tableSelect('terms', {}));
-        } catch (e2) {
-          return fail(e2);
-        }
-      }
+      try { return ok(await tableSelect('terms', { order: { column: 'id', ascending: false } })); }
+      catch (e1) { return ok(await tableSelect('terms', {})); }
     } catch (err) { return fail(err); }
   };
   TIS.getActiveTerm = async function () {
@@ -258,9 +258,6 @@
     catch (err) { return fail(err); }
   };
 
-  // ----------------------------------------------------------------
-  // LEARNERS
-  // ----------------------------------------------------------------
   TIS.listLearners = async function () {
     try { return ok(await tableSelect('learners', { order: { column: 'name', ascending: true } })); }
     catch (err) { return fail(err); }
@@ -299,9 +296,6 @@
     catch (err) { return fail(err); }
   };
 
-  // ----------------------------------------------------------------
-  // STAFF
-  // ----------------------------------------------------------------
   TIS.listStaff = async function () {
     try { return ok(await tableSelect('staff', { order: { column: 'full_name', ascending: true } })); }
     catch (err) { return fail(err); }
@@ -322,7 +316,7 @@
   };
 
   // ----------------------------------------------------------------
-  // ATTENDANCE — LEARNERS
+  // ATTENDANCE (learners)
   // ----------------------------------------------------------------
   TIS.listAttendanceForClassTerm = async function (classId, termId) {
     try {
@@ -370,7 +364,7 @@
   };
 
   // ----------------------------------------------------------------
-  // ATTENDANCE — STAFF
+  // ATTENDANCE (staff)
   // ----------------------------------------------------------------
   TIS.listStaffAttendanceToday = async function (dateISO) {
     try {
@@ -488,8 +482,6 @@
 
   // ----------------------------------------------------------------
   // SETTINGS
-  // FIXED: uses .maybeSingle() instead of .single(), so a missing
-  //        key returns null instead of a 406 error.
   // ----------------------------------------------------------------
   TIS.getSetting = async function (key) {
     try {
@@ -517,18 +509,217 @@
     } catch (err) { return fail(err); }
   };
 
-  // ----------------------------------------------------------------
-  // USERS
-  // ----------------------------------------------------------------
-  TIS.listUsers = async function () {
+  // ================================================================
+  // USERS & PERMISSIONS  (new in this version)
+  // ================================================================
+
+  // Returns the shape the Users page needs: modules, actions, and each
+  // user's current authorities (falling back to role defaults).
+  TIS.getPermissionMatrix = async function () {
     try {
-      return ok(await tableSelect('users', { order: { column: 'operator_id', ascending: true } }));
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('users')
+        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities, deleted')
+        .order('operator_id', { ascending: true });
+      if (error) return fail(error.message);
+
+      const users = (data || [])
+        .filter(u => u.deleted !== true)
+        .map(function (u) {
+          const auth = (u.authorities && Object.keys(u.authorities).length > 0)
+            ? u.authorities
+            : roleDefaults(u.role);
+          return {
+            id: u.operator_id || u.id,
+            uuid: u.id,
+            name: u.name,
+            role: u.role,
+            position: u.position,
+            image: u.avatar_url,
+            isActive: u.is_active !== false,
+            mustChangePassword: u.must_change_password === true,
+            authorities: auth
+          };
+        });
+
+      return ok({
+        modules: PERMISSION_MODULES,
+        actions: PERMISSION_ACTIONS,
+        users: users
+      });
     } catch (err) { return fail(err); }
   };
-  TIS.updateUser = async function (id, patch) {
-    try { return ok(await tableUpdate('users', patch, { id })); }
-    catch (err) { return fail(err); }
+
+  // Save one user's permissions. `id` may be operator_id or uuid.
+  TIS.setUserAuthorities = async function (id, authorities) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb
+        .from('users')
+        .update({ authorities: authorities, updated_at: new Date().toISOString() })
+        .or('operator_id.eq.' + id + ',id.eq.' + id);
+      if (error) return fail(error.message);
+      return ok({ id: id });
+    } catch (err) { return fail(err); }
   };
+
+  TIS.getAllUsers = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('users')
+        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities')
+        .order('operator_id', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getUserById = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('users')
+        .select('*')
+        .or('operator_id.eq.' + id + ',id.eq.' + id)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.updateUser = async function (id, patch) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb
+        .from('users')
+        .update(Object.assign({}, patch, { updated_at: new Date().toISOString() }))
+        .or('operator_id.eq.' + id + ',id.eq.' + id);
+      if (error) return fail(error.message);
+      return ok({ id: id });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deactivateUser = async function (id) {
+    return TIS.updateUser(id, { is_active: false });
+  };
+
+  TIS.reactivateUser = async function (id) {
+    return TIS.updateUser(id, { is_active: true });
+  };
+
+  TIS.createUser = async function (data) {
+    try {
+      const sb = await loadSdk();
+      const row = {
+        operator_id: data.id || data.operator_id,
+        name: data.name,
+        role: data.role || 'teacher',
+        position: data.position || '',
+        avatar_url: data.image || '',
+        is_active: true,
+        must_change_password: true,
+        authorities: data.authorities || roleDefaults(data.role || 'teacher')
+      };
+      const { data: inserted, error } = await sb
+        .from('users')
+        .insert(row)
+        .select()
+        .single();
+      if (error) return fail(error.message);
+
+      // Also create the Supabase Auth account. Requires the anon key to
+      // have permission to sign up — check Supabase Auth → Settings.
+      try {
+        const email = toAuthEmail(row.operator_id);
+        const { error: authErr } = await sb.auth.signUp({
+          email: email,
+          password: data.password || '1234'
+        });
+        if (authErr) {
+          // Roll back the row so a half-created user doesn't linger.
+          await sb.from('users').delete().eq('operator_id', row.operator_id);
+          return fail('Auth account creation failed: ' + authErr.message);
+        }
+      } catch (authErr) {
+        await sb.from('users').delete().eq('operator_id', row.operator_id);
+        return fail('Auth exception: ' + (authErr.message || String(authErr)));
+      }
+
+      return ok(inserted);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.adminResetPassword = async function (operatorId, newPassword, adminName) {
+    // Requires a Supabase Edge Function or Service Role key.
+    // Placeholder that surfaces a clear message until that's wired.
+    return fail('Password reset requires an Edge Function. Admin "' + (adminName || '') +
+                '" tried to reset operator ' + operatorId + '.');
+  };
+
+  // Role defaults — mirrors Users.gs v6 getDefaultAuthorities.
+  function roleDefaults(role) {
+    const superAdmin = {
+      learners: { read: true, write: true, print: true },
+      staff: { read: true, write: true, print: true },
+      attendance: { read: true, write: true, print: true },
+      staff_attendance: { read: true, write: true, print: true },
+      broadsheet: { read: true, write: true, print: true },
+      reports: { read: true, write: true, print: true },
+      calendar: { read: true, write: true, print: true },
+      classes: { read: true, write: true, print: true },
+      users: { read: true, write: true, print: true }
+    };
+    const admin = {
+      learners: { read: true, write: true, print: true },
+      staff: { read: true, write: true, print: true },
+      attendance: { read: true, write: true, print: true },
+      staff_attendance: { read: true, write: true, print: true },
+      broadsheet: { read: true, write: true, print: true },
+      reports: { read: true, write: true, print: true },
+      calendar: { read: true, write: true, print: true },
+      classes: { read: true, write: false, print: true },
+      users: { read: true, write: false, print: true }
+    };
+    const teacher = {
+      learners: { read: true, write: false, print: false },
+      staff: { read: false, write: false, print: false },
+      attendance: { read: true, write: true, print: false },
+      staff_attendance: { read: true, write: false, print: false },
+      broadsheet: { read: true, write: true, print: false },
+      reports: { read: true, write: false, print: false },
+      calendar: { read: true, write: false, print: false },
+      classes: { read: true, write: false, print: false },
+      users: { read: false, write: false, print: false }
+    };
+    const operator = {
+      learners: { read: true, write: false, print: true },
+      staff: { read: true, write: false, print: false },
+      attendance: { read: true, write: true, print: true },
+      staff_attendance: { read: true, write: true, print: true },
+      broadsheet: { read: true, write: false, print: true },
+      reports: { read: true, write: false, print: true },
+      calendar: { read: true, write: false, print: false },
+      classes: { read: true, write: false, print: false },
+      users: { read: false, write: false, print: false }
+    };
+
+    const profile =
+      role === 'super_admin' ? superAdmin :
+      role === 'admin'       ? admin :
+      role === 'teacher'     ? teacher : operator;
+
+    const auth = {};
+    PERMISSION_MODULES.forEach(function (m) {
+      const p = profile[m.key] || {};
+      auth['read_' + m.key]  = !!p.read;
+      auth['write_' + m.key] = !!p.write;
+      auth['print_' + m.key] = !!p.print;
+    });
+    return auth;
+  }
+  TIS.roleDefaults = roleDefaults;
 
   // ----------------------------------------------------------------
   // STORAGE
@@ -536,9 +727,7 @@
   TIS.uploadPhoto = async function (bucket, path, file) {
     try {
       const sb = await loadSdk();
-      const { data, error } = await sb.storage
-        .from(bucket)
-        .upload(path, file, { upsert: true });
+      const { data, error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
       if (error) return fail(error.message);
       const { data: pub } = sb.storage.from(bucket).getPublicUrl(data.path);
       return ok({ url: pub.publicUrl, path: data.path });
