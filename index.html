@@ -215,74 +215,30 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 
 <!-- ============ TERMS & PROMOTION ============ -->
 <div class="module-view hidden" id="module-terms">
-<div class="module-title"><i class="fas fa-calendar-alt"></i> Terms &amp; Promotion</div>
-<div class="module-subtitle">Manage terms, archive, promote learners forward</div>
+  <div class="module-title"><i class="fas fa-calendar-alt"></i> Terms &amp; Promotion</div>
+  <div class="module-subtitle">Manage terms, promote learners, exit learners</div>
 
-<div class="card-bg" id="termsList"></div>
-<div class="form-group">
-<label>From Term (Archive)</label>
-<select id="promoteFromTerm"></select>
-</div>
-<div class="form-group">
-<label>To Term (Activate)</label>
-<select id="promoteToTerm"></select>
-</div>
-</div>
-<div class="form-row">
-<div class="form-group">
-<label>Old Class</label>
-<select id="promoteOldClass"><option value="">-- All --</option></select>
-</div>
-<div class="form-group">
-<label>New Class</label>
-<select id="promoteNewClass"><option value="">-- Auto --</option></select>
-</div>
-</div>
-<div class="form-row">
-<div class="form-group">
-<button class="btn btn-warning" id="btnArchiveOnly" type="button" data-perm="write_terms">
-<i class="fas fa-archive"></i> Archive Only
-</button>
-</div>
-<div class="form-group">
-<button class="btn btn-primary" id="btnPreviewPromotion" type="button">
-<i class="fas fa-users"></i> Preview
-</button>
-</div>
-<div class="form-group">
-<button class="btn btn-success" id="btnFullTransition" type="button" data-perm="write_terms">
-<i class="fas fa-level-up-alt"></i> Full Transition
-</button>
-</div>
-</div>
-<div id="promotionFeedback" style="margin-top:8px;font-size:12px;"></div>
-<div id="promotionStudentList" style="display:none;margin-top:12px;overflow-x:auto;"></div>
-</div>
+  <div class="card-bg" id="termsList"></div>
 
-<div class="card-bg">
-<h4 style="margin-bottom:10px;color:var(--blue-primary);">Archived Terms</h4>
-<div id="archivesList"></div>
-</div>
-
-<div class="card-bg">
-<h4 style="margin-bottom:10px;color:var(--blue-primary);">Exit Learner</h4>
-<div class="form-row">
-<div class="form-group">
-<label>PIN</label>
-<input type="text" id="exitStudentPin">
-</div>
-<div class="form-group">
-<label>Reason</label>
-<select id="exitReasonSelect"></select>
-</div>
-<div class="form-group" style="flex:0 0 auto;">
-<button class="btn btn-danger" id="btnExitStudent" type="button" data-perm="write_terms">
-<i class="fas fa-user-times"></i> Exit
-</button>
-</div>
-</div>
-<div id="exitFeedback" style="margin-top:8px;font-size:12px;"></div>
-</div>
+  <div class="card-bg">
+    <h4 style="margin-bottom:10px;color:var(--blue-primary);">Exit Learner</h4>
+    <div class="form-row">
+      <div class="form-group">
+        <label>PIN</label>
+        <input type="text" id="exitStudentPin">
+      </div>
+      <div class="form-group">
+        <label>Reason</label>
+        <select id="exitReasonSelect"></select>
+      </div>
+      <div class="form-group" style="flex:0 0 auto;">
+        <button class="btn btn-danger" id="btnExitStudent" type="button" data-perm="write_terms">
+          <i class="fas fa-user-times"></i> Exit
+        </button>
+      </div>
+    </div>
+    <div id="exitFeedback" style="margin-top:8px;font-size:12px;"></div>
+  </div>
 </div>
 
 <!-- ============ LEARNER ATTENDANCE ============ -->
