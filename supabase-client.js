@@ -497,12 +497,12 @@
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
-        .from('qr_tokens')
-        .select('*')
-        .eq('isactive', true)
-        .order('generateddate', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+  .from('qr_tokens')
+  .select('*')
+  .eq('is_active', true)
+  .order('generated_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
       if (error) return fail(error.message);
       return ok(data || null);
     } catch (err) { return fail(err); }
