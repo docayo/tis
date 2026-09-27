@@ -1704,35 +1704,40 @@
   window.pwPickSpecial = pwPickSpecial;
   window.pwApplySpecial = pwApplySpecial;
   window.checkPromotionBanner = checkPromotionBanner;
-  // ================================================================
-  // [S10] LEARNER ATTENDANCE — class-based, weekly, collapsible
-  // ================================================================
-  // Master mark is one of four values. M and A cells are rendered
-  // from the master, never edited independently.
-  //    O O  → M:'O', A:'O'    (Absent all day)
-  //    \    → M:'\', A:'O'    (Present morning only)
-  //    /    → M:'O', A:'/'    (Present afternoon only)
-  //    \ /  → M:'\', A:'/'    (Present both sessions)
+   // ================================================================
+  // [S10] LEARNER ATTENDANCE
+  // Master mark: 'O O' | '\\' | '/' | '\\ /'
+  //   'O O'   → M:'O', A:'O'
+  //   '\\'    → M:'\\', A:'O'
+  //   '/'     → M:'O', A:'/'
+  //   '\\ /'  → M:'\\', A:'/'
   // ================================================================
   const ATT_MARKS = ['O O', '\\', '/', '\\ /'];
-  const ATT_MARK_LABEL = {
-    'O O':  'Absent all day',
-    '\\':   'Present morning only',
-    '/':    'Present afternoon only',
-    '\\ /': 'Present both sessions'
-  };
 
-  // Session mode for the bulk "Mark Class Present" button.
-  // 'AM'    → sets  O O  → \
-  // 'PM'    → upgrades \ → \ /  (leaves  O O  and  /  untouched)
-  // 'FULL'  → sets everything to \ /
-  let attSessionMode = 'AM';
-
+  let attSessionMode = 'AM';   // 'AM' | 'PM' | 'FULL'
   let attState = null;
 
   async function initLearnerAttendanceTab() {
     await populateAttendanceClassList();
-    bindAttendanceToolbar();
+    const loadBtn = document.getElementById('btnLoadAttendance');
+    if (loadBtn && !loadBtn.__wired) {
+      loadBtn.addEventListener('click', loadAttendanceRegister);
+      loadBtn.__wired = true;
+    }
+    const printBtn = document.getElementById('btnPrintAttendance');
+    if (printBtn && !printBtn.__wired) {
+      printBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        attOpenPrintDialog();
+      });
+      printBtn.__wired = true;
+    }
+    const modeSel = document.getElementById('attSessionMode');
+    if (modeSel && !modeSel.__wired) {
+      modeSel.value = attSessionMode;
+      modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
+      modeSel.__wired = true;
+    }
   }
 
   async function populateAttendanceClassList() {
@@ -1745,16 +1750,6 @@
     const names = Object.keys(classes).sort();
     sel.innerHTML = '<option value="">-- Select Class --</option>' +
       names.map(function (n) { return '<option value="' + escAttr(n) + '">' + esc(n) + '</option>'; }).join('');
-  }
-
-  function bindAttendanceToolbar() {
-    const btn = document.getElementById('btnLoadAttendance');
-    if (btn) btn.addEventListener('click', loadAttendanceRegister);
-    const modeSel = document.getElementById('attSessionMode');
-    if (modeSel) {
-      modeSel.value = attSessionMode;
-      modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
-    }
   }
 
   async function loadAttendanceRegister() {
@@ -1781,20 +1776,44 @@
       learners: r.data.learners || [],
       weeks: r.data.weeks || [],
       openWeeks: {},
-      editing: {}
+      editing: {}   // "learnerId|date" -> mark
     };
-      if (attState.weeks.length > 0) attState.openWeeks[attState.weeks[0].weekNumber] = true;
+    if (attState.weeks.length > 0) attState.openWeeks[attState.weeks[0].weekNumber] = true;
     renderAttendanceRegister();
     renderClassAnalysisPanel();
     renderSignaturePanel();
+    // Wire the Print button on the attendance toolbar.
+    const printBtn = document.getElementById('btnPrintAttendance');
+    if (printBtn && !printBtn.__wired) {
+      printBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        attOpenPrintDialog();
+      });
+      printBtn.__wired = true;
+    }
   }
 
-  function attRenderMasterToMA(mark) {
-    // Returns { M, A } display characters for a master mark.
+  function attMA(mark) {
     if (mark === '\\')   return { M: '\\', A: 'O' };
     if (mark === '/')    return { M: 'O',  A: '/' };
     if (mark === '\\ /') return { M: '\\', A: '/' };
     return { M: 'O', A: 'O' };
+  }
+
+  function attEffectiveMark(learnerId, dateISO) {
+    if (!attState) return 'O O';
+    const key = learnerId + '|' + dateISO;
+    if (attState.editing[key] !== undefined) return attState.editing[key];
+    for (let i = 0; i < attState.weeks.length; i++) {
+      const wk = attState.weeks[i];
+      for (let j = 0; j < wk.days.length; j++) {
+        const d = wk.days[j];
+        if (d.date === dateISO) {
+          return (d.marksByLearner || {})[learnerId] || 'O O';
+        }
+      }
+    }
+    return 'O O';
   }
 
   function renderAttendanceRegister() {
@@ -1810,217 +1829,56 @@
     html += '<div style="font-size:11px;color:#666;">' + st.learners.length + ' learners · ' + st.weeks.length + ' weeks</div>';
     html += '</div>';
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">';
-    html += '<select id="attSessionMode" style="padding:6px 10px;border-radius:6px;border:1px solid #ccc;font-size:12px;">';
-    html += '<option value="AM">Morning</option>';
-    html += '<option value="PM">Afternoon</option>';
-    html += '<option value="FULL">Full day</option>';
+    html += '<select id="attSessionMode2" style="padding:6px 10px;border-radius:6px;border:1px solid #ccc;font-size:12px;">';
+    html += '<option value="AM"' + (attSessionMode === 'AM' ? ' selected' : '') + '>Mark Morning</option>';
+    html += '<option value="PM"' + (attSessionMode === 'PM' ? ' selected' : '') + '>Mark Afternoon</option>';
+    html += '<option value="FULL"' + (attSessionMode === 'FULL' ? ' selected' : '') + '>Mark Full Day</option>';
     html += '</select>';
-    html += '<button class="btn btn-sm btn-success" onclick="attMarkClassPresent()">Mark Class Present</button>';
+    html += '<button class="btn btn-sm btn-success" onclick="attMarkClassPresent()">Apply to Today</button>';
     html += '<button class="btn btn-sm btn-warning" onclick="attSaveAllChanges()">Save Changes</button>';
     html += '<button class="btn btn-sm btn-secondary" onclick="attDiscardChanges()">Discard</button>';
     html += '</div></div>';
 
-    // Week blocks
+    // Weeks
     st.weeks.forEach(function (wk) {
       const isOpen = !!st.openWeeks[wk.weekNumber];
       const arrow = isOpen ? '▾' : '▸';
-      const analysis = attComputeWeekAnalysis(wk);
+      const a = attWeekSummary(wk);
 
       html += '<div style="border:1px solid #e6e9f0;border-radius:8px;overflow:hidden;margin-bottom:10px;">';
-
-      // Week header with analysis strip
       html += '<div onclick="attToggleWeek(' + wk.weekNumber + ')" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:#0d4d26;color:#fff;padding:10px 14px;flex-wrap:wrap;gap:8px;">';
       html += '<div style="font-weight:700;font-size:13px;">' + arrow + ' Week ' + wk.weekNumber + ' · Ending ' + fmtDateShort_(wk.weekEnding) + '</div>';
-      html += '<div style="display:flex;gap:14px;font-size:11px;">';
-      html += '<span>🌅 Morn: <b>' + analysis.mPresent + '/' + analysis.mExpected + '</b> (' + analysis.mPct + '%)</span>';
-      html += '<span>🌇 Aft: <b>' + analysis.aPresent + '/' + analysis.aExpected + '</b> (' + analysis.aPct + '%)</span>';
+      html += '<div style="display:flex;gap:14px;font-size:11px;flex-wrap:wrap;">';
+      html += '<span>Open: <b>' + a.openSlots + '</b></span>';
+      html += '<span>🌅 M: <b>' + a.mPresent + '/' + a.mExpected + '</b> (' + a.mPct + '%)</span>';
+      html += '<span>🌇 A: <b>' + a.aPresent + '/' + a.aExpected + '</b> (' + a.aPct + '%)</span>';
+      html += '<span>♂ ' + (a.boysPresent === null ? '—' : a.boysPresent) + ' · ♀ ' + (a.girlsPresent === null ? '—' : a.girlsPresent) + '</span>';
       html += '</div></div>';
 
-      if (isOpen) {
-        html += renderWeekGrid(wk);
-      }
+      if (isOpen) html += renderWeekGrid(wk);
+
       html += '</div>';
     });
 
     html += '</div>';
 
-    // Term analysis
-    html += renderTermAnalysis();
-
     setHTML('attendanceTermView', html);
+
+    // Wire the session dropdown after render
+    const modeSel = document.getElementById('attSessionMode2');
+    if (modeSel) {
+      modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
+    }
   }
 
-  // ================================================================
-  // ATTENDANCE — Class Analysis (weekly + term totals)
-  // ================================================================
-  function renderClassAnalysisPanel() {
-    if (!attState) return;
-    const st = attState;
-
-    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</h4>';
-    html += '<div style="overflow-x:auto;">';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:860px;">';
-    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
-    html += '<th style="text-align:left;padding:6px;">Week</th>';
-    html += '<th style="padding:6px;">Ending</th>';
-    html += '<th style="padding:6px;">Open<br>(M/A)</th>';
-    html += '<th style="padding:6px;">🌅 M present</th>';
-    html += '<th style="padding:6px;">🌇 A present</th>';
-    html += '<th style="padding:6px;">♂ present</th>';
-    html += '<th style="padding:6px;">♀ present</th>';
-    html += '<th style="padding:6px;">Expected</th>';
-    html += '<th style="padding:6px;">Confirmed</th>';
-    html += '<th style="padding:6px;">%</th>';
-    html += '</tr></thead><tbody>';
-
-    let tM = 0, tA = 0, tMExpected = 0, tAExpected = 0, tBoys = 0, tGirls = 0;
-
-    st.weeks.forEach(function (wk) {
-      let mPres = 0, aPres = 0, boysPres = 0, girlsPres = 0, openDays = 0;
-      const st_ = attState;
-      st.learners.forEach(function (l) {
-        const isBoy  = (l.gender || '').toLowerCase().indexOf('male') === 0 && (l.gender || '').toLowerCase().indexOf('female') !== 0;
-        const isGirl = (l.gender || '').toLowerCase().indexOf('female') === 0;
-        wk.days.forEach(function (d) {
-          if (d.isHoliday || d.isFuture) return;
-          const key = l.id + '|' + d.date;
-          const mark = (st_.editing[key] !== undefined)
-            ? st_.editing[key]
-            : ((d.marksByLearner || {})[l.id] || 'O O');
-          const ma = attRenderMasterToMA(mark);
-          if (ma.M === '\\') { mPres++; if (isBoy) boysPres++; if (isGirl) girlsPres++; }
-          if (ma.A === '/')  { aPres++; if (isBoy) boysPres++; if (isGirl) girlsPres++; }
-        });
-      });
-      // Open days: days in this week that are not holidays and not in the future.
-      openDays = wk.days.filter(function (d) { return !d.isHoliday && !d.isFuture; }).length;
-
-      const expectedM = openDays * st.learners.length;
-      const expectedA = openDays * st.learners.length;
-      const expected  = expectedM + expectedA;
-      const confirmed = mPres + aPres;
-      const pct = expected > 0 ? (confirmed / expected * 100).toFixed(1) : '0.0';
-
-      tM += mPres; tA += aPres;
-      tMExpected += expectedM; tAExpected += expectedA;
-      tBoys += boysPres; tGirls += girlsPres;
-
-      html += '<tr>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + openDays + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + mPres + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + aPres + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + boysPres + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + girlsPres + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + expected + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + confirmed + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + pct + '%</td>' +
-              '</tr>';
-    });
-
-    const tExpected = tMExpected + tAExpected;
-    const tConfirmed = tM + tA;
-    const tPct = tExpected > 0 ? (tConfirmed / tExpected * 100).toFixed(1) : '0.0';
-
-    html += '<tr style="background:#e8f5e9;font-weight:700;">' +
-            '<td style="padding:6px;">TERM</td><td></td><td></td>' +
-            '<td style="padding:6px;text-align:center;">' + tM + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + tA + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + tBoys + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + tGirls + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + tExpected + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + tConfirmed + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + tPct + '%</td>' +
-            '</tr>';
-
-    html += '</tbody></table></div>';
-
-    // Summary strip underneath
-    html += '<div class="stats-grid" style="margin-top:12px;">';
-    html += '<div class="stat-card"><div class="stat-label">Total Times School Open (Term)</div><div class="stat-value">' + (tMExpected) + '</div></div>';
-    html += '<div class="stat-card gold"><div class="stat-label">Total Attendance (Sum)</div><div class="stat-value gold">' + tConfirmed + '</div></div>';
-    html += '<div class="stat-card red"><div class="stat-label">Total Boys Present</div><div class="stat-value red">' + tBoys + '</div></div>';
-    html += '<div class="stat-card blue"><div class="stat-label">Total Girls Present</div><div class="stat-value" style="color:#1a5276;">' + tGirls + '</div></div>';
-    html += '<div class="stat-card"><div class="stat-label">Average Attendance</div><div class="stat-value green">' + tPct + '%</div></div>';
-    html += '</div>';
-
-    setHTML('analysisBody', html);
-  }
-
-  // ================================================================
-  // ATTENDANCE — Week Signatures panel
-  // ================================================================
-  async function renderSignaturePanel() {
-    if (!attState) return;
-    setHTML('signatureBody', pageLoaderHTML('Loading staff list…'));
-
-    let staffNames = [];
-    try {
-      const r = await window.TIS.listStaff();
-      if (r && r.ok && r.data) {
-        staffNames = r.data
-          .filter(function (s) { return s.status === 'Active' || !s.status; })
-          .map(function (s) { return s.full_name; })
-          .filter(Boolean);
-      }
-    } catch (e) { /* silent */ }
-
-    let html = '';
-    html += '<p style="font-size:11px;color:#666;margin:0 0 10px;">Sign each week as it is completed. Names come from the Staff module.</p>';
-    html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:620px;">';
-    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
-    html += '<th style="text-align:left;padding:6px;">Week</th>';
-    html += '<th style="padding:6px;">Ending</th>';
-    html += '<th style="padding:6px;">Logged By</th>';
-    html += '<th style="padding:6px;">Confirmed By</th>';
-    html += '<th style="padding:6px;">Audited By</th>';
-    html += '<th style="padding:6px;">Date</th>';
-    html += '</tr></thead><tbody>';
-
-    attState.weeks.forEach(function (wk) {
-      const opts = function (val) {
-        let o = '<option value="">-- Select --</option>';
-        staffNames.forEach(function (n) {
-          o += '<option value="' + escAttr(n) + '"' + (n === val ? ' selected' : '') + '>' + esc(n) + '</option>';
-        });
-        return o;
-      };
-      const today = new Date().toISOString().slice(0, 10);
-      html += '<tr>' +
-        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
-        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
-        '<td style="padding:4px;border-bottom:1px solid #eee;"><select data-sig="logged" data-wk="' + wk.weekNumber + '" style="width:100%;font-size:11px;">' + opts('') + '</select></td>' +
-        '<td style="padding:4px;border-bottom:1px solid #eee;"><select data-sig="confirmed" data-wk="' + wk.weekNumber + '" style="width:100%;font-size:11px;">' + opts('') + '</select></td>' +
-        '<td style="padding:4px;border-bottom:1px solid #eee;"><select data-sig="audited" data-wk="' + wk.weekNumber + '" style="width:100%;font-size:11px;">' + opts('') + '</select></td>' +
-        '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + today + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></div>';
-    html += '<div style="margin-top:10px;text-align:right;">';
-    html += '<button class="btn btn-success" onclick="attSaveSignatures()">Save Signatures</button>';
-    html += '</div>';
-    setHTML('signatureBody', html);
-  }
-
-  function attSaveSignatures() {
-    // For now, signatures are kept in the DOM (not persisted to Supabase
-    // until we create an attendance_signatures table). Save just confirms
-    // what the operator selected.
-    const rows = document.querySelectorAll('[data-sig="logged"]');
-    let collected = 0;
-    rows.forEach(function (sel) { if (sel.value) collected++; });
-    if (collected === 0) { showToast('Pick at least one week to sign', 'warning'); return; }
-    showToast('Signatures captured locally (' + collected + ' week(s)). Persistence coming next.', 'info');
-  }
   function renderWeekGrid(wk) {
     const st = attState;
     const days = wk.days;
 
     let h = '<div style="overflow-x:auto;background:#fff;">';
-    h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:760px;">';
+    h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">';
 
-    // Header row 1 — days with dates
+    // Header rows
     h += '<thead><tr style="background:#e8f5e9;">';
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;">PIN</th>';
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:70px;z-index:2;">Name</th>';
@@ -2029,79 +1887,139 @@
       const isHol = d.isHoliday;
       const shortDay = ['Mon','Tue','Wed','Thu','Fri'][i];
       const dt = fmtDateShort_(d.date);
-      const thStyle = isHol
-        ? 'background:#ffcdd2;color:#721c24;padding:4px 6px;'
-        : 'padding:4px 6px;';
+      const thStyle = isHol ? 'background:#ffcdd2;color:#721c24;padding:4px 6px;' : 'padding:4px 6px;';
       h += '<th colspan="2" style="' + thStyle + '">' + shortDay +
            '<br><span style="font-size:10px;font-weight:400;">' + dt + '</span>' +
            (isHol ? '<br><span style="font-size:9px;">' + esc(d.holidayName || 'Holiday') + '</span>' : '') +
            '</th>';
     });
-    h += '<th style="padding:6px;background:#c8e6c9;">Wkly</th></tr>';
+    h += '<th style="padding:6px;background:#c8e6c9;">Wkly</th>';
+    h += '<th style="padding:6px;background:#a5d6a7;">Term</th>';
+    h += '</tr>';
 
-    // Header row 2 — M / A sub-headers
     h += '<tr style="background:#f1f8e9;">';
     h += '<th colspan="4" style="padding:2px;"></th>';
-    days.forEach(function () {
-      h += '<th style="padding:2px 4px;font-size:10px;">M</th><th style="padding:2px 4px;font-size:10px;">A</th>';
-    });
-    h += '<th style="padding:2px;"></th></tr></thead><tbody>';
+    days.forEach(function () { h += '<th style="padding:2px 4px;font-size:10px;">M</th><th style="padding:2px 4px;font-size:10px;">A</th>'; });
+    h += '<th style="padding:2px;"></th><th style="padding:2px;"></th></tr></thead><tbody>';
 
-    // Body
+    // Body rows
     st.learners.forEach(function (l) {
-      h += '<tr>';
+      h += '<tr id="attRow_' + l.id + '">';
       h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;">' + esc(l.pin || '') + '</td>';
       const g = (l.gender || '').toLowerCase();
       const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
       h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:70px;background:#fff;z-index:1;">' + esc(l.name || '') + '</td>';
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.gender || '') + '</td>';
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.age || '') + '</td>';
+      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.gender || '—') + '</td>';
+      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.age || '—') + '</td>';
 
       let weeklyPresent = 0;
       days.forEach(function (d) {
-        const key = l.id + '|' + d.date;
-        const localEdit = st.editing[key];
-        const serverMark = (d.marksByLearner || {})[l.id] || 'O O';
-        const mark = (localEdit !== undefined) ? localEdit : serverMark;
-        const ma = attRenderMasterToMA(mark);
+        const mark = attEffectiveMark(l.id, d.date);
+        const ma = attMA(mark);
         const isHol = d.isHoliday;
         const isFuture = d.isFuture;
 
-        // Count present sessions for the weekly summary (only for non-holiday, non-future days)
         if (!isHol && !isFuture) {
           if (ma.M === '\\') weeklyPresent++;
           if (ma.A === '/')  weeklyPresent++;
         }
 
-        // M cell
+        const cellIdM = 'attCell_' + l.id + '_' + d.date + '_M';
+        const cellIdA = 'attCell_' + l.id + '_' + d.date + '_A';
+
         if (isHol) {
           h += '<td style="padding:4px;text-align:center;background:#ffcdd2;color:#721c24;">—</td>';
+          h += '<td style="padding:4px;text-align:center;background:#ffcdd2;color:#721c24;">—</td>';
         } else if (isFuture) {
-          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">' + ma.M + '</td>';
+          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">·</td>';
+          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">·</td>';
         } else {
           const mBg = ma.M === '\\' ? '#d4edda' : '#f8d7da';
-          h += '<td onclick="attCycleCell(' + l.id + ', \'' + d.date + '\')" ' +
-               'style="padding:4px;text-align:center;cursor:pointer;background:' + mBg + ';font-weight:700;">' + ma.M + '</td>';
-        }
-
-        // A cell
-        if (isHol) {
-          h += '<td style="padding:4px;text-align:center;background:#ffcdd2;color:#721c24;">—</td>';
-        } else if (isFuture) {
-          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">' + ma.A + '</td>';
-        } else {
-          const aBg = ma.A === '/' ? '#d4edda' : '#f8d7da';
-          h += '<td onclick="attCycleCell(' + l.id + ', \'' + d.date + '\')" ' +
-               'style="padding:4px;text-align:center;cursor:pointer;background:' + aBg + ';font-weight:700;">' + ma.A + '</td>';
+          const aBg = ma.A === '/'  ? '#d4edda' : '#f8d7da';
+          h += '<td id="' + cellIdM + '" onclick="attCycleCell(' + l.id + ', \'' + d.date + '\', \'M\')" style="padding:4px;text-align:center;cursor:pointer;background:' + mBg + ';font-weight:700;user-select:none;">' + ma.M + '</td>';
+          h += '<td id="' + cellIdA + '" onclick="attCycleCell(' + l.id + ', \'' + d.date + '\', \'A\')" style="padding:4px;text-align:center;cursor:pointer;background:' + aBg + ';font-weight:700;user-select:none;">' + ma.A + '</td>';
         }
       });
 
-      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#e8f5e9;">' + weeklyPresent + '</td>';
+      const termPresent = attLearnerTermTotal(l.id);
+      h += '<td id="attWk_' + l.id + '" style="padding:4px;text-align:center;font-weight:700;background:#e8f5e9;">' + weeklyPresent + '</td>';
+      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#a5d6a7;">' + termPresent + '</td>';
       h += '</tr>';
     });
 
     h += '</tbody></table></div>';
     return h;
+  }
+
+  // Toggle a single session cell. Only mutates the cell in place — no
+  // full re-render, so the scroll/focus does not jump.
+  function attCycleCell(learnerId, dateISO, session) {
+    if (!attState) return;
+    const st = attState;
+
+    // Find day object
+    let day = null;
+    for (let i = 0; i < st.weeks.length; i++) {
+      for (let j = 0; j < st.weeks[i].days.length; j++) {
+        if (st.weeks[i].days[j].date === dateISO) { day = st.weeks[i].days[j]; break; }
+      }
+      if (day) break;
+    }
+    if (!day || day.isHoliday || day.isFuture) return;
+
+    const current = attEffectiveMark(learnerId, dateISO);
+    const ma = attMA(current);
+    let hasM = (ma.M === '\\');
+    let hasA = (ma.A === '/');
+    if (session === 'M') hasM = !hasM;
+    if (session === 'A') hasA = !hasA;
+
+    let next = 'O O';
+    if (hasM && hasA) next = '\\ /';
+    else if (hasM)    next = '\\';
+    else if (hasA)    next = '/';
+
+    st.editing[learnerId + '|' + dateISO] = next;
+
+    // Update just the two cells and the two totals — no table rebuild.
+    const ma2 = attMA(next);
+    const cellM = document.getElementById('attCell_' + learnerId + '_' + dateISO + '_M');
+    const cellA = document.getElementById('attCell_' + learnerId + '_' + dateISO + '_A');
+    if (cellM) {
+      cellM.textContent = ma2.M;
+      cellM.style.background = ma2.M === '\\' ? '#d4edda' : '#f8d7da';
+    }
+    if (cellA) {
+      cellA.textContent = ma2.A;
+      cellA.style.background = ma2.A === '/' ? '#d4edda' : '#f8d7da';
+    }
+    const wkCell = document.getElementById('attWk_' + learnerId);
+    if (wkCell) wkCell.textContent = attLearnerWeekTotal(learnerId, st.weeks.find(function (w) { return w.days.indexOf(day) !== -1; }));
+    // Term column doesn't change until we know which week we're in — recalc full learner term total.
+    // (Cheap: just re-walk this learner's days.)
+    // Simplest: leave for after Save.
+  }
+
+  function attLearnerWeekTotal(learnerId, wk) {
+    if (!wk) return 0;
+    let n = 0;
+    wk.days.forEach(function (d) {
+      if (d.isHoliday || d.isFuture) return;
+      const mark = attEffectiveMark(learnerId, d.date);
+      const ma = attMA(mark);
+      if (ma.M === '\\') n++;
+      if (ma.A === '/')  n++;
+    });
+    return n;
+  }
+
+  function attLearnerTermTotal(learnerId) {
+    if (!attState) return 0;
+    let n = 0;
+    attState.weeks.forEach(function (wk) {
+      n += attLearnerWeekTotal(learnerId, wk);
+    });
+    return n;
   }
 
   function attToggleWeek(weekNumber) {
@@ -2110,44 +2028,11 @@
     renderAttendanceRegister();
   }
 
-  // Cycle the MASTER mark for a learner on a date. Both M and A cells
-  // belong to the same master, so clicking either cycles the same value.
-  // Order: O O → \ → / → \ / → O O
-  function attCycleCell(learnerId, dateISO) {
-    if (!attState) return;
-    const st = attState;
-
-    // Find the server-side current mark for this learner-date
-    let serverMark = 'O O';
-    let dayObj = null;
-    for (let i = 0; i < st.weeks.length; i++) {
-      const wk = st.weeks[i];
-      for (let j = 0; j < wk.days.length; j++) {
-        const d = wk.days[j];
-        if (d.date === dateISO) {
-          dayObj = d;
-          serverMark = (d.marksByLearner || {})[learnerId] || 'O O';
-          break;
-        }
-      }
-      if (dayObj) break;
-    }
-    if (!dayObj) return;
-    if (dayObj.isHoliday || dayObj.isFuture) return;
-
-    const key = learnerId + '|' + dateISO;
-    const current = (st.editing[key] !== undefined) ? st.editing[key] : serverMark;
-    const idx = ATT_MARKS.indexOf(current);
-    const next = ATT_MARKS[(idx === -1 ? 0 : idx + 1) % ATT_MARKS.length];
-    st.editing[key] = next;
-    renderAttendanceRegister();
-  }
-
-  // Bulk "Mark Class Present" — acts per the session mode.
-  //   AM:   O O  → \        (only touches cells currently 'O O')
-  //   PM:   \    → \ /       (upgrades morning-present to full)
-  //         O O  → /         (unmarked cells become afternoon-only)
-  //   FULL: everything → \ /
+  // Bulk mark. Applies per the session mode:
+  //   AM   → present morning only (set the M half)
+  //   PM   → present afternoon only (set the A half)
+  //   FULL → present both
+  // Only touches the current day's column.
   function attMarkClassPresent() {
     if (!attState) return;
     const st = attState;
@@ -2168,21 +2053,18 @@
     if (!confirm('Mark every learner present — ' + label + ' — for today (' + today + ')?')) return;
 
     st.learners.forEach(function (l) {
-      const key = l.id + '|' + targetDay.date;
-      const current = (st.editing[key] !== undefined) ? st.editing[key] : ((targetDay.marksByLearner || {})[l.id] || 'O O');
-      let next = current;
-      if (mode === 'AM') {
-        if (current === 'O O') next = '\\';
-        else if (current === '/') next = '\\ /';   // afternoon-only becomes full day
-        // current '\\' or '\\ /' remain as-is
-      } else if (mode === 'PM') {
-        if (current === 'O O') next = '/';
-        else if (current === '\\') next = '\\ /';
-        // current '/' or '\\ /' remain as-is
-      } else { // FULL
-        next = '\\ /';
-      }
-      if (next !== current) st.editing[key] = next;
+      const current = attEffectiveMark(l.id, targetDay.date);
+      const ma = attMA(current);
+      let hasM = (ma.M === '\\');
+      let hasA = (ma.A === '/');
+      if (mode === 'AM')   hasM = true;
+      if (mode === 'PM')   hasA = true;
+      if (mode === 'FULL') { hasM = true; hasA = true; }
+      let next = 'O O';
+      if (hasM && hasA) next = '\\ /';
+      else if (hasM)    next = '\\';
+      else if (hasA)    next = '/';
+      st.editing[l.id + '|' + targetDay.date] = next;
     });
     renderAttendanceRegister();
   }
@@ -2193,9 +2075,7 @@
     const marks = [];
     Object.keys(st.editing).forEach(function (key) {
       const parts = key.split('|');
-      const learnerId = parseInt(parts[0], 10);
-      const date = parts[1];
-      marks.push({ learnerId: learnerId, date: date, mark: st.editing[key] });
+      marks.push({ learnerId: parseInt(parts[0], 10), date: parts[1], mark: st.editing[key] });
     });
     if (marks.length === 0) { showToast('Nothing to save', 'info'); return; }
 
@@ -2205,10 +2085,8 @@
       (State.profile && State.profile.name) || 'Operator'
     );
     stopLoader();
-
     if (r && r.ok) {
       showToast('Saved ' + r.data.applied + ' mark(s).', 'success');
-      // Fold edits into the loaded grid.
       marks.forEach(function (m) {
         st.weeks.forEach(function (wk) {
           wk.days.forEach(function (d) {
@@ -2221,6 +2099,7 @@
       });
       st.editing = {};
       renderAttendanceRegister();
+      renderClassAnalysisPanel();
     } else {
       showToast('Save failed: ' + ((r && r.error) || ''), 'error');
     }
@@ -2235,79 +2114,150 @@
     renderAttendanceRegister();
   }
 
-  function attComputeWeekAnalysis(wk) {
-    if (!attState) return { mPresent: 0, mExpected: 0, mPct: '0.0', aPresent: 0, aExpected: 0, aPct: '0.0' };
+  // Summary used by week header.
+  function attWeekSummary(wk) {
     const st = attState;
     let mPresent = 0, aPresent = 0, mExpected = 0, aExpected = 0;
+    let boysPresent = 0, girlsPresent = 0, genderKnown = false;
+    let openSlots = 0;
 
     st.learners.forEach(function (l) {
+      const isBoy  = (l.gender || '').toLowerCase().indexOf('male') === 0
+                    && (l.gender || '').toLowerCase().indexOf('female') === -1;
+      const isGirl = (l.gender || '').toLowerCase().indexOf('female') === 0;
       wk.days.forEach(function (d) {
         if (d.isHoliday || d.isFuture) return;
         mExpected++;
         aExpected++;
-        const key = l.id + '|' + d.date;
-        const mark = (st.editing[key] !== undefined)
-          ? st.editing[key]
-          : ((d.marksByLearner || {})[l.id] || 'O O');
-        const ma = attRenderMasterToMA(mark);
-        if (ma.M === '\\') mPresent++;
-        if (ma.A === '/')  aPresent++;
+        const mark = attEffectiveMark(l.id, d.date);
+        const ma = attMA(mark);
+        if (ma.M === '\\') { mPresent++; if (isBoy) boysPresent++; if (isGirl) girlsPresent++; if (isBoy || isGirl) genderKnown = true; }
+        if (ma.A === '/')  { aPresent++; if (isBoy) boysPresent++; if (isGirl) girlsPresent++; if (isBoy || isGirl) genderKnown = true; }
       });
     });
+    wk.days.forEach(function (d) { if (!d.isHoliday && !d.isFuture) openSlots += 2; });
 
     return {
+      openSlots: openSlots,
       mPresent: mPresent, mExpected: mExpected,
       mPct: mExpected > 0 ? (mPresent / mExpected * 100).toFixed(1) : '0.0',
       aPresent: aPresent, aExpected: aExpected,
-      aPct: aExpected > 0 ? (aPresent / aExpected * 100).toFixed(1) : '0.0'
+      aPct: aExpected > 0 ? (aPresent / aExpected * 100).toFixed(1) : '0.0',
+      boysPresent:  genderKnown ? boysPresent  : null,
+      girlsPresent: genderKnown ? girlsPresent : null
     };
   }
 
-  function renderTermAnalysis() {
-    if (!attState) return '';
+  // Analysis panel — weekly rows + term totals.
+  function renderClassAnalysisPanel() {
+    if (!attState) return;
     const st = attState;
-    let html = '<div class="card-bg" style="margin-top:14px;">';
-    html += '<h4 style="color:#0d4d26;margin:0 0 10px;">Term Analysis — ' + esc(st.termLabel) + '</h4>';
-    html += '<div style="overflow-x:auto;">';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px;">';
-    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
-    html += '<th style="text-align:left;padding:6px;">Week</th>' +
-            '<th style="padding:6px;">Ending</th>' +
-            '<th style="padding:6px;">Open days</th>' +
-            '<th style="padding:6px;">🌅 M present</th>' +
-            '<th style="padding:6px;">🌅 M %</th>' +
-            '<th style="padding:6px;">🌇 A present</th>' +
-            '<th style="padding:6px;">🌇 A %</th>' +
-            '</tr></thead><tbody>';
 
-    let tMPresent = 0, tMExpected = 0, tAPresent = 0, tAExpected = 0;
+    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</h4>';
+    html += '<div style="overflow-x:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+    html += '<th style="text-align:left;padding:6px;">Week</th><th style="padding:6px;">Ending</th>';
+    html += '<th style="padding:6px;">Open<br>(M+A)</th>';
+    html += '<th style="padding:6px;">🌅 M present</th><th style="padding:6px;">🌇 A present</th>';
+    html += '<th style="padding:6px;">♂ present</th><th style="padding:6px;">♀ present</th>';
+    html += '<th style="padding:6px;">Expected</th><th style="padding:6px;">Confirmed</th><th style="padding:6px;">%</th>';
+    html += '</tr></thead><tbody>';
+
+    let tM = 0, tA = 0, tExpected = 0, tOpen = 0;
+    let tBoys = 0, tGirls = 0, tGenderKnown = false;
+
     st.weeks.forEach(function (wk) {
-      const a = attComputeWeekAnalysis(wk);
-      tMPresent += a.mPresent; tMExpected += a.mExpected;
-      tAPresent += a.aPresent; tAExpected += a.aExpected;
-      const openDays = wk.days.filter(function (d) { return !d.isHoliday && !d.isFuture; }).length;
+      const a = attWeekSummary(wk);
+      const expected = a.mExpected + a.aExpected;
+      const confirmed = a.mPresent + a.aPresent;
+      const pct = expected > 0 ? (confirmed / expected * 100).toFixed(1) : '0.0';
+
+      tM += a.mPresent; tA += a.aPresent;
+      tExpected += expected; tOpen += a.openSlots;
+      if (a.boysPresent !== null)  { tBoys  += a.boysPresent; tGenderKnown = true; }
+      if (a.girlsPresent !== null) { tGirls += a.girlsPresent; tGenderKnown = true; }
+
       html += '<tr>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + openDays + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.openSlots + '</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.mPresent + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.mPct + '%</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.aPresent + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.aPct + '%</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (a.boysPresent === null ? '—' : a.boysPresent) + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (a.girlsPresent === null ? '—' : a.girlsPresent) + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + expected + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + confirmed + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + pct + '%</td>' +
               '</tr>';
     });
 
-    const mPct = tMExpected > 0 ? (tMPresent / tMExpected * 100).toFixed(1) : '0.0';
-    const aPct = tAExpected > 0 ? (tAPresent / tAExpected * 100).toFixed(1) : '0.0';
+    const tConfirmed = tM + tA;
+    const tPct = tExpected > 0 ? (tConfirmed / tExpected * 100).toFixed(1) : '0.0';
+
     html += '<tr style="background:#e8f5e9;font-weight:700;">' +
-            '<td style="padding:6px;">TERM TOTAL</td><td></td><td></td>' +
-            '<td style="padding:6px;text-align:center;">' + tMPresent + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + mPct + '%</td>' +
-            '<td style="padding:6px;text-align:center;">' + tAPresent + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + aPct + '%</td>' +
+            '<td style="padding:6px;">TERM</td><td></td>' +
+            '<td style="padding:6px;text-align:center;">' + tOpen + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tM + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tA + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tBoys : '—') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tGirls : '—') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tExpected + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tConfirmed + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tPct + '%</td>' +
             '</tr>';
-    html += '</tbody></table></div></div>';
-    return html;
+    html += '</tbody></table></div>';
+
+    // Summary strip
+    html += '<div class="stats-grid" style="margin-top:12px;">';
+    html += '<div class="stat-card"><div class="stat-label">Sum total school-open (term)</div><div class="stat-value">' + tOpen + '</div></div>';
+    html += '<div class="stat-card gold"><div class="stat-label">Sum total attendance (term)</div><div class="stat-value gold">' + tConfirmed + '</div></div>';
+    html += '<div class="stat-card red"><div class="stat-label">♂ Boys present (term)</div><div class="stat-value red">' + (tGenderKnown ? tBoys : '—') + '</div></div>';
+    html += '<div class="stat-card blue"><div class="stat-label">♀ Girls present (term)</div><div class="stat-value" style="color:#1a5276;">' + (tGenderKnown ? tGirls : '—') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">Average attendance</div><div class="stat-value green">' + tPct + '%</div></div>';
+    html += '</div>';
+
+    setHTML('analysisBody', html);
+  }
+
+  // ---- Signatures panel ----
+  async function renderSignaturePanel() {
+    if (!attState) return;
+    setHTML('signatureBody', pageLoaderHTML('Loading staff…'));
+    let staffNames = [];
+    try {
+      const r = await window.TIS.listStaff();
+      if (r && r.ok && r.data) {
+        staffNames = r.data.filter(function (s) { return s.status === 'Active' || !s.status; })
+          .map(function (s) { return s.full_name; }).filter(Boolean);
+      }
+    } catch (e) { /* silent */ }
+
+    let html = '<p style="font-size:11px;color:#666;margin:0 0 10px;">Sign each week as it is completed.</p>';
+    html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+    html += '<th style="text-align:left;padding:6px;">Week</th><th style="padding:6px;">Ending</th>';
+    html += '<th style="padding:6px;">Logged By</th><th style="padding:6px;">Confirmed By</th><th style="padding:6px;">Audited By</th><th style="padding:6px;">Date</th>';
+    html += '</tr></thead><tbody>';
+
+    attState.weeks.forEach(function (wk) {
+      const opts = function () {
+        let o = '<option value="">-- Select --</option>';
+        staffNames.forEach(function (n) { o += '<option value="' + escAttr(n) + '">' + esc(n) + '</option>'; });
+        return o;
+      };
+      const today = new Date().toISOString().slice(0, 10);
+      html += '<tr>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
+        '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
+        '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
+        '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + today + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+    setHTML('signatureBody', html);
   }
 
   function fmtDateShort_(iso) {
@@ -2318,13 +2268,146 @@
     return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
   }
 
-  // Globals
+  // ---- Print dialog ----
+  function attOpenPrintDialog() {
+    window.TIS.listLearners().then(function (r) {
+      const classes = {};
+      ((r && r.ok && r.data) || []).forEach(function (l) { if (l.class_name) classes[l.class_name] = true; });
+      const classNames = Object.keys(classes).sort();
+
+      const termEl = document.getElementById('attendanceTerm');
+      const yearEl = document.getElementById('attendanceYear');
+      const defTerm = termEl ? termEl.value : '1st';
+      const defYear = yearEl ? yearEl.value.trim() : '2026';
+
+      let html = '<div class="modal-overlay" onclick="if(event.target===this)attClosePrintDialog()">';
+      html += '<div class="modal-box" style="max-width:460px;" onclick="event.stopPropagation()">';
+      html += '<div class="modal-header"><h2>Print Attendance</h2>' +
+              '<button class="close-btn" onclick="attClosePrintDialog()">&times;</button></div>';
+
+      html += '<div class="form-group"><label>Class</label><select id="attPrintClass" style="width:100%;">';
+      classNames.forEach(function (c) { html += '<option value="' + escAttr(c) + '">' + esc(c) + '</option>'; });
+      html += '</select></div>';
+
+      html += '<div class="form-group"><label>Term</label><select id="attPrintTerm" style="width:100%;">';
+      ['1st','2nd','3rd'].forEach(function (t) {
+        html += '<option value="' + t + '"' + (t === defTerm ? ' selected' : '') + '>' + t.toUpperCase() + ' TERM</option>';
+      });
+      html += '</select></div>';
+
+      html += '<div class="form-group"><label>Year</label><input id="attPrintYear" type="text" value="' + escAttr(defYear) + '"></div>';
+
+      html += '<div class="form-group"><label>Scope</label><select id="attPrintScope" style="width:100%;">';
+      html += '<option value="ALL">All weeks (full term)</option>';
+      for (let w = 1; w <= 20; w++) html += '<option value="W' + w + '">Week ' + w + '</option>';
+      html += '</select></div>';
+
+      html += '<div style="text-align:right;margin-top:14px;">';
+      html += '<button class="btn btn-secondary" onclick="attClosePrintDialog()">Cancel</button> ';
+      html += '<button class="btn btn-gold" onclick="attRunPrint()">Print</button>';
+      html += '</div></div></div>';
+      setHTML('modalContainer', html);
+    });
+  }
+
+  function attClosePrintDialog() { setHTML('modalContainer', ''); }
+
+  async function attRunPrint() {
+    const cls   = document.getElementById('attPrintClass').value;
+    const term  = document.getElementById('attPrintTerm').value;
+    const year  = document.getElementById('attPrintYear').value.trim();
+    const scope = document.getElementById('attPrintScope').value;
+    attClosePrintDialog();
+
+    startLoader();
+    const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10));
+    stopLoader();
+    if (!r || !r.ok) { showToast('Could not load register', 'error'); return; }
+    const data = r.data;
+    let weeksToShow = data.weeks;
+    if (scope !== 'ALL') {
+      const wn = parseInt(scope.substring(1), 10);
+      weeksToShow = data.weeks.filter(function (w) { return w.weekNumber === wn; });
+    }
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+
+    const css = '<style>' +
+      'body{font-family:Arial;padding:16px;color:#111;}' +
+      '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:8px;}' +
+      '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0;font-size:18px;}' +
+      'h2{font-size:13px;color:#0b6623;margin:12px 0 4px;border-bottom:1px solid #c8e6c9;padding-bottom:3px;}' +
+      'table{width:100%;border-collapse:collapse;font-size:9px;margin-top:6px;}' +
+      'th{background:#0b6623;color:#fff;padding:3px;border:1px solid #333;}' +
+      'td{padding:3px;border:1px solid #999;text-align:center;}' +
+      'td.name{text-align:left;font-weight:600;}' +
+      'td.m-hol{background:#ffcdd2;color:#721c24;}' +
+      'td.m-ok{background:#d4edda;}' +
+      '</style>';
+
+    let html = '<html><head><title>Attendance — ' + esc(cls) + '</title>' + css + '</head><body>';
+    html += '<div class="hdr">';
+    html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:52px;">';
+    html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1><div style="font-size:11px;color:#666;">' +
+            esc(cls) + ' — ' + esc(data.termLabel) + ' · Printed ' + new Date().toLocaleDateString() +
+            '</div></div>';
+    html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:52px;">';
+    html += '</div>';
+
+    weeksToShow.forEach(function (wk) {
+      html += '<h2>Week ' + wk.weekNumber + ' — Ending ' + fmtDateShort_(wk.weekEnding) + '</h2>';
+      html += '<table><thead><tr><th>PIN</th><th>Name</th><th>Sex</th><th>Age</th>';
+      wk.days.forEach(function (d, i) {
+        html += '<th colspan="2">' + ['Mon','Tue','Wed','Thu','Fri'][i] + '<br>' + fmtDateShort_(d.date) + '</th>';
+      });
+      html += '<th>Wkly</th></tr><tr><th colspan="4"></th>';
+      wk.days.forEach(function () { html += '<th>M</th><th>A</th>'; });
+      html += '<th></th></tr></thead><tbody>';
+
+      data.learners.forEach(function (l) {
+        html += '<tr>';
+        html += '<td>' + esc(l.pin || '') + '</td>';
+        const g = (l.gender || '').toLowerCase();
+        const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
+        html += '<td class="name" style="' + nc + '">' + esc(l.name || '') + '</td>';
+        html += '<td>' + esc(l.gender || '—') + '</td>';
+        html += '<td>' + esc(l.age || '—') + '</td>';
+        let wkPresent = 0;
+        wk.days.forEach(function (d) {
+          const mark = (d.marksByLearner || {})[l.id] || 'O O';
+          const ma = attMA(mark);
+          if (d.isHoliday) {
+            html += '<td class="m-hol">—</td><td class="m-hol">—</td>';
+          } else {
+            html += '<td class="' + (ma.M === '\\' ? 'm-ok' : '') + '">' + ma.M + '</td>';
+            html += '<td class="' + (ma.A === '/'  ? 'm-ok' : '') + '">' + ma.A + '</td>';
+            if (ma.M === '\\') wkPresent++;
+            if (ma.A === '/')  wkPresent++;
+          }
+        });
+        html += '<td><b>' + wkPresent + '</b></td></tr>';
+      });
+      html += '</tbody></table>';
+    });
+
+    html += '</body></html>';
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function () { w.print(); }, 250);
+  }
+
   window.loadAttendanceRegister = loadAttendanceRegister;
   window.attToggleWeek          = attToggleWeek;
   window.attCycleCell           = attCycleCell;
   window.attMarkClassPresent    = attMarkClassPresent;
   window.attSaveAllChanges      = attSaveAllChanges;
   window.attDiscardChanges      = attDiscardChanges;
+  window.attOpenPrintDialog     = attOpenPrintDialog;
+  window.attClosePrintDialog    = attClosePrintDialog;
+  window.attRunPrint            = attRunPrint;
+  window.renderClassAnalysisPanel = renderClassAnalysisPanel;
+  window.renderSignaturePanel   = renderSignaturePanel;
   // ================================================================
   // [S11] STAFF ATTENDANCE
   // ================================================================
