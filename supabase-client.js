@@ -430,6 +430,66 @@
     } catch (err) { return fail(err); }
   };
 
+  // ---------------- STAFF ----------------
+  TIS.listStaff = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff')
+        .select('*')
+        .order('full_name', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getStaff = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createStaff = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff')
+        .insert(row)
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.updateStaff = async function (id, patch) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff')
+        .update(Object.assign({}, patch, { updated_at: new Date().toISOString() }))
+        .eq('id', id)
+        .select();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteStaff = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('staff').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({});
+    } catch (err) { return fail(err); }
+  };
   // ---------------- TERM PROMOTION (bulk, no class change) ----------------
   // Creates learner_terms rows for the next term, carrying forward each
   // learner's balance_cf as the next term's balance_bf.
