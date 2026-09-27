@@ -904,7 +904,7 @@
                 '" tried to reset ' + operatorId + '.');
   };
 
-  function roleDefaults(role) {
+   function roleDefaults(role) {
     const superAdmin = {
       learners: { read: true, write: true, print: true },
       staff: { read: true, write: true, print: true },
@@ -914,6 +914,7 @@
       reports: { read: true, write: true, print: true },
       calendar: { read: true, write: true, print: true },
       classes: { read: true, write: true, print: true },
+      terms: { read: true, write: true, print: true },
       users: { read: true, write: true, print: true }
     };
     const admin = {
@@ -925,6 +926,7 @@
       reports: { read: true, write: true, print: true },
       calendar: { read: true, write: true, print: true },
       classes: { read: true, write: false, print: true },
+      terms: { read: true, write: true, print: true },
       users: { read: true, write: false, print: true }
     };
     const teacher = {
@@ -936,6 +938,7 @@
       reports: { read: true, write: false, print: false },
       calendar: { read: true, write: false, print: false },
       classes: { read: true, write: false, print: false },
+      terms: { read: true, write: false, print: false },
       users: { read: false, write: false, print: false }
     };
     const operator = {
@@ -947,6 +950,7 @@
       reports: { read: true, write: false, print: true },
       calendar: { read: true, write: false, print: false },
       classes: { read: true, write: false, print: false },
+      terms: { read: true, write: false, print: false },
       users: { read: false, write: false, print: false }
     };
     const profile = role === 'super_admin' ? superAdmin
