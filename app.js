@@ -2286,6 +2286,423 @@
   window.initLearnersTab        = initLearnersTab;
   window.downloadLearnerTemplate = downloadLearnerTemplate;
   window.uploadLearnerUpdates   = uploadLearnerUpdates;
+
+    // ================================================================
+  // [S08] STAFF
+  // ================================================================
+  async function loadStaff() {
+    setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
+    startLoader();
+    const r = await window.TIS.listStaff();
+    stopLoader();
+    if (!r || !r.ok) {
+      setHTML('staffGrid', errorHTML('Could not load staff', r && r.error));
+      return;
+    }
+    State.cachedStaff = r.data || [];
+    renderStaff(State.cachedStaff);
+    renderStaffStats(State.cachedStaff);
+  }
+
+  function staffName(s) {
+    if (!s) return '';
+    if (s.full_name) return s.full_name;
+    return [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ');
+  }
+
+  function renderStaff(staff) {
+    if (!staff || staff.length === 0) {
+      setHTML('staffGrid', emptyHTML('fa-user-tie', 'No staff to show'));
+      return;
+    }
+    let html = '';
+    staff.forEach(function (s) {
+      const name = staffName(s);
+      const photo = s.photo_url || '';
+      const badgeColor = (s.status === 'Inactive')
+        ? 'background:#c0392b;color:#fff;'
+        : 'background:rgba(255,255,255,0.08);';
+      html += '<div class="student-card" data-staffid="' + escAttr(s.id) + '">';
+      html += '<div class="card-header">';
+      html += '<div class="card-avatar">' + (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
+      html += '<div class="card-title"><h3>' + esc(name) + '</h3>';
+      html += '<div class="pin">' + esc(s.staff_id || s.id || '') + ' • ' + esc(s.department || '') + '</div></div>';
+      html += '<span class="card-badge" style="' + badgeColor + '">' + esc(s.status || 'Active') + '</span>';
+      html += '</div>';
+      html += '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">';
+      html += '<button type="button" class="btn btn-sm btn-secondary" data-staff-action="view" data-staffid="' + escAttr(s.id) + '"><i class="fas fa-eye"></i> View</button>';
+      if (hasPermission('write_staff')) {
+        html += '<button type="button" class="btn btn-sm btn-primary" data-staff-action="edit" data-staffid="' + escAttr(s.id) + '"><i class="fas fa-pen"></i> Edit</button>';
+      }
+      if (hasPermission('print_staff')) {
+        html += '<button type="button" class="btn btn-sm btn-gold" data-staff-action="print" data-staffid="' + escAttr(s.id) + '"><i class="fas fa-print"></i> Print</button>';
+      }
+      html += '</div></div>';
+    });
+    setHTML('staffGrid', html);
+
+    document.querySelectorAll('#staffGrid [data-staff-action]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        const id = btn.dataset.staffid;
+        const action = btn.dataset.staffAction;
+        if (action === 'view')  openStaffProfile(id);
+        else if (action === 'edit') openStaffEditModal(id);
+        else if (action === 'print') printStaffCard(id);
+      });
+    });
+  }
+
+  function renderStaffStats(staff) {
+    let active = 0, inactive = 0, teaching = 0, nonTeaching = 0;
+    staff.forEach(function (s) {
+      if ((s.status || 'Active') === 'Active') active++; else inactive++;
+      if ((s.department || '').toLowerCase() === 'teaching') teaching++;
+      else nonTeaching++;
+    });
+    setHTML('staffStats',
+      '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + staff.length + '</div></div>' +
+      '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value gold">' + active + '</div></div>' +
+      '<div class="stat-card red"><div class="stat-label">Inactive</div><div class="stat-value red">' + inactive + '</div></div>' +
+      '<div class="stat-card blue"><div class="stat-label">Teaching</div><div class="stat-value" style="color:#1a5276;">' + teaching + '</div></div>');
+  }
+
+  async function openStaffProfile(id) {
+    closeModal();
+    startLoader();
+    const r = await window.TIS.getStaff(id);
+    stopLoader();
+    if (!r || !r.ok || !r.data) { showToast('Staff not found', 'error'); return; }
+    const s = r.data;
+    const name = staffName(s);
+    const photo = s.photo_url || '';
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>' + esc(name) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+
+    html += '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;">';
+    html += '<div style="width:96px;height:96px;border-radius:50%;overflow:hidden;background:linear-gradient(135deg,#0d4d26,#d4a017);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:32px;flex-shrink:0;">';
+    html += photo ? '<img src="' + esc(photo) + '" style="width:100%;height:100%;object-fit:cover;">' : esc(name.charAt(0) || '?');
+    html += '</div>';
+    html += '<div style="flex:1;min-width:220px;">';
+    html += '<div style="font-weight:800;font-size:15px;color:#0d4d26;">' + esc(name) + '</div>';
+    html += '<div style="font-size:12px;color:#666;">' + esc(s.staff_id || '') + ' · ' + esc(s.department || '') + '</div>';
+    html += '<div style="font-size:12px;color:#666;">' + esc(s.qualification || '') + '</div>';
+    html += '</div>';
+    if (hasPermission('write_staff')) {
+      html += '<div><button class="btn btn-sm btn-warning" onclick="openStaffPhotoModal(\'' + escAttr(id) + '\')"><i class="fas fa-camera"></i> Change photo</button></div>';
+    }
+    html += '</div>';
+
+    html += '<div class="expandable open lbStaffSec">';
+    html += '<div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Profile</div>';
+    html += '<div class="expandable-body">';
+    html += infoRow('Staff ID', s.staff_id);
+    html += infoRow('Full Name', name);
+    html += infoRow('Gender', s.gender);
+    html += infoRow('Department', s.department);
+    html += infoRow('Phone', s.phone);
+    html += infoRow('Email', s.email);
+    html += infoRow('Employment Date', fmtDateOrDash(s.employment_date));
+    html += infoRow('Qualification', s.qualification);
+    html += infoRow('Graduation Year', s.graduation_year);
+    html += infoRow('Course of Study', s.course_of_study);
+    html += infoRow('Subjects Taught', s.subjects_taught);
+    html += infoRow('Bank', s.bank);
+    html += infoRow('Account Number', s.account_number);
+    html += infoRow('Salary', moneyOrDash(s.salary));
+    html += infoRow('Status', s.status);
+    html += infoRow('Resume Time', s.resume_time);
+    html += infoRow('Close Time', s.close_time);
+    html += infoRow('Late Cutoff', s.late_cutoff);
+    html += infoRow('Early Cutoff', s.early_cutoff);
+    html += '</div></div>';
+
+    html += '<div style="text-align:right;margin-top:12px;">';
+    html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Close</button> ';
+    if (hasPermission('write_staff')) {
+      html += '<button class="btn btn-primary" onclick="openStaffEditModal(\'' + escAttr(id) + '\')">Edit</button>';
+    }
+    html += '</div>';
+    html += '</div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  function closeStaffModal() {
+    document.querySelectorAll('.modal-overlay').forEach(function (el) { el.remove(); });
+    setHTML('modalContainer', '');
+  }
+
+  async function openStaffEditModal(id) {
+    closeModal();
+    startLoader();
+    const r = await window.TIS.getStaff(id);
+    stopLoader();
+    if (!r || !r.ok || !r.data) { showToast('Staff not found', 'error'); return; }
+    const s = r.data;
+
+    const f = function (fid, label, value, type) {
+      const t = type || 'text';
+      return '<div class="form-group"><label>' + esc(label) + '</label><input id="' + fid + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
+    };
+    const sel = function (fid, label, value, options) {
+      let o = '';
+      options.forEach(function (opt) {
+        o += '<option value="' + escAttr(opt) + '"' + (opt === value ? ' selected' : '') + '>' + esc(opt) + '</option>';
+      });
+      return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + fid + '">' + o + '</select></div>';
+    };
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Edit — ' + esc(staffName(s)) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+
+    html += '<div class="form-row">' + f('es_staff_id', 'Staff ID', s.staff_id) + f('es_surname', 'Surname', s.surname) + '</div>';
+    html += '<div class="form-row">' + f('es_first_name', 'First Name', s.first_name) + f('es_middle_name', 'Middle Name', s.middle_name) + '</div>';
+    html += '<div class="form-row">' + sel('es_gender', 'Gender', s.gender, ['', 'Male', 'Female']) + f('es_phone', 'Phone', s.phone) + '</div>';
+    html += '<div class="form-row">' + f('es_email', 'Email', s.email) + sel('es_department', 'Department', s.department, ['', 'Teaching', 'Admin', 'Support']) + '</div>';
+    html += '<div class="form-row">' + f('es_qualification', 'Qualification', s.qualification) + f('es_employment_date', 'Employment Date', s.employment_date) + '</div>';
+    html += '<div class="form-row">' + f('es_graduation_year', 'Graduation Year', s.graduation_year) + f('es_course_of_study', 'Course of Study', s.course_of_study) + '</div>';
+    html += f('es_subjects_taught', 'Subjects Taught', s.subjects_taught);
+    html += '<div class="form-row">' + f('es_bank', 'Bank', s.bank) + f('es_account_number', 'Account Number', s.account_number) + '</div>';
+    html += '<div class="form-row">' + f('es_salary', 'Salary (₦)', s.salary) + f('es_position', 'Position', s.position) + '</div>';
+    html += '<div class="form-row">' + f('es_resume_time', 'Resume Time', s.resume_time) + f('es_close_time', 'Close Time', s.close_time) + '</div>';
+    html += '<div class="form-row">' + f('es_late_cutoff', 'Late Cutoff', s.late_cutoff) + f('es_early_cutoff', 'Early Cutoff', s.early_cutoff) + '</div>';
+    html += '<div class="form-row">' + sel('es_status', 'Status', s.status, ['Active', 'Inactive']) + '</div>';
+
+    html += '<div style="text-align:right;margin-top:14px;">';
+    html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" onclick="saveStaffEdits(\'' + escAttr(id) + '\')">Save</button>';
+    html += '</div>';
+    html += '</div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  async function saveStaffEdits(id) {
+    const get = function (fid) { const el = $(fid); return el ? String(el.value || '').trim() : ''; };
+    const patch = {
+      staff_id:        get('es_staff_id'),
+      surname:         get('es_surname'),
+      first_name:      get('es_first_name'),
+      middle_name:     get('es_middle_name'),
+      gender:          get('es_gender'),
+      phone:           get('es_phone'),
+      email:           get('es_email'),
+      department:      get('es_department'),
+      qualification:   get('es_qualification'),
+      employment_date: get('es_employment_date'),
+      graduation_year: get('es_graduation_year'),
+      course_of_study: get('es_course_of_study'),
+      subjects_taught: get('es_subjects_taught'),
+      bank:            get('es_bank'),
+      account_number:  get('es_account_number'),
+      salary:          get('es_salary'),
+      position:        get('es_position'),
+      resume_time:     get('es_resume_time'),
+      close_time:      get('es_close_time'),
+      late_cutoff:     get('es_late_cutoff'),
+      early_cutoff:    get('es_early_cutoff'),
+      status:          get('es_status') || 'Active'
+    };
+    patch.full_name = [patch.surname, patch.first_name, patch.middle_name].filter(Boolean).join(' ');
+
+    startLoader();
+    const r = await window.TIS.updateStaff(id, patch);
+    stopLoader();
+    if (r && r.ok) { showToast('Staff updated', 'success'); closeStaffModal(); loadStaff(); }
+    else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+  }
+
+  function openAddStaffModal() {
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Add Staff</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+    html += '<div class="form-row"><div class="form-group"><label>Staff ID</label><input id="ns_staff_id"></div>' +
+            '<div class="form-group"><label>Surname</label><input id="ns_surname"></div></div>';
+    html += '<div class="form-row"><div class="form-group"><label>First Name</label><input id="ns_first_name"></div>' +
+            '<div class="form-group"><label>Middle Name</label><input id="ns_middle_name"></div></div>';
+    html += '<div class="form-row"><div class="form-group"><label>Gender</label><select id="ns_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
+            '<div class="form-group"><label>Phone</label><input id="ns_phone"></div></div>';
+    html += '<div class="form-row"><div class="form-group"><label>Email</label><input id="ns_email"></div>' +
+            '<div class="form-group"><label>Department</label><select id="ns_department"><option value="">—</option><option>Teaching</option><option>Admin</option><option>Support</option></select></div></div>';
+    html += '<div class="form-row"><div class="form-group"><label>Qualification</label><input id="ns_qualification"></div>' +
+            '<div class="form-group"><label>Employment Date</label><input id="ns_employment_date" placeholder="01-Jan-2026"></div></div>';
+    html += '<div class="form-row"><div class="form-group"><label>Resume Time</label><input id="ns_resume_time" value="07:00"></div>' +
+            '<div class="form-group"><label>Close Time</label><input id="ns_close_time" value="16:30"></div></div>';
+    html += '<div style="text-align:right;margin-top:14px;">';
+    html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" onclick="submitNewStaff()">Add staff</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  async function submitNewStaff() {
+    const get = function (id) { const el = $(id); return el ? String(el.value || '').trim() : ''; };
+    const surname = get('ns_surname');
+    const firstName = get('ns_first_name');
+    const middleName = get('ns_middle_name');
+    const row = {
+      staff_id: get('ns_staff_id'),
+      surname: surname,
+      first_name: firstName,
+      middle_name: middleName,
+      full_name: [surname, firstName, middleName].filter(Boolean).join(' '),
+      gender: get('ns_gender'),
+      phone: get('ns_phone'),
+      email: get('ns_email'),
+      department: get('ns_department'),
+      qualification: get('ns_qualification'),
+      employment_date: get('ns_employment_date'),
+      resume_time: get('ns_resume_time') || '07:00',
+      close_time: get('ns_close_time') || '16:30',
+      status: 'Active'
+    };
+    if (!row.staff_id || !row.full_name) { showToast('Staff ID and name are required', 'warning'); return; }
+    startLoader();
+    const r = await window.TIS.createStaff(row);
+    stopLoader();
+    if (r && r.ok) { showToast('Staff added', 'success'); closeStaffModal(); loadStaff(); }
+    else showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error');
+  }
+
+  function openStaffPhotoModal(id) {
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
+    html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Photo — ' + esc(id) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+    html += '<div style="text-align:center;">';
+    html += '<input type="file" id="staffPhotoInput" accept="image/*" style="margin-bottom:14px;">';
+    html += '<div id="staffPhotoPreview" style="width:120px;height:120px;margin:10px auto;border-radius:50%;border:3px solid #d4a017;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f5f5f5;color:#666;font-size:12px;">preview</div>';
+    html += '<button class="btn btn-primary" onclick="submitStaffPhoto(\'' + escAttr(id) + '\')">Upload photo</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+
+    const inp = $('staffPhotoInput');
+    if (inp) {
+      inp.addEventListener('change', function (e) {
+        const f = e.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+          $('staffPhotoPreview').innerHTML = '<img src="' + ev.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
+          window.__staffPhotoDataUrl = ev.target.result;
+        };
+        reader.readAsDataURL(f);
+      });
+    }
+  }
+
+  async function submitStaffPhoto(id) {
+    const dataUrl = window.__staffPhotoDataUrl;
+    if (!dataUrl) { showToast('Choose a photo first', 'warning'); return; }
+    startLoader();
+    const r = await window.TIS.updateStaff(id, { photo_url: dataUrl });
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Photo saved', 'success');
+      window.__staffPhotoDataUrl = null;
+      closeStaffModal();
+      loadStaff();
+    } else {
+      showToast('Upload failed: ' + ((r && r.error) || 'unknown'), 'error');
+    }
+  }
+
+  function printStaffCard(id) {
+    const s = (State.cachedStaff || []).find(function (x) { return String(x.id) === String(id); });
+    if (!s) { showToast('Staff not found', 'warning'); return; }
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+    const name = staffName(s);
+    let html = '<html><head><title>' + esc(name) + '</title>' +
+      '<style>body{font-family:Arial;padding:24px;}' +
+      '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:8px;}' +
+      '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0;font-size:20px;}' +
+      'table{width:100%;border-collapse:collapse;margin-top:12px;}' +
+      'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:12px;}td.k{color:#666;width:35%;}' +
+      '</style></head><body>';
+    html += '<div class="hdr">';
+    html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
+    html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1><div style="font-style:italic;color:#666;font-size:12px;">Scientia est potentia</div></div>';
+    html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
+    html += '</div>';
+    html += '<h2 style="margin-top:16px;color:#0b6623;">' + esc(name) + ' — ' + esc(s.staff_id || '') + '</h2>';
+    html += '<table>';
+    const rows = [
+      ['Department', s.department],
+      ['Gender', s.gender],
+      ['Phone', s.phone],
+      ['Email', s.email],
+      ['Employment Date', s.employment_date],
+      ['Qualification', s.qualification],
+      ['Graduation Year', s.graduation_year],
+      ['Course of Study', s.course_of_study],
+      ['Subjects Taught', s.subjects_taught],
+      ['Bank', s.bank],
+      ['Account Number', s.account_number],
+      ['Salary', s.salary],
+      ['Status', s.status]
+    ];
+    rows.forEach(function (r) {
+      html += '<tr><td class="k">' + esc(r[0]) + '</td><td>' + esc(r[1] || '') + '</td></tr>';
+    });
+    html += '</table></body></html>';
+    w.document.write(html); w.document.close(); w.print();
+  }
+
+  function printStaffList() {
+    if (!State.cachedStaff.length) { showToast('Load the list first', 'warning'); return; }
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+    let html = '<html><head><title>Staff</title><style>' +
+      'body{font-family:Arial;padding:20px;}h1{color:#0b6623;text-align:center;}' +
+      'table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:white;padding:8px;font-size:11px;}' +
+      'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}</style></head><body>';
+    html += '<h1>THE IDEAL SCHOOLS — Staff List</h1>';
+    html += '<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Phone</th><th>Status</th></tr></thead><tbody>';
+    State.cachedStaff.forEach(function (s) {
+      html += '<tr><td>' + esc(s.staff_id || '') + '</td><td>' + esc(staffName(s)) + '</td>' +
+              '<td>' + esc(s.department || '') + '</td><td>' + esc(s.phone || '') + '</td>' +
+              '<td>' + esc(s.status || 'Active') + '</td></tr>';
+    });
+    html += '</tbody></table></body></html>';
+    w.document.write(html); w.document.close(); w.print();
+  }
+
+  function initStaffTab() {
+    const input = $('staffSearchInput');
+    if (input && !input.__wired) {
+      input.addEventListener('input', debounce(function () {
+        const q = input.value.trim().toLowerCase();
+        if (!q) { renderStaff(State.cachedStaff); return; }
+        const filtered = (State.cachedStaff || []).filter(function (s) {
+          return (staffName(s) || '').toLowerCase().indexOf(q) !== -1 ||
+                 (s.staff_id || '').toLowerCase().indexOf(q) !== -1 ||
+                 (s.phone || '').indexOf(q) !== -1 ||
+                 (s.email || '').toLowerCase().indexOf(q) !== -1;
+        });
+        renderStaff(filtered);
+      }, 250));
+      input.__wired = true;
+    }
+    const add = $('btnAddStaff');     if (add && !add.__wired) { add.addEventListener('click', openAddStaffModal); add.__wired = true; }
+    const rf  = $('btnRefreshStaff'); if (rf  && !rf.__wired)  { rf.addEventListener('click', loadStaff); rf.__wired = true; }
+    const pr  = $('btnPrintStaff');   if (pr  && !pr.__wired)  { pr.addEventListener('click', function () { if (State.cachedStaff && State.cachedStaff.length) printStaffList(); else showToast('Load the list first', 'warning'); }); pr.__wired = true; }
+  }
+
+  // ---------------- Globals ----------------
+  window.loadStaff            = loadStaff;
+  window.openStaffProfile     = openStaffProfile;
+  window.openStaffEditModal   = openStaffEditModal;
+  window.saveStaffEdits       = saveStaffEdits;
+  window.openAddStaffModal    = openAddStaffModal;
+  window.submitNewStaff       = submitNewStaff;
+  window.openStaffPhotoModal  = openStaffPhotoModal;
+  window.submitStaffPhoto     = submitStaffPhoto;
+  window.printStaffCard       = printStaffCard;
+  window.printStaffList       = printStaffList;
+  window.closeStaffModal      = closeStaffModal;
+  
   // ================================================================
   // [S09] TERMS  (promotion: term + year, class-based + special)
   // ================================================================
