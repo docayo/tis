@@ -5,7 +5,7 @@
 // SECTION MAP:
 //   [CAL-FE-01] CONFIG
 //   [CAL-FE-02] JSONP HELPER
-//   [CAL-FE-03] FILE UPLOAD (via GET, bypasses 302)
+//   [CAL-FE-03] DRIVE IMPORT
 //   [CAL-FE-04] CALENDAR TAB RENDER
 //   [CAL-FE-05] UPLOAD MODAL
 //   [CAL-FE-06] REVIEW + DUPLICATE CHECK + COMMIT
@@ -66,58 +66,38 @@
       setTimeout(function () {
         if (settled) return;
         settled = true; cleanup();
-        resolve({ success: false, message: 'Timeout (25s). File may be too large.' });
+        resolve({ success: false, message: 'Timeout (60s).' });
       }, 60000);
       document.head.appendChild(scriptEl);
     });
   }
 
-  // [CAL-FE-03] FILE UPLOAD (via GET, bypasses 302 redirect)
-  async function uploadCalendarFile(file) {
-    if (!file) return;
+  // [CAL-FE-03] DRIVE IMPORT
+  async function importFromDrive(driveInput) {
+    if (!driveInput || !driveInput.trim()) { showToast('Paste a Drive link or file ID first.'); return; }
 
     const status = document.getElementById('cal_uploadStatus');
-    if (status) status.textContent = 'Reading file...';
+    if (status) status.textContent = 'Fetching from Drive and parsing...';
 
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-    if (file.size > 4 * 1024 * 1024) {
-      if (status) status.textContent = 'File is ' + sizeMB + ' MB. Large files may fail.';
-      if (!confirm('File is ' + sizeMB + ' MB. Continue?')) return;
-    }
-
-    const base64 = await new Promise(function (resolve, reject) {
-      const r = new FileReader();
-      r.onload = function () { resolve(String(r.result).split(',')[1]); };
-      r.onerror = function () { reject(new Error('File read failed.')); };
-      r.readAsDataURL(file);
-    });
-
-    if (status) status.textContent = 'Uploading and parsing (' + sizeMB + ' MB)...';
-
-    const payload = {
-      fileName: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      base64: base64,
+    const r = await calCall('CAL_handleUploadFromDrive_', {
+      driveUrl: driveInput.trim(),
       session: getSession()
-    };
-
-    const r = await calCall('CAL_handleUploadFromGet_', payload);
+    });
     window.__lastUploadResponse = r;
 
     if (!r || !r.success) {
-      if (status) status.textContent = 'Parse failed: ' + ((r && (r.message || r.error)) || 'unknown');
-      showPasteFallback(true);
+      if (status) status.textContent = 'Import failed: ' + ((r && (r.message || r.error)) || 'unknown');
       return;
     }
 
     if (!r.academicYear || !r.terms || !r.terms.length) {
-      if (status) status.textContent = 'Uploaded but not parsed. Use the paste fallback below.';
+      if (status) status.textContent = 'Imported but not parsed. Try the paste fallback below.';
       showPasteFallback(true);
       return;
     }
 
     uploadedParsed = r;
-    uploadedSource = file.name;
+    uploadedSource = r.fileName || driveInput;
     if (status) status.textContent = 'Parsed OK (' + (r.extractMethod || 'unknown') + '). Review below.';
     await checkAndRenderReview(r);
   }
@@ -138,7 +118,7 @@
     const events = r.events || [];
     if (!events.length) {
       container.innerHTML = '<div class="card-bg"><h3 style="color:#0d4d26;">No calendar uploaded yet</h3>' +
-        '<p>Click <b>Upload Calendar</b> above.</p></div>';
+        '<p>Click <b>Import Calendar</b> above to import this academic year\'s calendar from Google Drive.</p></div>';
       return;
     }
     let html = '';
@@ -176,44 +156,51 @@
     container.innerHTML = html;
   }
 
-  // [CAL-FE-05] UPLOAD MODAL
+  // [CAL-FE-05] UPLOAD MODAL (Drive-first)
   function openUploadModal() {
     uploadedParsed = null;
     uploadedSource = null;
+
     const html =
       '<div class="modal-overlay" onclick="if(event.target===this)CAL.closeModal()">' +
       '<div class="modal-box" style="max-width:600px;" onclick="event.stopPropagation()">' +
-        '<div class="modal-header"><h2>Upload Academic Calendar</h2>' +
+        '<div class="modal-header"><h2>Import Academic Calendar</h2>' +
         '<button class="close-btn" onclick="CAL.closeModal()">&times;</button></div>' +
-        '<p style="font-size:12px;color:#555;">Upload a PDF, DOC, DOCX, or TXT calendar.</p>' +
-        '<div id="cal_uploadZone" style="border:2px dashed #0d4d26;border-radius:8px;padding:30px;text-align:center;cursor:pointer;background:#f3f9ff;">' +
-          '<i class="fas fa-cloud-upload-alt" style="font-size:36px;color:#0d4d26;"></i>' +
-          '<p style="margin-top:10px;font-weight:700;">Click to select file</p>' +
-          '<p style="font-size:11px;color:#666;">PDF, DOC, DOCX, TXT — up to 4MB</p>' +
-          '<input type="file" id="cal_fileInput" accept=".pdf,.doc,.docx,.txt" style="display:none;">' +
+        '<p style="font-size:12px;color:#555;">Paste a Google Drive link to a PDF, DOC, DOCX, or TXT calendar. ' +
+        'The file must be shared as "Anyone with the link can view".</p>' +
+
+        '<div class="form-group" style="margin-bottom:12px;">' +
+          '<label style="font-weight:700;font-size:12px;">Google Drive Link or File ID</label>' +
+          '<input type="text" id="cal_driveUrl" placeholder="https://drive.google.com/file/d/.../view" style="width:100%;">' +
         '</div>' +
+
+        '<div style="text-align:right;margin-bottom:12px;">' +
+          '<button class="btn btn-success" onclick="CAL.importFromDriveClick()">Import from Drive</button>' +
+        '</div>' +
+
         '<div id="cal_uploadStatus" style="margin-top:10px;font-size:12px;color:#0d4d26;font-weight:600;"></div>' +
         '<div id="cal_reviewPanel" style="margin-top:12px;"></div>' +
-        '<div id="cal_pasteFallback" style="display:none;margin-top:16px;">' +
-          '<label style="font-weight:700;font-size:12px;">Fallback: Paste calendar text</label>' +
-          '<textarea id="cal_pasteBox" rows="6" style="width:100%;font-family:monospace;font-size:11px;" placeholder="Paste the calendar text here..."></textarea>' +
+
+        '<details id="cal_pasteFallback" style="margin-top:16px;">' +
+          '<summary style="cursor:pointer;font-weight:700;font-size:12px;color:#0d4d26;">Fallback: Paste calendar text</summary>' +
+          '<textarea id="cal_pasteBox" rows="6" style="width:100%;font-family:monospace;font-size:11px;margin-top:6px;" placeholder="Paste the calendar text here..."></textarea>' +
           '<button type="button" class="btn btn-warning" style="margin-top:6px;" onclick="CAL.parsePasted()">Parse Pasted Text</button>' +
-        '</div>' +
+        '</details>' +
+
         '<div style="margin-top:16px;text-align:right;display:flex;gap:8px;justify-content:flex-end;">' +
           '<button class="btn btn-secondary" onclick="CAL.closeModal()">Close</button>' +
           '<button class="btn btn-success" id="cal_commitBtn" disabled onclick="CAL.commitUpload()">Commit to Calendar</button>' +
         '</div>' +
       '</div></div>';
+
     let host = document.getElementById('calModalHost');
     if (!host) { host = document.createElement('div'); host.id = 'calModalHost'; document.body.appendChild(host); }
     host.innerHTML = html;
-    const zone = document.getElementById('cal_uploadZone');
-    const fileInput = document.getElementById('cal_fileInput');
-    zone.addEventListener('click', function () { fileInput.click(); });
-    fileInput.addEventListener('change', function (e) {
-      const f = e.target.files[0];
-      if (f) uploadCalendarFile(f);
-    });
+  }
+
+  function importFromDriveClick() {
+    const el = document.getElementById('cal_driveUrl');
+    if (el) importFromDrive(el.value);
   }
 
   // [CAL-FE-06] REVIEW + DUPLICATE CHECK + COMMIT
@@ -310,17 +297,44 @@
     }
   }
 
-  // [CAL-FE-07] PASTE FALLBACK
-  function showPasteFallback(show) {
+  // [CAL-FE-07] PASTE FALLBACK (server parses as if it were a text file)
+  function showPasteFallback() {
     const el = document.getElementById('cal_pasteFallback');
-    if (el) el.style.display = show ? 'block' : 'none';
+    if (el) el.open = true;
   }
   async function parsePasted() {
     const box = document.getElementById('cal_pasteBox');
     if (!box || !box.value.trim()) { showToast('Paste some text first.'); return; }
+
+    // Upload the paste as a text file to Drive via base64 (small size, safe)
     const blob = new Blob([box.value], { type: 'text/plain' });
     const f = new File([blob], 'pasted_calendar_' + Date.now() + '.txt', { type: 'text/plain' });
-    await uploadCalendarFile(f);
+    const base64 = await new Promise(function (resolve, reject) {
+      const r = new FileReader();
+      r.onload = function () { resolve(String(r.result).split(',')[1]); };
+      r.onerror = function () { reject(new Error('Read failed.')); };
+      r.readAsDataURL(f);
+    });
+
+    const status = document.getElementById('cal_uploadStatus');
+    if (status) status.textContent = 'Parsing pasted text...';
+
+    const r = await calCall('CAL_handleUploadFromGet_', {
+      fileName: f.name,
+      mimeType: 'text/plain',
+      base64: base64,
+      session: getSession()
+    });
+    window.__lastUploadResponse = r;
+
+    if (!r || !r.success) {
+      if (status) status.textContent = 'Parse failed: ' + ((r && (r.message || r.error)) || 'unknown');
+      return;
+    }
+    uploadedParsed = r;
+    uploadedSource = 'pasted_text';
+    if (status) status.textContent = 'Parsed OK. Review below.';
+    await checkAndRenderReview(r);
   }
 
   // [CAL-FE-08] HOLIDAY ADJUSTER
@@ -377,6 +391,7 @@
   }
   window.CAL = {
     openUploadModal: openUploadModal,
+    importFromDriveClick: importFromDriveClick,
     renderCalendarTab: renderCalendarTab,
     closeModal: closeModal,
     commitUpload: commitUpload,
@@ -386,6 +401,6 @@
     openHolidayAdjuster: openHolidayAdjuster,
     submitHolidayAdjustment: submitHolidayAdjustment
   };
-  console.log('[CAL] Academic Calendar module loaded — upload via GET.');
+  console.log('[CAL] Academic Calendar module loaded — Drive import path.');
 
 })();
