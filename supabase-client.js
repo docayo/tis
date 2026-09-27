@@ -490,6 +490,71 @@
       return ok({});
     } catch (err) { return fail(err); }
   };
+  
+  // ---------------- QR TOKENS ----------------
+  TIS.getActiveQRToken = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('qr_tokens')
+        .select('*')
+        .eq('isactive', true)
+        .order('generateddate', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.generateQRToken = async function (operatorName) {
+    try {
+      const sb = await loadSdk();
+
+      // 1. Deactivate every currently active token.
+      const deact = await sb
+        .from('qr_tokens')
+        .update({ isactive: false })
+        .eq('isactive', true);
+      if (deact.error) return fail(deact.error.message);
+
+      // 2. Generate a fresh token.
+      const token = 'QR' + Date.now() + Math.random().toString(36).substring(2, 12).toUpperCase();
+      const now = new Date().toISOString();
+      const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(); // 90 days
+
+      const insert = await sb
+        .from('qr_tokens')
+        .insert({
+          token:            token,
+          generatedby:      operatorName || 'Portal',
+          generateddate:    now,
+          expirydate:       expires,
+          isactive:         true,
+          regeneratedby:    operatorName || 'Portal',
+          regenerateddate:  now
+        })
+        .select()
+        .single();
+      if (insert.error) return fail(insert.error.message);
+
+      return ok(insert.data);
+    } catch (err) { return fail(err); }
+  };
+
+  // Used by the QR scan-to-clock-in flow.
+  TIS.getQRTokenByValue = async function (token) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('qr_tokens')
+        .select('*')
+        .eq('token', token)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
   // ---------------- TERM PROMOTION (bulk, no class change) ----------------
   // Creates learner_terms rows for the next term, carrying forward each
   // learner's balance_cf as the next term's balance_bf.
