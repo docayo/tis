@@ -678,12 +678,13 @@
   }
 
   async function loadArchives() {
-    // Placeholder. Archive view will be built once learners live in Supabase.
     setHTML('archivesList', emptyHTML('fa-box-archive', 'Archives',
       'Archive view will be enabled once learners are migrated.'));
   }
 
   function initTermsWiring() { /* no-op; buttons wired by onclick in markup */ }
+
+  window.activateTerm = activateTerm;
   // ================================================================
   // [S10] LEARNER ATTENDANCE
   // ================================================================
