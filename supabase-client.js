@@ -120,6 +120,245 @@
     } catch (err) { return fail(err); }
   };
 
+  // ---------------- ATTENDANCE ----------------
+  // Load the full register grid for one class in one term.
+  // Returns:
+  //   {
+  //     className, termType, year,
+  //     learners: [ { id, pin, name, gender, age, photo_url } ],
+  //     weeks: [
+  //       {
+  //         weekNumber, weekEnding (Friday ISO),
+  //         days: [
+  //           { date, dayName, isHoliday, holidayName,
+  //             marksByLearner: { learnerId: mark } }
+  //         ]
+  //       }
+  //     ]
+  //   }
+  TIS.getAttendanceRegister = async function (className, termType, year) {
+    try {
+      const sb = await loadSdk();
+
+      // 1. Learners in this class
+      const learnerQ = await sb
+        .from('learners')
+        .select('id, pin, name, gender, date_of_birth, photo_url, class_name, date_of_withdrawal')
+        .eq('class_name', className)
+        .order('name', { ascending: true });
+      if (learnerQ.error) return fail(learnerQ.error.message);
+      const learners = (learnerQ.data || []).filter(function (l) {
+        const w = (l.date_of_withdrawal || '').toString().trim();
+        return !(w && w !== '' && w !== 'N/A');
+      });
+
+      // 2. Attendance rows for this class / term / year
+      const attQ = await sb
+        .from('attendance_learner')
+        .select('learner_id, attendance_date, mark')
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (attQ.error) return fail(attQ.error.message);
+
+      // 3. Calendar events: find the term, get holidays + term start/end
+      const termQ = await sb
+        .from('terms')
+        .select('*')
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (termQ.error) return fail(termQ.error.message);
+      const term = termQ.data;
+
+      // 4. Holidays for this term from academic_calendar
+      const holQ = await sb
+        .from('academic_calendar')
+        .select('event_date, event_type, is_holiday, holiday_name, description')
+        .eq('term_type', termType)
+        .eq('academic_year', term ? (term.year + '/' + (term.year + 1)) : '')
+        .order('event_date', { ascending: true });
+      // Non-fatal if this fails; just empty holidays.
+      const holidayMap = {};
+      if (!holQ.error && holQ.data) {
+        holQ.data.forEach(function (h) {
+          if (h.is_holiday || h.event_type === 'Holiday') {
+            holidayMap[h.event_date] = h.holiday_name || h.description || 'Holiday';
+          }
+        });
+      }
+
+      // 5. Build marks map: date → { learnerId → mark }
+      const marksByDate = {};
+      (attQ.data || []).forEach(function (r) {
+        if (!marksByDate[r.attendance_date]) marksByDate[r.attendance_date] = {};
+        marksByDate[r.attendance_date][r.learner_id] = r.mark;
+      });
+
+      // 6. Group dates into weeks (Mon → Fri) between term.start_date
+      //    and term.end_date, excluding any date past today.
+      const today = new Date().toISOString().slice(0, 10);
+      const startISO = term ? term.start_date : null;
+      const endISO   = term ? term.end_date   : null;
+      const weeks = [];
+      if (startISO && endISO) {
+        let cursor = new Date(startISO + 'T00:00:00');
+        // Align cursor to the Monday of that week.
+        const dow = cursor.getDay(); // 0 Sun, 1 Mon, ...
+        const offsetToMonday = (dow === 0 ? -6 : 1 - dow);
+        cursor.setDate(cursor.getDate() + offsetToMonday);
+
+        const end = new Date(endISO + 'T00:00:00');
+        let weekNumber = 1;
+        while (cursor <= end && weekNumber <= 20) {
+          const days = [];
+          for (let d = 0; d < 5; d++) {           // Mon – Fri
+            const day = new Date(cursor.getTime());
+            day.setDate(day.getDate() + d);
+            const iso = day.toISOString().slice(0, 10);
+            const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][day.getDay()];
+            const isHoliday = !!holidayMap[iso];
+            const marksForLearner = marksByDate[iso] || {};
+            const isFuture = iso > today;
+            days.push({
+              date: iso,
+              dayName: dayName,
+              isHoliday: isHoliday,
+              holidayName: holidayMap[iso] || '',
+              isFuture: isFuture,
+              marksByLearner: marksForLearner
+            });
+          }
+          const weekEnding = days[4].date;   // Friday
+          weeks.push({ weekNumber: weekNumber, weekEnding: weekEnding, days: days });
+          // Advance to next Monday
+          cursor.setDate(cursor.getDate() + 7);
+          weekNumber++;
+        }
+      }
+
+      // 7. Compute age from date_of_birth if present.
+      learners.forEach(function (l) {
+        l.age = computeAge_(l.date_of_birth);
+      });
+
+      return ok({
+        className: className,
+        termType: termType,
+        year: year,
+        termLabel: term ? term.label : '',
+        learners: learners,
+        weeks: weeks
+      });
+    } catch (err) { return fail(err); }
+  };
+
+  function computeAge_(dobStr) {
+    if (!dobStr) return '';
+    const s = String(dobStr).trim();
+    let d = null;
+    // Try DD/MM/YYYY first
+    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    else d = new Date(s);
+    if (!d || isNaN(d.getTime())) return '';
+    const today = new Date();
+    let age = today.getFullYear() - d.getFullYear();
+    const mm = today.getMonth() - d.getMonth();
+    if (mm < 0 || (mm === 0 && today.getDate() < d.getDate())) age--;
+    return age;
+  }
+
+  // Bulk upsert: marks is [ { learnerId, date, mark } ].
+  // Marks with mark === '' delete that cell's row.
+  TIS.saveAttendanceMarks = async function (termType, year, marks, markedBy) {
+    try {
+      if (!marks || marks.length === 0) return ok({ applied: 0, deleted: 0 });
+      const sb = await loadSdk();
+
+      const toUpsert = [];
+      const toDelete = [];
+      marks.forEach(function (m) {
+        if (!m.mark) toDelete.push(m);
+        else toUpsert.push(m);
+      });
+
+      let applied = 0, deleted = 0;
+      const CHUNK = 200;
+
+      // Deletes first (so upsert on (learner_id, date) doesn't collide)
+      for (let i = 0; i < toDelete.length; i += CHUNK) {
+        const slice = toDelete.slice(i, i + CHUNK);
+        for (const d of slice) {
+          await sb.from('attendance_learner')
+            .delete()
+            .eq('learner_id', d.learnerId)
+            .eq('attendance_date', d.date);
+        }
+        deleted += slice.length;
+      }
+
+      // Upserts
+      for (let i = 0; i < toUpsert.length; i += CHUNK) {
+        const slice = toUpsert.slice(i, i + CHUNK);
+        const rows = slice.map(function (m) {
+          return {
+            learner_id:      m.learnerId,
+            term_type:       termType,
+            year:            year,
+            attendance_date: m.date,
+            mark:            m.mark,
+            marked_by:       markedBy || '',
+            marked_at:       new Date().toISOString()
+          };
+        });
+        const r = await sb.from('attendance_learner')
+          .upsert(rows, { onConflict: 'learner_id,attendance_date' });
+        if (r.error) return fail(r.error.message);
+        applied += rows.length;
+      }
+      return ok({ applied: applied, deleted: deleted });
+    } catch (err) { return fail(err); }
+  };
+
+  // Move a holiday in the calendar (from academic_calendar).
+  TIS.shiftHoliday = async function (oldDate, newDate, holidayName) {
+    try {
+      const sb = await loadSdk();
+      // Update the academic_calendar row. If it doesn't exist, insert one.
+      const { data: existing } = await sb
+        .from('academic_calendar')
+        .select('id')
+        .eq('event_date', oldDate)
+        .eq('is_holiday', true)
+        .maybeSingle();
+      if (existing && existing.id) {
+        const { error } = await sb.from('academic_calendar')
+          .update({ event_date: newDate, description: 'MOVED from ' + oldDate })
+          .eq('id', existing.id);
+        if (error) return fail(error.message);
+      } else {
+        const { error } = await sb.from('academic_calendar').insert({
+          event_date: newDate,
+          event_type: 'Holiday',
+          is_holiday: true,
+          holiday_name: holidayName || 'Holiday',
+          description: 'MOVED from ' + oldDate
+        });
+        if (error) return fail(error.message);
+      }
+      return ok({ oldDate: oldDate, newDate: newDate });
+    } catch (err) { return fail(err); }
+  };
+
+  // Set the full-week marks for one learner (or everyone) — bulk helper.
+  // Convenience for the UI: not a new table, just calls saveAttendanceMarks.
+  TIS.markWeekForLearners = async function (termType, year, learnerIds, dates, mark, markedBy) {
+    const marks = [];
+    learnerIds.forEach(function (id) {
+      dates.forEach(function (d) { marks.push({ learnerId: id, date: d, mark: mark }); });
+    });
+    return TIS.saveAttendanceMarks(termType, year, marks, markedBy);
+  };
   // ---------------- PROMOTION STATUS ----------------
   // Figures out whether a term promotion is due.
   // Returns:
