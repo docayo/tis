@@ -1037,6 +1037,315 @@
   window.openPrintOptionsModal = openPrintOptionsModal;
   window.printLearnerCard      = printLearnerCard;
   window.closeLearnerModal     = closeLearnerModal;
+    // ================================================================
+  // LEARNERS — toolbar wiring + missing actions
+  // ================================================================
+  function initLearnersTab() {
+    const refresh = document.getElementById('btnRefreshLearners');
+    if (refresh && !refresh.__wired) {
+      refresh.addEventListener('click', function (e) { e.preventDefault(); loadLearners(); });
+      refresh.__wired = true;
+    }
+    const printBtn = document.getElementById('btnPrintLearners');
+    if (printBtn && !printBtn.__wired) {
+      printBtn.addEventListener('click', function (e) { e.preventDefault(); printLearnerList(); });
+      printBtn.__wired = true;
+    }
+    const dl = document.getElementById('btnDownloadTemplate');
+    if (dl && !dl.__wired) {
+      dl.addEventListener('click', function (e) { e.preventDefault(); downloadLearnerTemplate(); });
+      dl.__wired = true;
+    }
+    const upBtn = document.getElementById('btnUploadUpdates');
+    const upFile = document.getElementById('learnerUploadFile');
+    if (upBtn && upFile && !upBtn.__wired) {
+      upBtn.addEventListener('click', function (e) { e.preventDefault(); upFile.click(); });
+      upFile.addEventListener('change', function (ev) {
+        const f = ev.target.files[0];
+        if (f) uploadLearnerUpdates(f);
+        upFile.value = '';
+      });
+      upBtn.__wired = true;
+    }
+    const add = document.getElementById('btnAddLearner');
+    if (add && !add.__wired) {
+      add.addEventListener('click', function (e) { e.preventDefault(); openAddLearnerModal(); });
+      add.__wired = true;
+    }
+  }
+
+  // ---------- Download Template (Excel via SheetJS) ----------
+  function downloadLearnerTemplate() {
+    if (typeof XLSX === 'undefined') {
+      showToast('Excel library not loaded — reload the page', 'error');
+      return;
+    }
+    // Template columns: PIN + the fields you edit most often.
+    // Keeping this small makes uploads fast and prevents accidental
+    // overwrites of the fee or promotion columns.
+    const columns = [
+      'PIN', 'LEARNERS NAME', 'CLASS', 'GENDER', 'DATE OF BIRTH',
+      'FATHERS PHONE NUMBER', 'MOTHERS PHONE NUMBER', 'GUARDIAN PHONE NUMBER',
+      'ACCOUNT NUMBER', 'BLOOD GROUP', 'RELIGION', 'ALLERGY',
+      'PARENTS NAME', 'ADDRESS', 'STATE OF ORIGIN', 'LGA OF ORIGIN',
+      'STATE OF BIRTH', 'LGA OF BIRTH', 'LIN'
+    ];
+    const sample = [{
+      'PIN': 'TIS0001',
+      'LEARNERS NAME': 'SAMPLE LEARNER',
+      'CLASS': 'JSS 1',
+      'GENDER': 'Male',
+      'DATE OF BIRTH': '01/01/2015',
+      'FATHERS PHONE NUMBER': '08000000000',
+      'MOTHERS PHONE NUMBER': '',
+      'GUARDIAN PHONE NUMBER': '',
+      'ACCOUNT NUMBER': '',
+      'BLOOD GROUP': '',
+      'RELIGION': 'Islam',
+      'ALLERGY': '',
+      'PARENTS NAME': 'Mr & Mrs Sample',
+      'ADDRESS': '',
+      'STATE OF ORIGIN': 'Ogun',
+      'LGA OF ORIGIN': 'Abeokuta South',
+      'STATE OF BIRTH': 'Ogun',
+      'LGA OF BIRTH': 'Abeokuta South',
+      'LIN': ''
+    }];
+    const ws = XLSX.utils.json_to_sheet(sample, { header: columns });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Learners');
+    XLSX.writeFile(wb, 'TIS_Learners_Template_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+    showToast('Template downloaded', 'success');
+  }
+
+  // ---------- Upload Updates (Excel via SheetJS) ----------
+  async function uploadLearnerUpdates(file) {
+    if (typeof XLSX === 'undefined') {
+      showToast('Excel library not loaded — reload the page', 'error');
+      return;
+    }
+    if (!confirm('Upload "' + file.name + '"?\n\nRows matching an existing PIN will be updated. New PINs will be created.')) return;
+
+    startLoader();
+    let wb;
+    try {
+      const buf = await file.arrayBuffer();
+      wb = XLSX.read(buf, { type: 'array' });
+    } catch (e) {
+      stopLoader();
+      showToast('Could not read the file', 'error');
+      return;
+    }
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    if (!rows.length) { stopLoader(); showToast('No rows in that sheet', 'warning'); return; }
+
+    // Map spreadsheet columns to learner fields.
+    const FIELD_MAP = {
+      'PIN': 'pin',
+      'LEARNERS NAME': 'name',
+      'CLASS': 'class_name',
+      'GENDER': 'gender',
+      'DATE OF BIRTH': 'date_of_birth',
+      'FATHERS PHONE NUMBER': 'father_phone',
+      'MOTHERS PHONE NUMBER': 'mother_phone',
+      'GUARDIAN PHONE NUMBER': 'guardian_phone',
+      'ACCOUNT NUMBER': 'account_number',
+      'BLOOD GROUP': 'blood_group',
+      'RELIGION': 'religion',
+      'ALLERGY': 'allergy',
+      'PARENTS NAME': 'parents_name',
+      'ADDRESS': 'address',
+      'STATE OF ORIGIN': 'state_of_origin',
+      'LGA OF ORIGIN': 'lga_of_origin',
+      'STATE OF BIRTH': 'state_of_birth',
+      'LGA OF BIRTH': 'lga_of_birth',
+      'LIN': 'lin'
+    };
+
+    let updated = 0, created = 0, failed = 0;
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const pin = String(row['PIN'] || '').trim();
+      if (!pin) { failed++; errors.push('Row ' + (i + 2) + ': no PIN'); continue; }
+
+      const patch = {};
+      Object.keys(FIELD_MAP).forEach(function (col) {
+        if (row[col] !== undefined && row[col] !== '') {
+          patch[FIELD_MAP[col]] = String(row[col]).trim();
+        }
+      });
+      if (Object.keys(patch).length === 0) { failed++; errors.push(pin + ': no data'); continue; }
+
+      // Try update first.
+      const existing = await window.TIS.getLearnerByPin(pin);
+      if (existing && existing.ok && existing.data) {
+        const r = await window.TIS.updateLearner(existing.data.id, patch);
+        if (r && r.ok) updated++;
+        else { failed++; errors.push(pin + ': ' + ((r && r.error) || 'update failed')); }
+      } else {
+        // Create new.
+        const r = await window.TIS.createLearner(patch);
+        if (r && r.ok) created++;
+        else { failed++; errors.push(pin + ': ' + ((r && r.error) || 'create failed')); }
+      }
+    }
+    stopLoader();
+
+    const msg = 'Updated ' + updated + ' · Created ' + created + ' · Failed ' + failed;
+    if (failed === 0) {
+      showToast(msg, 'success');
+    } else {
+      showToast(msg + ' — see console for details', 'warning');
+      console.warn('[Upload errors]', errors);
+    }
+    loadLearners();
+  }
+
+  // ---------- Add New Learner ----------
+  function openAddLearnerModal() {
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Add New Learner</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+
+    const f = function (id, label, value) {
+      return '<div class="form-group"><label>' + esc(label) + '</label>' +
+             '<input id="' + id + '" value="' + escAttr(value || '') + '"></div>';
+    };
+
+    html += '<div class="form-row">' +
+      f('nl_pin', 'PIN', '') +
+      f('nl_name', 'Learner Name', '') + '</div>';
+    html += '<div class="form-row">' +
+      f('nl_class_name', 'Class', '') +
+      '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' + '</div>';
+    html += '<div class="form-row">' +
+      f('nl_date_of_birth', 'Date of Birth', '') +
+      f('nl_blood_group', 'Blood Group / Genotype', '') + '</div>';
+    html += '<div class="form-row">' +
+      f('nl_father_phone', "Father's Phone", '') +
+      f('nl_mother_phone', "Mother's Phone", '') + '</div>';
+    html += '<div class="form-row">' +
+      f('nl_guardian_phone', "Guardian's Phone", '') +
+      f('nl_account_number', 'Account Number', '') + '</div>';
+    html += '<div class="form-row">' +
+      f('nl_religion', 'Religion', '') +
+      f('nl_allergy', 'Allergy', '') + '</div>';
+    html += f('nl_parents_name', 'Parents Name', '');
+    html += '<div class="form-group"><label>Address</label><textarea id="nl_address" rows="2"></textarea></div>';
+    html += '<div class="form-row">' +
+      f('nl_state_of_origin', 'State of Origin', '') +
+      f('nl_lga_of_origin', 'LGA of Origin', '') + '</div>';
+    html += '<div class="form-row">' +
+      f('nl_state_of_birth', 'State of Birth', '') +
+      f('nl_lga_of_birth', 'LGA of Birth', '') + '</div>';
+    html += f('nl_lin', 'LIN', '');
+
+    html += '<div style="text-align:right;margin-top:14px;">';
+    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" onclick="submitNewLearner()">Add learner</button>';
+    html += '</div>';
+    html += '</div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  async function submitNewLearner() {
+    const get = function (id) {
+      const el = document.getElementById(id);
+      return el ? String(el.value || '').trim() : '';
+    };
+    const row = {
+      pin:             get('nl_pin'),
+      name:            get('nl_name'),
+      class_name:      get('nl_class_name'),
+      gender:          get('nl_gender'),
+      date_of_birth:   get('nl_date_of_birth'),
+      blood_group:     get('nl_blood_group'),
+      father_phone:    get('nl_father_phone'),
+      mother_phone:    get('nl_mother_phone'),
+      guardian_phone:  get('nl_guardian_phone'),
+      account_number:  get('nl_account_number'),
+      religion:        get('nl_religion'),
+      allergy:         get('nl_allergy'),
+      parents_name:    get('nl_parents_name'),
+      address:         get('nl_address'),
+      state_of_origin: get('nl_state_of_origin'),
+      lga_of_origin:   get('nl_lga_of_origin'),
+      state_of_birth:  get('nl_state_of_birth'),
+      lga_of_birth:    get('nl_lga_of_birth'),
+      lin:             get('nl_lin')
+    };
+    if (!row.pin || !row.name) { showToast('PIN and Name are required', 'warning'); return; }
+
+    // Duplicate check.
+    startLoader();
+    const existing = await window.TIS.getLearnerByPin(row.pin);
+    if (existing && existing.ok && existing.data) {
+      stopLoader();
+      showToast('PIN ' + row.pin + ' already exists', 'error');
+      return;
+    }
+
+    const r = await window.TIS.createLearner(row);
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Learner added', 'success');
+      closeModal();
+      loadLearners();
+    } else {
+      showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error');
+    }
+  }
+
+  // ---------- Print List (current view) ----------
+  function printLearnerList() {
+    const rows = State.cachedLearners || [];
+    if (!rows.length) { showToast('Load the list first', 'warning'); return; }
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+
+    let html = '<html><head><title>Learners</title><style>' +
+      'body{font-family:Arial;padding:20px;}' +
+      'h1{color:#0b6623;text-align:center;margin:0 0 12px;}' +
+      'table{width:100%;border-collapse:collapse;}' +
+      'th{background:#0b6623;color:#fff;padding:8px;font-size:11px;text-align:left;}' +
+      'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}' +
+      '.m{color:#1a5276;font-weight:600;}.f{color:#c0392b;font-weight:600;}' +
+      '</style></head><body>';
+    html += '<h1>THE IDEAL SCHOOLS — Learners List</h1>';
+    html += '<div style="text-align:center;font-size:11px;color:#666;margin-bottom:10px;">' +
+            'Printed ' + new Date().toLocaleString() + ' · ' + rows.length + ' learners' +
+            '</div>';
+    html += '<table><thead><tr>';
+    html += '<th>Class</th><th>PIN</th><th>Name</th><th>Gender</th><th>Father Phone</th><th>Mother Phone</th>';
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      const g = (r.gender || '').toLowerCase();
+      const cls = g.indexOf('female') === 0 ? 'f' : (g.indexOf('male') === 0 ? 'm' : '');
+      html += '<tr>' +
+        '<td>' + esc(r.class_name || '') + '</td>' +
+        '<td>' + esc(r.pin || '') + '</td>' +
+        '<td class="' + cls + '">' + esc(r.name || '') + '</td>' +
+        '<td>' + esc(r.gender || '') + '</td>' +
+        '<td>' + esc(r.father_phone || '') + '</td>' +
+        '<td>' + esc(r.mother_phone || '') + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></body></html>';
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function () { w.print(); }, 250);
+  }
+
+  // Expose globals so inline handlers still work
+  window.initLearnersTab        = initLearnersTab;
+  window.downloadLearnerTemplate = downloadLearnerTemplate;
+  window.uploadLearnerUpdates   = uploadLearnerUpdates;
+  window.openAddLearnerModal    = openAddLearnerModal;
+  window.submitNewLearner       = submitNewLearner;
+  window.printLearnerList       = printLearnerList;
   // ================================================================
   // [S08] STAFF
   // ================================================================
@@ -3567,7 +3876,15 @@
     document.querySelectorAll('.nav-tab').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
-
+    initLearnersTab();
+    initStaffTab();
+    initTermsWiring();
+    initCalendarTab();
+    initCalendarImportTab();
+    initQRTab();
+    initReportsTab();
+    initClassesTab();
+    initUsersTab();
     initStaffTab();
     initTermsWiring();
     initCalendarTab();
