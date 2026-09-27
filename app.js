@@ -1783,8 +1783,10 @@
       openWeeks: {},
       editing: {}
     };
-    if (attState.weeks.length > 0) attState.openWeeks[attState.weeks[0].weekNumber] = true;
+      if (attState.weeks.length > 0) attState.openWeeks[attState.weeks[0].weekNumber] = true;
     renderAttendanceRegister();
+    renderClassAnalysisPanel();
+    renderSignaturePanel();
   }
 
   function attRenderMasterToMA(mark) {
