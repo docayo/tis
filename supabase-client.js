@@ -2,10 +2,6 @@
 // TIS EMIS — SUPABASE CLIENT
 // File: supabase-client.js
 // ================================================================
-// - operator_id is the login key
-// - authorities column (jsonb) holds permissions
-// - learner_terms holds per-term fee + part payments
-// ================================================================
 
 (function () {
   'use strict';
@@ -112,16 +108,13 @@
         .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities')
         .eq('id', data.user.id)
         .single();
-
       if (profErr) return fail('Signed in but profile not found: ' + profErr.message);
       if (profile.is_active === false) {
         await sb.auth.signOut();
         return fail('That account is currently inactive.');
       }
       try {
-        await sb.from('users')
-          .update({ last_login: new Date().toISOString() })
-          .eq('id', data.user.id);
+        await sb.from('users').update({ last_login: new Date().toISOString() }).eq('id', data.user.id);
       } catch (_) {}
       return ok({ user: data.user, profile });
     } catch (err) { return fail(err); }
@@ -158,15 +151,16 @@
       if (error) return fail(error.message);
       const { data: { user } } = await sb.auth.getUser();
       if (user) {
-        await sb.from('users')
-          .update({ must_change_password: false, password_last_changed: new Date().toISOString() })
-          .eq('id', user.id);
+        await sb.from('users').update({
+          must_change_password: false,
+          password_last_changed: new Date().toISOString()
+        }).eq('id', user.id);
       }
       return ok({});
     } catch (err) { return fail(err); }
   };
 
-  // ---------------- Generic table helpers ----------------
+  // ---------------- Generic helpers ----------------
   async function tableSelect(table, opts) {
     const sb = await loadSdk();
     let q = sb.from(table).select(opts && opts.select ? opts.select : '*');
@@ -194,7 +188,7 @@
     return data;
   }
 
-  // ---------------- USERS & PERMISSIONS ----------------
+  // ---------------- USERS ----------------
   TIS.getPermissionMatrix = async function () {
     try {
       const sb = await loadSdk();
@@ -229,8 +223,7 @@
   TIS.setUserAuthorities = async function (id, authorities) {
     try {
       const sb = await loadSdk();
-      const { error } = await sb
-        .from('users')
+      const { error } = await sb.from('users')
         .update({ authorities: authorities, updated_at: new Date().toISOString() })
         .or('operator_id.eq.' + id + ',id.eq.' + id);
       if (error) return fail(error.message);
@@ -241,8 +234,7 @@
   TIS.getAllUsers = async function () {
     try {
       const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('users')
+      const { data, error } = await sb.from('users')
         .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities')
         .order('operator_id', { ascending: true });
       if (error) return fail(error.message);
@@ -422,9 +414,15 @@
       const q = String(term || '').trim();
       if (!q) return ok([]);
       const sb = await loadSdk();
+      const pattern = '%' + q + '%';
       const { data, error } = await sb
         .from('learners').select('*')
-        .or('pin.ilike.%' + q + '%,name.ilike.%' + q + '%')
+        .or('pin.ilike.' + pattern +
+            ',name.ilike.' + pattern +
+            ',father_phone.ilike.' + pattern +
+            ',mother_phone.ilike.' + pattern +
+            ',guardian_phone.ilike.' + pattern +
+            ',account_number.ilike.' + pattern)
         .order('name', { ascending: true }).limit(100);
       if (error) return fail(error.message);
       return ok(data || []);
@@ -455,7 +453,20 @@
     catch (err) { return fail(err); }
   };
 
-  // ---------------- LEARNER TERMS (fees + part payments) ----------------
+  TIS.setLearnerContactPriority = async function (learnerId, order) {
+    // order = { p1: 'father'|'mother'|'guardian', p2: ..., p3: ... }
+    try {
+      const patch = {
+        contact_priority_1: order.p1 || null,
+        contact_priority_2: order.p2 || null,
+        contact_priority_3: order.p3 || null,
+        updated_at: new Date().toISOString()
+      };
+      return TIS.updateLearner(learnerId, patch);
+    } catch (err) { return fail(err); }
+  };
+
+  // ---------------- LEARNER TERMS ----------------
   TIS.getLearnerTerms = async function (learnerId) {
     try {
       const sb = await loadSdk();
@@ -485,9 +496,21 @@
     } catch (err) { return fail(err); }
   };
 
-  // Record a new part payment, writing to the next available slot.
-  // Auto-recomputes total_part_payment and balance_cf. Marks cleared
-  // when the balance reaches zero.
+  TIS.getLearnerTermFor = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  // ---------------- PART PAYMENTS ----------------
   TIS.recordPartPayment = async function (learnerId, termType, year, amount, dateISO, mode) {
     try {
       const sb = await loadSdk();
@@ -500,12 +523,10 @@
       if (rowErr) return fail(rowErr.message);
       if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
 
-      // Find next empty slot.
       const slots = [1, 2, 3, 4, 5];
       let slot = null;
       for (var i = 0; i < slots.length; i++) {
-        var n = slots[i];
-        if (!row['part_payment_' + n + '_amount']) { slot = n; break; }
+        if (!row['part_payment_' + slots[i] + '_amount']) { slot = slots[i]; break; }
       }
       if (slot === null) return fail('All 5 part-payment slots are full. See Accounts.');
 
@@ -513,19 +534,15 @@
       patch['part_payment_' + slot + '_amount'] = String(amount);
       patch['part_payment_' + slot + '_date']   = dateISO || new Date().toISOString().slice(0, 10);
 
-      // Recompute total from all five slots after this insert.
-      var newTotal = 0;
+      const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
+      let newTotal = 0;
       for (var j = 0; j < slots.length; j++) {
-        var m = slots[j];
-        var v = (m === slot)
-          ? Number(String(amount).replace(/[^0-9.\-]/g, '')) || 0
-          : Number(String(row['part_payment_' + m + '_amount'] || '').replace(/[^0-9.\-]/g, '')) || 0;
+        const m = slots[j];
+        const v = (m === slot) ? Number(amount) : num(row['part_payment_' + m + '_amount']);
         newTotal += v;
       }
       patch.total_part_payment = String(newTotal);
 
-      // Balance C/F = balance_bf + bill + other_bill - total paid.
-      const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
       const newBalance = num(row.balance_bf) + num(row.bill) + num(row.other_bill) - newTotal;
       patch.balance_cf = String(newBalance);
 
@@ -552,7 +569,7 @@
 
   window.TIS = window.TIS || {};
   Object.assign(window.TIS, TIS);
-  console.log('[TIS] Supabase client ready. Connection to:', SUPABASE_URL);
+  console.log('[TIS] Supabase client ready.');
 
 })();
 // ================================================================
