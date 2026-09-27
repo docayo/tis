@@ -482,25 +482,32 @@
     catch (err) { return fail(err); }
   };
 
-  // ----------------------------------------------------------------
+   // ----------------------------------------------------------------
   // CALENDAR
   // ----------------------------------------------------------------
-  TIS.listCalendar = async function () {
+  // The active source of truth is academic_calendar (event-based, one
+  // row per event). The old `calendar` table is left alone but not used.
+  TIS.getCalendar = async function () {
     try {
-      return ok(await tableSelect('calendar', { order: { column: 'event_date', ascending: true } }));
+      const rows = await tableSelect('academic_calendar', {
+        order: { column: 'event_date', ascending: true }
+      });
+      return ok(rows);
     } catch (err) { return fail(err); }
   };
-  TIS.listCalendarImports = async function () {
+
+  TIS.listCalendar = TIS.getCalendar; // alias for old callers
+
+  TIS.getCalendarByYear = async function (academicYear) {
     try {
-      return ok(await tableSelect('calendar_imports', { order: { column: 'uploaded_at', ascending: false } }));
-    } catch (err) { return fail(err); }
-  };
-  TIS.listCalendarStaging = async function (importId) {
-    try {
-      return ok(await tableSelect('calendar_staging', {
-        eq: { import_id: importId },
-        order: { column: 'row_index', ascending: true }
-      }));
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('academic_calendar')
+        .select('*')
+        .eq('academic_year', academicYear)
+        .order('event_date', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
     } catch (err) { return fail(err); }
   };
 
