@@ -1704,16 +1704,10 @@
   window.pwPickSpecial = pwPickSpecial;
   window.pwApplySpecial = pwApplySpecial;
   window.checkPromotionBanner = checkPromotionBanner;
-  // ================================================================
+   // ================================================================
   // [S10] LEARNER ATTENDANCE
-  // Master mark: 'O O' | '\\' | '/' | '\\ /'
-  //
-  // Lock rules:
-  //   - Future date → not markable
-  //   - Current week → markable through Friday 23:59
-  //   - Previous week → markable for 24 h after its Friday 23:59
-  //   - Any older week → locked; admin / super_admin only
-  //   - Admin / super_admin can mark any week of the term
+  //   Master mark: 'O O' | '\\' | '/' | '\\ /'
+  //   Holiday columns: one shared vertical write-up via rowspan.
   // ================================================================
   const ATT_MARKS = ['O O', '\\', '/', '\\ /'];
   let attSessionMode = 'AM';
@@ -1722,51 +1716,32 @@
   function attIsAdmin() {
     return !!(State.profile && (State.profile.role === 'admin' || State.profile.role === 'super_admin'));
   }
-  function attTodayISO() {
-    return new Date().toISOString().slice(0, 10);
-  }
+  function attTodayISO() { return new Date().toISOString().slice(0, 10); }
 
-  // Given a week (Mon–Fri date ISO list), return:
-  //   'future'   — week hasn't started
-  //   'open'     — the week is currently markable
-  //   'grace'    — Friday has passed, still inside the 24h grace window
-  //   'locked'   — permanently closed
   function attWeekLockState(wk) {
     const today = attTodayISO();
     const monday = wk.days[0].date;
     const friday = wk.days[4].date;
-
-    // Future week: hasn't started yet.
     if (today < monday) return 'future';
-
-    // Current week: markable through Friday.
     if (today >= monday && today <= friday) return 'open';
-
-    // The week has ended. Compute hours since Friday 23:59.
     const fridayEnd = new Date(friday + 'T23:59:59');
-    const now = new Date();
-    const hoursSince = (now - fridayEnd) / (1000 * 60 * 60);
-
+    const hoursSince = (new Date() - fridayEnd) / (1000 * 60 * 60);
     if (hoursSince >= 0 && hoursSince <= 24) return 'grace';
     return 'locked';
   }
-
   function attDayLockState(day) {
-    // A single day. Holidays and future dates are handled elsewhere.
-    // Future date → not markable.
-    const today = attTodayISO();
-    if (day.date > today) return 'future';
-    return 'open';
+    return (day.date > attTodayISO()) ? 'future' : 'open';
   }
-
   function attMarkableFor(weekLock, dayLock, role) {
     if (dayLock === 'future') return false;
     if (weekLock === 'open' || weekLock === 'grace') return true;
-    if (weekLock === 'locked' || weekLock === 'future') {
-      // Only admin / super_admin bypass a locked or future week.
-      return role === 'admin' || role === 'super_admin';
-    }
-    return false;
+    return role === 'admin' || role === 'super_admin';
+  }
+  function attWeekLockLabel(lock) {
+    if (lock === 'open')   return '🔓 Open';
+    if (lock === 'grace')  return '⏳ Grace (24h)';
+    if (lock === 'locked') return '🔒 Locked';
+    return '⏳ Future';
   }
 
   async function initLearnerAttendanceTab() {
@@ -1839,27 +1814,17 @@
     const key = learnerId + '|' + dateISO;
     if (attState.editing[key] !== undefined) return attState.editing[key];
     for (let i = 0; i < attState.weeks.length; i++) {
-      const wk = attState.weeks[i];
-      for (let j = 0; j < wk.days.length; j++) {
-        const d = wk.days[j];
+      for (let j = 0; j < attState.weeks[i].days.length; j++) {
+        const d = attState.weeks[i].days[j];
         if (d.date === dateISO) return (d.marksByLearner || {})[learnerId] || 'O O';
       }
     }
     return 'O O';
   }
 
-  function attWeekLockLabel(lock) {
-    if (lock === 'open')   return '🔓 Open';
-    if (lock === 'grace')  return '⏳ Grace (24h)';
-    if (lock === 'locked') return '🔒 Locked';
-    return '⏳ Future';
-  }
-
   function renderAttendanceRegister() {
     if (!attState) return;
     const st = attState;
-    const role = State.profile ? State.profile.role : 'operator';
-    const isAdmin = (role === 'admin' || role === 'super_admin');
 
     let html = '<div class="card-bg" style="padding:14px;overflow-x:auto;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">';
@@ -1906,14 +1871,21 @@
     if (modeSel) modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
   }
 
+  // ----------------------------------------------------------------
+  // THE KEY CHANGE: holiday column uses a rowspan<td> in the first
+  // learner row. Its height = all learner rows. Text is written
+  // vertically, bottom-to-top, blue bold on 3 red lines.
+  // ----------------------------------------------------------------
   function renderWeekGrid(wk, weekLock) {
     const st = attState;
     const days = wk.days;
     const role = State.profile ? State.profile.role : 'operator';
-    const isAdmin = (role === 'admin' || role === 'super_admin');
+    const numLearners = st.learners.length;
 
-    let h = '<div style="position:relative;overflow-x:auto;background:#fff;">';
+    let h = '<div style="overflow-x:auto;background:#fff;">';
     h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">';
+
+    // ---- Header ----
     h += '<thead><tr style="background:#e8f5e9;">';
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;">PIN</th>';
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:70px;z-index:2;">Name</th>';
@@ -1922,15 +1894,9 @@
       const isHol = d.isHoliday;
       const shortDay = ['Mon','Tue','Wed','Thu','Fri'][i];
       if (isHol) {
-        // A holiday column: no M/A sub-header cells; the description
-        // fills the entire column as one vertical write-up.
-        h += '<th colspan="2" class="att-holiday-col" ' +
-             'style="position:relative;background:#ffcdd2;color:#721c24;padding:4px 6px;vertical-align:top;">' +
+        // Header cell for a holiday — no text overlay, just day + date.
+        h += '<th colspan="2" style="background:#ffcdd2;color:#721c24;padding:4px 6px;">' +
              shortDay + '<br><span style="font-size:10px;font-weight:400;">' + fmtDateShort_(d.date) + '</span>' +
-             '<div class="att-holiday-veil">' +
-             '<div class="att-holiday-lines"></div>' +
-             '<div class="att-holiday-text">' + esc(d.holidayName || 'Holiday') + '</div>' +
-             '</div>' +
              '</th>';
       } else {
         h += '<th colspan="2" style="padding:4px 6px;">' + shortDay +
@@ -1939,19 +1905,24 @@
     });
     h += '<th style="padding:6px;background:#c8e6c9;">Wkly</th>';
     h += '<th style="padding:6px;background:#a5d6a7;">Term</th></tr>';
+
+    // Sub-header M / A row
     h += '<tr style="background:#f1f8e9;">';
     h += '<th colspan="4" style="padding:2px;"></th>';
     days.forEach(function (d) {
       if (d.isHoliday) {
-        h += '';   // no M/A headers for holiday columns
+        h += '<th colspan="2" style="background:#ffcdd2;color:#721c24;font-size:10px;padding:2px;">HOLIDAY</th>';
       } else {
         h += '<th style="padding:2px 4px;font-size:10px;">M</th><th style="padding:2px 4px;font-size:10px;">A</th>';
       }
     });
     h += '<th style="padding:2px;"></th><th style="padding:2px;"></th></tr></thead><tbody>';
 
-    st.learners.forEach(function (l) {
+    // ---- Body ----
+    st.learners.forEach(function (l, rowIndex) {
       h += '<tr id="attRow_' + l.id + '">';
+
+      // Sticky learner columns
       h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;">' + esc(l.pin || '') + '</td>';
       const g = (l.gender || '').toLowerCase();
       const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
@@ -1960,28 +1931,39 @@
       h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.age || '—') + '</td>';
 
       let weeklyPresent = 0;
+
+      // Day columns
       days.forEach(function (d) {
         if (d.isHoliday) {
-          // Render two shadow cells so column-count matches. The veil in
-          // the header overlays the entire holiday column visually.
-          h += '<td colspan="2" style="padding:4px;text-align:center;background:#fff5f5;"></td>';
+          // Only the FIRST learner row emits the tall merged cell.
+          // Subsequent rows emit nothing for this day.
+          if (rowIndex === 0) {
+            const holidayText = d.holidayName || 'Holiday';
+            h += '<td colspan="2" rowspan="' + numLearners + '" ' +
+                 'style="background:#fff5f5;padding:0;text-align:center;vertical-align:top;position:relative;">' +
+                 '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">' +
+                 '<div style="writing-mode:vertical-rl;transform:rotate(180deg);' +
+                 'font-weight:900;color:#0d47a1;font-size:14px;letter-spacing:2px;' +
+                 'text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;' +
+                 'padding:8px 0;">' + esc(holidayText) + '</div>' +
+                 '</div>' +
+                 '<div style="position:absolute;inset:0;' +
+                 'background-image:repeating-linear-gradient(to bottom,' +
+                 'transparent 0,transparent 22px,#d32f2f 22px,#d32f2f 24px);' +
+                 'opacity:0.45;pointer-events:none;">' +
+                 '</div>' +
+                 '</td>';
+          }
           return;
         }
 
         const dayLock = attDayLockState(d);
         const canMark = attMarkableFor(weekLock, dayLock, role);
-
         const mark = attEffectiveMark(l.id, d.date);
         const ma = attMA(mark);
 
-        if (canMark) {
-          if (ma.M === '\\') weeklyPresent++;
-          if (ma.A === '/')  weeklyPresent++;
-        } else if (dayLock !== 'future') {
-          // Past cell, but locked — count actual marks toward totals.
-          if (ma.M === '\\') weeklyPresent++;
-          if (ma.A === '/')  weeklyPresent++;
-        }
+        if (ma.M === '\\') weeklyPresent++;
+        if (ma.A === '/')  weeklyPresent++;
 
         const cellIdM = 'attCell_' + l.id + '_' + d.date + '_M';
         const cellIdA = 'attCell_' + l.id + '_' + d.date + '_A';
@@ -1995,7 +1977,6 @@
           h += '<td id="' + cellIdM + '" onclick="attCycleCell(' + l.id + ',\'' + d.date + '\',\'M\')" style="padding:4px;text-align:center;cursor:pointer;background:' + mBg + ';font-weight:700;user-select:none;">' + ma.M + '</td>';
           h += '<td id="' + cellIdA + '" onclick="attCycleCell(' + l.id + ',\'' + d.date + '\',\'A\')" style="padding:4px;text-align:center;cursor:pointer;background:' + aBg + ';font-weight:700;user-select:none;">' + ma.A + '</td>';
         } else {
-          // Locked — grey, no onclick, still shows the last mark.
           h += '<td style="padding:4px;text-align:center;background:#eceff1;color:#78909c;font-weight:700;">' + ma.M + '</td>';
           h += '<td style="padding:4px;text-align:center;background:#eceff1;color:#78909c;font-weight:700;">' + ma.A + '</td>';
         }
@@ -2174,29 +2155,25 @@
 
   function attWeekSummary(wk) {
     const st = attState;
-
     let openSlots = 0;
     wk.days.forEach(function (d) { if (!d.isHoliday) openSlots += 2; });
 
     let mPresent = 0, aPresent = 0, boysPresent = 0, girlsPresent = 0, genderKnown = false;
-
     st.learners.forEach(function (l) {
       const g = (l.gender || '').toLowerCase();
       const isBoy  = g.indexOf('male') === 0 && g.indexOf('female') === -1;
       const isGirl = g.indexOf('female') === 0;
       wk.days.forEach(function (d) {
         if (d.isHoliday) return;
-        if (d.date > attTodayISO()) return;   // future dates contribute nothing yet
+        if (d.date > attTodayISO()) return;
         const mark = attEffectiveMark(l.id, d.date);
         const ma = attMA(mark);
         if (ma.M === '\\') { mPresent++; if (isBoy) { boysPresent++; genderKnown = true; } else if (isGirl) { girlsPresent++; genderKnown = true; } }
         if (ma.A === '/')  { aPresent++; if (isBoy) { boysPresent++; genderKnown = true; } else if (isGirl) { girlsPresent++; genderKnown = true; } }
       });
     });
-
     const mExpected = openSlots * st.learners.length;
     const aExpected = openSlots * st.learners.length;
-
     return {
       openSlots: openSlots,
       mPresent: mPresent, mExpected: mExpected,
@@ -2211,7 +2188,6 @@
   function renderClassAnalysisPanel() {
     if (!attState) return;
     const st = attState;
-
     let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</h4>';
     html += '<div style="overflow-x:auto;">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">';
@@ -2230,7 +2206,6 @@
       const expected = a.mExpected + a.aExpected;
       const confirmed = a.mPresent + a.aPresent;
       const pct = expected > 0 ? (confirmed / expected * 100).toFixed(1) : '0.0';
-
       tM += a.mPresent; tA += a.aPresent;
       tExpected += expected; tOpen += a.openSlots;
       if (a.boysPresent !== null)  { tBoys  += a.boysPresent; tGenderKnown = true; }
@@ -2252,7 +2227,6 @@
 
     const tConfirmed = tM + tA;
     const tPct = tExpected > 0 ? (tConfirmed / tExpected * 100).toFixed(1) : '0.0';
-
     html += '<tr style="background:#e8f5e9;font-weight:700;">' +
             '<td style="padding:6px;">TERM</td><td></td>' +
             '<td style="padding:6px;text-align:center;">' + tOpen + '</td>' +
@@ -2337,13 +2311,11 @@
     return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
   }
 
-  // ---- Print dialog (unchanged) ----
   function attOpenPrintDialog() {
     window.TIS.listLearners().then(function (r) {
       const classes = {};
       ((r && r.ok && r.data) || []).forEach(function (l) { if (l.class_name) classes[l.class_name] = true; });
       const classNames = Object.keys(classes).sort();
-
       const termEl = document.getElementById('attendanceTerm');
       const yearEl = document.getElementById('attendanceYear');
       const defTerm = termEl ? termEl.value : '1st';
@@ -2373,7 +2345,6 @@
       setHTML('modalContainer', html);
     });
   }
-
   function attClosePrintDialog() { setHTML('modalContainer', ''); }
 
   async function attRunPrint() {
@@ -2423,14 +2394,13 @@
       html += '<h2>Week ' + wk.weekNumber + ' — Ending ' + fmtDateShort_(wk.weekEnding) + '</h2>';
       html += '<table><thead><tr><th>PIN</th><th>Name</th><th>Sex</th><th>Age</th>';
       wk.days.forEach(function (d, i) {
-        const span = d.isHoliday ? 2 : 2;
-        html += '<th colspan="' + span + '">' + ['Mon','Tue','Wed','Thu','Fri'][i] + '<br>' + fmtDateShort_(d.date) +
+        html += '<th colspan="2">' + ['Mon','Tue','Wed','Thu','Fri'][i] + '<br>' + fmtDateShort_(d.date) +
                 (d.isHoliday ? '<br>' + esc(d.holidayName || 'Holiday') : '') + '</th>';
       });
       html += '<th>Wkly</th></tr><tr><th colspan="4"></th>';
       wk.days.forEach(function (d) {
-        if (d.isHoliday) { html += '<th colspan="2" class="m-hol">Holiday</th>'; }
-        else { html += '<th>M</th><th>A</th>'; }
+        if (d.isHoliday) html += '<th colspan="2" class="m-hol">Holiday</th>';
+        else html += '<th>M</th><th>A</th>';
       });
       html += '<th></th></tr></thead><tbody>';
 
@@ -2444,16 +2414,13 @@
         html += '<td>' + esc(l.age || '—') + '</td>';
         let wkPresent = 0;
         wk.days.forEach(function (d) {
+          if (d.isHoliday) { html += '<td colspan="2" class="m-hol">—</td>'; return; }
           const mark = (d.marksByLearner || {})[l.id] || 'O O';
           const ma = attMA(mark);
-          if (d.isHoliday) {
-            html += '<td colspan="2" class="m-hol">—</td>';
-          } else {
-            html += '<td class="' + (ma.M === '\\' ? 'm-ok' : '') + '">' + ma.M + '</td>';
-            html += '<td class="' + (ma.A === '/'  ? 'm-ok' : '') + '">' + ma.A + '</td>';
-            if (ma.M === '\\') wkPresent++;
-            if (ma.A === '/')  wkPresent++;
-          }
+          html += '<td class="' + (ma.M === '\\' ? 'm-ok' : '') + '">' + ma.M + '</td>';
+          html += '<td class="' + (ma.A === '/'  ? 'm-ok' : '') + '">' + ma.A + '</td>';
+          if (ma.M === '\\') wkPresent++;
+          if (ma.A === '/')  wkPresent++;
         });
         html += '<td><b>' + wkPresent + '</b></td></tr>';
       });
