@@ -277,16 +277,30 @@
       showToast('Choose Replace All or Add to Existing first.', 'warning');
       return;
     }
+
+    // We do NOT ship the parsed object over the wire — it is ~28 KB and
+    // Apps Script's doGet URL limit is ~8 KB, which caused silent 400s.
+    // Instead we re-send the Drive URL (short) and let the backend re-parse
+    // and commit in one round trip.
+    const driveUrl = (uploadedSource && uploadedSource !== 'pasted_text')
+      ? uploadedSource
+      : (document.getElementById('cal_driveUrl') || {}).value || '';
+    if (!driveUrl) {
+      showToast('Cannot commit: original Drive URL missing. Re-import and try again.', 'error');
+      return;
+    }
+
     const commitBtn = document.getElementById('cal_commitBtn');
     if (commitBtn) { commitBtn.disabled = true; commitBtn.textContent = 'Committing...'; }
-    const r = await calCall('CAL_commitParsedCalendar', {
-      parsed: uploadedParsed,
-      sourceFileName: uploadedSource,
+
+    const r = await calCall('CAL_importAndCommit', {
+      driveUrl: driveUrl,
       mode: window.__commitMode || 'replace',
       session: getSession()
     });
+
     if (r && r.success) {
-      showToast('Calendar committed.', 'success');
+      showToast('Calendar committed (' + r.terms + ' terms, ' + r.events + ' events).', 'success');
       uploadedParsed = null; uploadedSource = null;
       window.__dupCheckResult = null; window.__commitMode = null;
       closeModal();
