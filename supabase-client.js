@@ -493,30 +493,30 @@
   };
   
   // ---------------- QR TOKENS ----------------
-  TIS.getActiveQRToken = async function () {
+   TIS.getActiveQRToken = async function () {
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
-  .from('qr_tokens')
-  .select('*')
-  .eq('is_active', true)
-  .order('generated_at', { ascending: false })
-  .limit(1)
-  .maybeSingle();
+        .from('qr_tokens')
+        .select('*')
+        .eq('is_active', true)
+        .order('generated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (error) return fail(error.message);
       return ok(data || null);
     } catch (err) { return fail(err); }
   };
 
-  TIS.generateQRToken = async function (operatorName) {
+    TIS.generateQRToken = async function (operatorName) {
     try {
       const sb = await loadSdk();
 
       // 1. Deactivate every currently active token.
       const deact = await sb
         .from('qr_tokens')
-        .update({ isactive: false })
-        .eq('isactive', true);
+        .update({ is_active: false })
+        .eq('is_active', true);
       if (deact.error) return fail(deact.error.message);
 
       // 2. Generate a fresh token.
@@ -527,13 +527,13 @@
       const insert = await sb
         .from('qr_tokens')
         .insert({
-          token:            token,
-          generatedby:      operatorName || 'Portal',
-          generateddate:    now,
-          expirydate:       expires,
-          isactive:         true,
-          regeneratedby:    operatorName || 'Portal',
-          regenerateddate:  now
+          token:           token,
+          generated_by:    operatorName || 'Portal',
+          generated_at:    now,
+          expires_at:      expires,
+          is_active:       true,
+          regenerated_by:  operatorName || 'Portal',
+          regenerated_at:  now
         })
         .select()
         .single();
