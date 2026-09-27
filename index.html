@@ -6,6 +6,7 @@
 <meta name="description" content="The Ideal Schools Operational Portal & Databank">
 <title>TIS Portal</title>
 
+<link rel="icon" href="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w64" type="image/png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -91,6 +92,7 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 <div class="hidden" id="dashboardHeader">
 <div class="dashboard-header">
 
+<!-- ROW 1: School logo | Name + Motto | Ministry logo -->
 <div class="banner-row-1">
 <div class="banner-logo">
 <img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School Logo">
@@ -104,6 +106,7 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 </div>
 </div>
 
+<!-- ROW 2: Navigation tabs -->
 <div class="banner-row-2">
 <div class="nav-tabs" id="navTabs">
 <button class="nav-tab active" data-tab="learners"><i class="fas fa-users"></i> Learners</button>
@@ -121,6 +124,7 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 </div>
 </div>
 
+<!-- ROW 3: Operator chip -->
 <div class="banner-row-3">
 <div class="operator-chip-static">
 <img id="dashAvatar" src="https://lh3.googleusercontent.com/d/1-6CBHAHcOtpT50t1tMdwpsfXe2jOCDeS=w200" alt="">
@@ -489,20 +493,21 @@ Snapshots current attendance and movements, resets counters for the new month.
 <div id="bsContent" style="overflow-x:auto;"></div>
 </div>
 
-<!-- ============ CALENDAR ============ -->
+<!-- ============ ACADEMIC CALENDAR ============ -->
 <div class="module-view hidden" id="module-calendar">
 <div class="module-title"><i class="fas fa-calendar"></i> Academic Calendar</div>
-<div class="module-subtitle">Term dates, holidays, events</div>
+<div class="module-subtitle">Upload once per year — terms, weeks, holidays auto-populate</div>
 
 <div class="card-bg">
 <div class="form-row">
-<div class="form-group">
-<label>Session</label>
-<input type="text" id="calSession" value="2026/2027">
+<div class="form-group" style="flex:0 0 auto;">
+<button class="btn btn-success" id="btnUploadCalendar" type="button" data-perm="write_calendar">
+<i class="fas fa-upload"></i> Upload Calendar
+</button>
 </div>
 <div class="form-group" style="flex:0 0 auto;">
-<button class="btn btn-secondary" id="btnLoadCalendar" type="button">
-<i class="fas fa-sync-alt"></i> View Calendar
+<button class="btn btn-secondary" id="btnRefreshCalendar" type="button">
+<i class="fas fa-sync-alt"></i> Refresh
 </button>
 </div>
 </div>
@@ -665,12 +670,11 @@ Generate PDF
 </div>
 
 <!-- ================================================================
-    MODAL CONTAINER — modals get injected here
+    MODAL CONTAINERS
     ================================================================ -->
 <div id="modalContainer"></div>
-
-<!-- Host for the learner bulk module modals -->
 <div id="lbModalHost"></div>
+<div id="calModalHost"></div>
 
 <!-- ================================================================
      DASHBOARD FOOTER
@@ -680,10 +684,12 @@ Generate PDF
 </div>
 
 <!-- ================================================================
-     SCRIPT LOADING — order matters
-       1. supabase-client.js — defines window.TIS (backend bridge)
-       2. app.js             — uses window.TIS, wires up the UI
-       3. learner-bulk.js    — bulk download/upload + edit modal
+     SCRIPT LOADING
+     Order:
+       1. supabase-client.js — backend bridge (JSONP to Apps Script)
+       2. app.js             — UI wiring
+       3. learner-bulk.js    — learner view/edit/bulk/print
+       4. calendar-module.js — calendar upload/render/adjust
      ================================================================ -->
 <script src="supabase-client.js"></script>
 <script src="app.js"></script>
