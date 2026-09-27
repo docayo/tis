@@ -42,7 +42,7 @@
 
   const ALL_MODULES = [
     'learners', 'staff', 'terms', 'attendance', 'staffatt',
-    'broadsheet', 'calendar', 'calimport', 'qr', 'reports',
+    'broadsheet', 'calendar', 'qr', 'reports',
     'classes', 'users'
   ];
 
@@ -313,7 +313,6 @@
       else if (name === 'staffatt') initStaffAttendanceTab();
       else if (name === 'broadsheet') initBroadSheetTab();
       else if (name === 'calendar') loadCalendar();
-      else if (name === 'calimport') loadCalendarImportHistory();
       else if (name === 'qr') loadActiveQR();
       else if (name === 'classes') loadClasses();
       else if (name === 'users') loadUsers();
