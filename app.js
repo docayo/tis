@@ -3064,6 +3064,34 @@
   document.addEventListener('DOMContentLoaded', function () {
     const btn = document.getElementById('btnPrintAttendance');
     if (btn) btn.addEventListener('click', attOpenPrintDialog);
+      // ================================================================
+  // ATTENDANCE PRINT — wire on tab switch, not on DOMContentLoaded
+  // ================================================================
+  function ensureAttendancePrintWired() {
+    const btn = document.getElementById('btnPrintAttendance');
+    if (btn && !btn.__attWired) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        attOpenPrintDialog();
+      });
+      btn.__attWired = true;
+    }
+  }
+
+  // Watch nav clicks; every time the user lands on the Attendance tab,
+  // make sure the Print button has a listener.
+  document.addEventListener('click', function (e) {
+    const tab = e.target && e.target.closest ? e.target.closest('.nav-tab') : null;
+    if (tab && tab.dataset && tab.dataset.tab === 'attendance') {
+      // Tab switch happens synchronously in switchTab; give the DOM a beat.
+      setTimeout(ensureAttendancePrintWired, 100);
+    }
+  });
+
+  // Also try immediately in case the tab is already active on load.
+  document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(ensureAttendancePrintWired, 300);
+  });
   });
 // ================================================================
 // END OF app.js
