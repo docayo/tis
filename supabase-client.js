@@ -245,17 +245,54 @@
 
   TIS.listTerms = async function () {
     try {
-      try { return ok(await tableSelect('terms', { order: { column: 'id', ascending: false } })); }
-      catch (e1) { return ok(await tableSelect('terms', {})); }
+      const rows = await tableSelect('terms', {
+        order: { column: 'year', ascending: false }
+      });
+      // Sort so 3rd → 2nd → 1st for the same year, newest year first.
+      rows.sort(function (a, b) {
+        if (a.year !== b.year) return b.year - a.year;
+        const order = { '3rd': 3, '2nd': 2, '1st': 1 };
+        return (order[b.term_type] || 0) - (order[a.term_type] || 0);
+      });
+      return ok(rows);
     } catch (err) { return fail(err); }
   };
+
+  TIS.getTerms = TIS.listTerms; // alias for the new UI
+
   TIS.getActiveTerm = async function () {
-    try { return ok(await tableSelect('terms', { eq: { is_active: true }, limit: 1 })); }
-    catch (err) { return fail(err); }
+    try {
+      const rows = await tableSelect('terms', {
+        eq: { is_active: true },
+        limit: 1
+      });
+      return ok(rows[0] || null);
+    } catch (err) { return fail(err); }
   };
+
   TIS.createTerm = async function (row) {
     try { return ok(await tableInsert('terms', row)); }
     catch (err) { return fail(err); }
+  };
+
+  TIS.setActiveTerm = async function (termId) {
+    try {
+      const sb = await loadSdk();
+      // Clear all, then set one. Two quick calls.
+      const { error: clrErr } = await sb
+        .from('terms')
+        .update({ is_active: false })
+        .neq('id', -1); // matches all rows
+      if (clrErr) return fail(clrErr.message);
+
+      const { error: setErr } = await sb
+        .from('terms')
+        .update({ is_active: true })
+        .eq('id', termId);
+      if (setErr) return fail(setErr.message);
+
+      return ok({ id: termId });
+    } catch (err) { return fail(err); }
   };
 
   TIS.listLearners = async function () {
