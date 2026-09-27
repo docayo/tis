@@ -325,16 +325,42 @@
   // [S07] LEARNERS — three-tier permission-gated record
   // ================================================================
   const CONTACT_LABELS = { father: 'Father', mother: 'Mother', guardian: 'Guardian' };
-  const EXIT_REASONS = [
-    'Completion of Studies',
-    'Inability to Pay Tuition',
-    'Change of Location',
-    'Parent Differences',
-    'School Vs Parent Ideology',
-    'Discipline / Expulsion',
-    'Health Grounds',
-    'Life'
-  ];
+   // Populate Exit Reason dropdown on the Terms tab.
+  (function populateExitReasons() {
+    const EXIT_REASONS_LIST = [
+      'Completion of Studies',
+      'Inability to Pay Tuition',
+      'Change of Location',
+      'Parent Differences',
+      'School Vs Parent Ideology',
+      'Discipline / Expulsion',
+      'Health Grounds',
+      'Life'
+    ];
+    function fill() {
+      const sel = document.getElementById('exitReasonSelect');
+      if (!sel) return;
+      if (sel.options.length > 0 && sel.options[0].value !== '') return;
+      sel.innerHTML = '';
+      EXIT_REASONS_LIST.forEach(function (r) {
+        const o = document.createElement('option');
+        o.value = r;
+        o.textContent = r;
+        sel.appendChild(o);
+      });
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fill);
+    } else {
+      fill();
+    }
+    // Also refill when the Terms tab is opened (in case it re-renders).
+    document.addEventListener('click', function (e) {
+      if (e.target && e.target.matches && e.target.matches('.nav-tab[data-tab="terms"]')) {
+        setTimeout(fill, 300);
+      }
+    });
+  })();
 
   function parseNum(v) {
     if (v === null || v === undefined || v === '') return 0;
