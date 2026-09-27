@@ -600,94 +600,90 @@
     w.document.write(html); w.document.close(); w.print();
   }
 
-  // ================================================================
+    // ================================================================
   // [S09] TERMS
   // ================================================================
   async function initTermsTab() {
     await loadTerms();
-    await populatePromotionDropdowns();
     await loadArchives();
   }
 
   async function loadTerms() {
-    setHTML('termsList', pageLoaderHTML('Loading terms...'));
-    const r = await window.TIS.listTerms();
-    if (!r.ok) { setHTML('termsList', errorHTML('Could not load terms', r.error)); return; }
-    State.cachedTerms = r.data || [];
-    if (!State.cachedTerms.length) {
-      setHTML('termsList', emptyHTML('fa-calendar-alt', 'No terms found', 'Generate a calendar to create terms.'));
+    setHTML('termsList', pageLoaderHTML('Loading terms…'));
+
+    const r = await window.TIS.getTerms();
+    if (!r || !r.ok) {
+      setHTML('termsList', errorHTML('Could not load terms', r && r.error));
       return;
     }
+    State.cachedTerms = r.data || [];
+
+    if (!State.cachedTerms.length) {
+      setHTML('termsList', emptyHTML('fa-calendar-alt', 'No terms yet',
+        'Import a calendar first, or ask an admin to create terms.'));
+      return;
+    }
+
     let html = '';
-    State.cachedTerms.forEach(t => {
-      html += '<div class="term-card"><div><strong>' + esc(t.label) + '</strong> ' +
-        (t.is_active ? '<span class="card-badge" style="background:#27ae60;">ACTIVE</span>' : '') +
-        '</div></div>';
+    State.cachedTerms.forEach(function (t) {
+      const activeBadge = t.is_active
+        ? '<span class="card-badge" style="background:#27ae60;color:#fff;">ACTIVE</span>'
+        : '';
+      const fmt = function (d) {
+        if (!d) return '—';
+        const dt = new Date(d + 'T00:00:00');
+        if (isNaN(dt.getTime())) return d;
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return dt.getDate() + ' ' + months[dt.getMonth()] + ' ' + dt.getFullYear();
+      };
+      const weeks = (function () {
+        if (!t.start_date || !t.end_date) return '?';
+        const s = new Date(t.start_date + 'T00:00:00');
+        const e = new Date(t.end_date + 'T00:00:00');
+        if (isNaN(s) || isNaN(e)) return '?';
+        return Math.round((e - s) / (7 * 24 * 3600 * 1000));
+      })();
+
+      html += '<div class="term-card">';
+      html += '<div style="flex:1;min-width:220px;">';
+      html += '<div><strong>' + esc(t.label) + '</strong> ' + activeBadge + '</div>';
+      html += '<div style="font-size:11px;color:#666;margin-top:2px;">' +
+              fmt(t.start_date) + ' → ' + fmt(t.end_date) + ' • ' + weeks + ' weeks</div>';
+      html += '</div>';
+      if (!t.is_active) {
+        html += '<div><button class="btn btn-sm btn-success" ' +
+                'onclick="activateTerm(' + t.id + ', \'' + escAttr(t.label) + '\')">' +
+                'Set Active</button></div>';
+      } else {
+        html += '<div style="color:#27ae60;font-weight:700;font-size:12px;">✓ Currently active</div>';
+      }
+      html += '</div>';
     });
+
     setHTML('termsList', html);
   }
 
-  async function populatePromotionDropdowns() {
-    const fromSel = $('promoteFromTerm');
-    const toSel = $('promoteToTerm');
-    if (!fromSel || !toSel) return;
-    fromSel.innerHTML = '<option value="">-- Select --</option>';
-    toSel.innerHTML = '<option value="">-- Select --</option>';
-    State.cachedTerms.forEach(t => {
-      const v = t.term_type + '|' + t.year;
-      fromSel.innerHTML += '<option value="' + esc(v) + '">' + esc(t.label) + '</option>';
-      toSel.innerHTML += '<option value="' + esc(v) + '">' + esc(t.label) + '</option>';
-    });
-    const exitSel = $('exitReasonSelect');
-    if (exitSel) {
-      exitSel.innerHTML = '';
-      ['Completion of Studies','Inability to Pay Tuition','Change of Location',
-       'Parent Differences','School Vs Parent Ideology','Discipline/Expulsion',
-       'Health Grounds','Life'].forEach(r => {
-        exitSel.innerHTML += '<option>' + esc(r) + '</option>';
-      });
-    }
-    const clsRes = await window.TIS.listClasses();
-    if (clsRes.ok && clsRes.data) {
-      const oldSel = $('promoteOldClass');
-      const newSel = $('promoteNewClass');
-      if (oldSel) {
-        oldSel.innerHTML = '<option value="">-- All --</option>';
-        clsRes.data.forEach(c => { oldSel.innerHTML += '<option value="' + escAttr(c.name) + '">' + esc(c.name) + '</option>'; });
-      }
-      if (newSel) {
-        newSel.innerHTML = '<option value="">-- Auto --</option>';
-        clsRes.data.forEach(c => { newSel.innerHTML += '<option value="' + escAttr(c.name) + '">' + esc(c.name) + '</option>'; });
-      }
+  async function activateTerm(id, label) {
+    if (!confirm('Set "' + label + '" as the active term?\n\n' +
+                 'Only one term can be active at a time.')) return;
+    startLoader();
+    const r = await window.TIS.setActiveTerm(id);
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Active term set: ' + label, 'success');
+      loadTerms();
+    } else {
+      showToast('Could not set active: ' + ((r && r.error) || 'unknown'), 'error');
     }
   }
 
   async function loadArchives() {
-    setHTML('archivesList', pageLoaderHTML('Loading archives...'));
-    const r = await window.TIS.listTerms();
-    if (!r.ok) { setHTML('archivesList', emptyHTML('fa-box-archive', 'No archives yet')); return; }
-    const archived = (r.data || []).filter(t => !t.is_active);
-    if (!archived.length) { setHTML('archivesList', emptyHTML('fa-box-archive', 'No archived terms yet')); return; }
-    let html = '';
-    archived.forEach(a => {
-      html += '<div class="term-card"><div><strong>' + esc(a.label) + '</strong></div></div>';
-    });
-    setHTML('archivesList', html);
+    // Placeholder. Archive view will be built once learners live in Supabase.
+    setHTML('archivesList', emptyHTML('fa-box-archive', 'Archives',
+      'Archive view will be enabled once learners are migrated.'));
   }
 
-  function initTermsWiring() {
-    const map = {
-      btnArchiveOnly: 'Archiving is handled by the API in the next release',
-      btnPreviewPromotion: 'Preview coming with the API layer',
-      btnFullTransition: 'Full transition coming with the API layer',
-      btnExitStudent: 'Exit is handled by the API in the next release'
-    };
-    Object.keys(map).forEach(id => {
-      const b = $(id);
-      if (b) b.addEventListener('click', () => showToast(map[id], 'info'));
-    });
-  }
-
+  function initTermsWiring() { /* no-op; buttons wired by onclick in markup */ }
   // ================================================================
   // [S10] LEARNER ATTENDANCE
   // ================================================================
