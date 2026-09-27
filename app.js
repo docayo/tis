@@ -1057,27 +1057,172 @@
     loadClasses();
   }
 
+   // ================================================================
+  // [S17] USERS + PERMISSIONS
   // ================================================================
-  // [S17] USERS
-  // ================================================================
+  const PERM_ACTIONS = ['read', 'write', 'print'];
+
   async function loadUsers() {
-    setHTML('usersContent', pageLoaderHTML('Loading users...'));
-    const r = await window.TIS.listUsers();
-    if (!r.ok) { setHTML('usersContent', errorHTML('Could not load users', r.error)); return; }
-    const users = r.data || [];
-    if (!users.length) { setHTML('usersContent', emptyHTML('fa-user-cog', 'No users found')); return; }
-    let html = '<div class="card-bg" style="overflow-x:auto;"><table class="users-table"><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Status</th></tr></thead><tbody>';
-    users.forEach(u => {
-      html += '<tr><td><strong>' + esc(u.operator_id) + '</strong></td><td>' + esc(u.name) + '</td><td>' + esc(u.role) + '</td><td>' + (u.is_active ? 'Active' : 'Inactive') + '</td></tr>';
+    setHTML('usersContent', pageLoaderHTML('Loading users…'));
+
+    const r = await window.TIS.getPermissionMatrix();
+    if (!r || !r.ok) {
+      setHTML('usersContent', errorHTML('Could not load users', r && r.error));
+      return;
+    }
+    const data = r.data || {};
+    const users = data.users || [];
+    const modules = data.modules || [];
+    if (!users.length) {
+      setHTML('usersContent', emptyHTML('fa-user-cog', 'No users found'));
+      return;
+    }
+
+    let html = '';
+    html += '<div class="card-bg" style="margin-bottom:12px;">';
+    html += '<p style="font-size:12px;color:#555;margin:0;">' + users.length +
+            ' user(s). Click a row to expand the permission matrix.</p>';
+    html += '</div>';
+    html += '<div class="card-bg" style="overflow-x:auto;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+    html += '<th style="text-align:left;padding:8px;width:70px;">ID</th>';
+    html += '<th style="text-align:left;padding:8px;">Name</th>';
+    html += '<th style="text-align:left;padding:8px;width:130px;">Role</th>';
+    html += '<th style="text-align:center;padding:8px;width:100px;">Active</th>';
+    html += '<th style="text-align:center;padding:8px;width:140px;">Actions</th>';
+    html += '</tr></thead><tbody>';
+
+    users.forEach(function (u) {
+      const expanded = !!window.__usrExpanded[u.id];
+      const arrow = expanded ? '▾' : '▸';
+      html += '<tr class="usr-row" data-uid="' + esc(u.id) + '" style="cursor:pointer;">';
+      html += '<td style="padding:8px;border-bottom:1px solid #eee;">' + esc(u.id) + '</td>';
+      html += '<td style="padding:8px;border-bottom:1px solid #eee;">' + arrow + ' ' + esc(u.name) + '</td>';
+      html += '<td style="padding:8px;border-bottom:1px solid #eee;">' + esc(u.role) + '</td>';
+      html += '<td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">' +
+              (u.isActive ? '✅' : '—') + '</td>';
+      html += '<td style="padding:8px;border-bottom:1px solid #eee;text-align:center;" ' +
+              'onclick="event.stopPropagation()">';
+      html += '<button type="button" class="btn btn-sm btn-warning" ' +
+              'onclick="resetUserPassword(\'' + escAttr(u.id) + '\')">Reset PW</button>';
+      html += '</td></tr>';
+
+      if (expanded) {
+        html += '<tr><td colspan="5" style="padding:0;border-bottom:2px solid #0d4d26;">';
+        html += renderPermEditor(u, modules, PERM_ACTIONS);
+        html += '</td></tr>';
+      }
     });
+
     html += '</tbody></table></div>';
     setHTML('usersContent', html);
+    wireUsersTable();
   }
+
+  function renderPermEditor(user, modules, actions) {
+    const auth = user.authorities || {};
+    let h = '';
+    h += '<div style="background:#f7fbf7;padding:14px;">';
+
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;' +
+         'margin-bottom:8px;flex-wrap:wrap;gap:8px;">';
+    h += '<div><b style="color:#0d4d26;">' + esc(user.name) + '</b> ' +
+         '<span style="color:#666;font-size:12px;">(' + esc(user.role) + ')</span></div>';
+    h += '<div style="display:flex;gap:8px;">';
+    h += '<button type="button" class="btn btn-sm btn-secondary" ' +
+         'onclick="setAllPerms(\'' + escAttr(user.id) + '\',true)">All On</button>';
+    h += '<button type="button" class="btn btn-sm btn-secondary" ' +
+         'onclick="setAllPerms(\'' + escAttr(user.id) + '\',false)">All Off</button>';
+    h += '<button type="button" class="btn btn-sm btn-success" ' +
+         'onclick="saveUserPerms(\'' + escAttr(user.id) + '\')">Save Permissions</button>';
+    h += '</div></div>';
+
+    h += '<table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;">';
+    h += '<thead><tr style="background:#e8f5e9;">';
+    h += '<th style="text-align:left;padding:6px;">Module</th>';
+    actions.forEach(function (a) {
+      h += '<th style="text-align:center;padding:6px;width:80px;text-transform:capitalize;">' +
+           esc(a) + '</th>';
+    });
+    h += '</tr></thead><tbody>';
+
+    modules.forEach(function (m) {
+      h += '<tr>';
+      h += '<td style="padding:6px;border-bottom:1px solid #eee;">' + esc(m.label) + '</td>';
+      actions.forEach(function (a) {
+        const key = a + '_' + m.key;
+        const checked = auth[key] ? ' checked' : '';
+        h += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;">';
+        h += '<input type="checkbox" class="usrPermBox" data-uid="' + escAttr(user.id) +
+             '" data-key="' + escAttr(key) + '"' + checked + '>';
+        h += '</td>';
+      });
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    return h;
+  }
+
+  function wireUsersTable() {
+    // Ensure the shared state object exists.
+    if (!window.__usrExpanded) window.__usrExpanded = {};
+
+    document.querySelectorAll('.usr-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        const uid = row.dataset.uid;
+        window.__usrExpanded[uid] = !window.__usrExpanded[uid];
+        loadUsers();
+      });
+    });
+
+    // Prevent clicks inside the editor from collapsing the row.
+    document.querySelectorAll('.usrPermBox').forEach(function (box) {
+      box.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
+  }
+
+  // Called by the All On / All Off buttons.
+  window.setAllPerms = function (uid, value) {
+    document.querySelectorAll('.usrPermBox[data-uid="' + uid + '"]').forEach(function (b) {
+      b.checked = value;
+    });
+  };
+
+  // Called by Save Permissions on the expanded row.
+  window.saveUserPerms = async function (uid) {
+    const auth = {};
+    document.querySelectorAll('.usrPermBox[data-uid="' + uid + '"]').forEach(function (b) {
+      auth[b.dataset.key] = !!b.checked;
+    });
+
+    startLoader();
+    const r = await window.TIS.setUserAuthorities(uid, auth);
+    stopLoader();
+
+    if (r && r.ok) {
+      showToast('Permissions saved for ' + uid, 'success');
+    } else {
+      showToast('Could not save: ' + ((r && r.error) || 'unknown'), 'error');
+    }
+  };
+
+  // Reset PW button. Uses the existing adminResetPassword endpoint.
+  window.resetUserPassword = async function (uid) {
+    const np = prompt('New password for ' + uid + ':');
+    if (!np) return;
+    if (np.length < 4) { showToast('Use at least 4 characters', 'warning'); return; }
+    startLoader();
+    const r = await window.TIS.adminResetPassword(uid, np, (State.profile && State.profile.name) || 'Admin');
+    stopLoader();
+    if (r && r.ok) showToast('Password reset', 'success');
+    else showToast('Reset failed: ' + ((r && r.error) || 'unknown'), 'error');
+  };
 
   function initUsersTab() {
-    const r1 = $('btnRefreshUsers'); if (r1) r1.addEventListener('click', loadUsers);
+    const rf = $('btnRefreshUsers');
+    if (rf) rf.addEventListener('click', loadUsers);
   }
-
   // ================================================================
   // [S18] PLACEHOLDERS
   // ================================================================
