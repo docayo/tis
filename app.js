@@ -858,29 +858,36 @@
   }
 
   // ================================================================
-  // [S12] CALENDAR
+  // [S12] CALENDAR — delegated to calendar-module.js
   // ================================================================
   async function loadCalendar() {
-    setHTML('calendarContent', pageLoaderHTML('Loading calendar...'));
-    startLoader();
-    const r = await window.TIS.listCalendar();
-    stopLoader();
-    if (!r.ok) { setHTML('calendarContent', errorHTML('Could not load calendar', r.error)); return; }
-    const events = r.data || [];
-    if (!events.length) {
-      setHTML('calendarContent', emptyHTML('fa-calendar', 'No calendar events yet'));
+    if (window.CAL && typeof window.CAL.renderCalendarTab === 'function') {
+      window.CAL.renderCalendarTab();
       return;
     }
-    let html = '<div class="card-bg"><div style="overflow-x:auto;"><table class="attendance-table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Holiday</th></tr></thead><tbody>';
-    events.forEach(e => {
-      html += '<tr><td>' + esc(e.event_date) + '</td><td>' + esc(e.event_type) + '</td><td class="name-cell">' + esc(e.description) + '</td><td>' + (e.is_holiday ? 'Yes' : 'No') + '</td></tr>';
-    });
-    html += '</tbody></table></div></div>';
-    setHTML('calendarContent', html);
+    setHTML('calendarContent', errorHTML('Calendar module not loaded', 'Refresh the page.'));
   }
 
   function initCalendarTab() {
-    const btn = $('btnLoadCalendar'); if (btn) btn.addEventListener('click', loadCalendar);
+    const up = $('btnUploadCalendar');
+    if (up) up.addEventListener('click', function () {
+      if (window.CAL && typeof window.CAL.openUploadModal === 'function') {
+        window.CAL.openUploadModal();
+      } else {
+        showToast('Calendar module not loaded. Refresh the page.', 'error');
+      }
+    });
+
+    const rf = $('btnRefreshCalendar');
+    if (rf) rf.addEventListener('click', function () {
+      if (window.CAL && typeof window.CAL.renderCalendarTab === 'function') {
+        window.CAL.renderCalendarTab();
+      }
+    });
+
+    if (window.CAL && typeof window.CAL.renderCalendarTab === 'function') {
+      window.CAL.renderCalendarTab();
+    }
   }
 
   // ================================================================
