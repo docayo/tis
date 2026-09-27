@@ -1841,7 +1841,6 @@
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    initLearnersTab();
     initStaffTab();
     initTermsWiring();
     initCalendarTab();
