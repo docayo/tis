@@ -125,7 +125,14 @@
            esc(title) + '</h3>' + (detail ? '<p>' + esc(detail) + '</p>' : '') + '</div>';
   }
 
-  function closeModal() { setHTML('modalContainer', ''); }
+  function closeModal() {
+    // Aggressively remove every overlay that might be stacked.
+    document.querySelectorAll('.modal-overlay').forEach(function (el) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    const mc = document.getElementById('modalContainer');
+    if (mc) mc.innerHTML = '';
+  }
   function toggleExpandable(id) {
     const el = $(id);
     if (el) el.classList.toggle('open');
