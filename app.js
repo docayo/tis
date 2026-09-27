@@ -1704,18 +1704,70 @@
   window.pwPickSpecial = pwPickSpecial;
   window.pwApplySpecial = pwApplySpecial;
   window.checkPromotionBanner = checkPromotionBanner;
-   // ================================================================
+  // ================================================================
   // [S10] LEARNER ATTENDANCE
   // Master mark: 'O O' | '\\' | '/' | '\\ /'
-  //   'O O'   → M:'O', A:'O'
-  //   '\\'    → M:'\\', A:'O'
-  //   '/'     → M:'O', A:'/'
-  //   '\\ /'  → M:'\\', A:'/'
+  //
+  // Lock rules:
+  //   - Future date → not markable
+  //   - Current week → markable through Friday 23:59
+  //   - Previous week → markable for 24 h after its Friday 23:59
+  //   - Any older week → locked; admin / super_admin only
+  //   - Admin / super_admin can mark any week of the term
   // ================================================================
   const ATT_MARKS = ['O O', '\\', '/', '\\ /'];
-
-  let attSessionMode = 'AM';   // 'AM' | 'PM' | 'FULL'
+  let attSessionMode = 'AM';
   let attState = null;
+
+  function attIsAdmin() {
+    return !!(State.profile && (State.profile.role === 'admin' || State.profile.role === 'super_admin'));
+  }
+  function attTodayISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  // Given a week (Mon–Fri date ISO list), return:
+  //   'future'   — week hasn't started
+  //   'open'     — the week is currently markable
+  //   'grace'    — Friday has passed, still inside the 24h grace window
+  //   'locked'   — permanently closed
+  function attWeekLockState(wk) {
+    const today = attTodayISO();
+    const monday = wk.days[0].date;
+    const friday = wk.days[4].date;
+
+    // Future week: hasn't started yet.
+    if (today < monday) return 'future';
+
+    // Current week: markable through Friday.
+    if (today >= monday && today <= friday) return 'open';
+
+    // The week has ended. Compute hours since Friday 23:59.
+    const fridayEnd = new Date(friday + 'T23:59:59');
+    const now = new Date();
+    const hoursSince = (now - fridayEnd) / (1000 * 60 * 60);
+
+    if (hoursSince >= 0 && hoursSince <= 24) return 'grace';
+    return 'locked';
+  }
+
+  function attDayLockState(day) {
+    // A single day. Holidays and future dates are handled elsewhere.
+    // Future date → not markable.
+    const today = attTodayISO();
+    if (day.date > today) return 'future';
+    return 'open';
+  }
+
+  function attMarkableFor(weekLock, dayLock, role) {
+    if (dayLock === 'future') return false;
+    if (weekLock === 'open' || weekLock === 'grace') return true;
+    if (weekLock === 'locked' || weekLock === 'future') {
+      // Only admin / super_admin bypass a locked or future week.
+      return role === 'admin' || role === 'super_admin';
+    }
+    return false;
+  }
 
   async function initLearnerAttendanceTab() {
     await populateAttendanceClassList();
@@ -1726,17 +1778,8 @@
     }
     const printBtn = document.getElementById('btnPrintAttendance');
     if (printBtn && !printBtn.__wired) {
-      printBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        attOpenPrintDialog();
-      });
+      printBtn.addEventListener('click', function (e) { e.preventDefault(); attOpenPrintDialog(); });
       printBtn.__wired = true;
-    }
-    const modeSel = document.getElementById('attSessionMode');
-    if (modeSel && !modeSel.__wired) {
-      modeSel.value = attSessionMode;
-      modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
-      modeSel.__wired = true;
     }
   }
 
@@ -1776,21 +1819,12 @@
       learners: r.data.learners || [],
       weeks: r.data.weeks || [],
       openWeeks: {},
-      editing: {}   // "learnerId|date" -> mark
+      editing: {}
     };
     if (attState.weeks.length > 0) attState.openWeeks[attState.weeks[0].weekNumber] = true;
     renderAttendanceRegister();
     renderClassAnalysisPanel();
     renderSignaturePanel();
-    // Wire the Print button on the attendance toolbar.
-    const printBtn = document.getElementById('btnPrintAttendance');
-    if (printBtn && !printBtn.__wired) {
-      printBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        attOpenPrintDialog();
-      });
-      printBtn.__wired = true;
-    }
   }
 
   function attMA(mark) {
@@ -1808,21 +1842,26 @@
       const wk = attState.weeks[i];
       for (let j = 0; j < wk.days.length; j++) {
         const d = wk.days[j];
-        if (d.date === dateISO) {
-          return (d.marksByLearner || {})[learnerId] || 'O O';
-        }
+        if (d.date === dateISO) return (d.marksByLearner || {})[learnerId] || 'O O';
       }
     }
     return 'O O';
   }
 
+  function attWeekLockLabel(lock) {
+    if (lock === 'open')   return '🔓 Open';
+    if (lock === 'grace')  return '⏳ Grace (24h)';
+    if (lock === 'locked') return '🔒 Locked';
+    return '⏳ Future';
+  }
+
   function renderAttendanceRegister() {
     if (!attState) return;
     const st = attState;
+    const role = State.profile ? State.profile.role : 'operator';
+    const isAdmin = (role === 'admin' || role === 'super_admin');
 
     let html = '<div class="card-bg" style="padding:14px;overflow-x:auto;">';
-
-    // Toolbar
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">';
     html += '<div>';
     html += '<div style="font-weight:800;font-size:16px;color:#0d4d26;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</div>';
@@ -1830,8 +1869,8 @@
     html += '</div>';
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">';
     html += '<select id="attSessionMode2" style="padding:6px 10px;border-radius:6px;border:1px solid #ccc;font-size:12px;">';
-    html += '<option value="AM"' + (attSessionMode === 'AM' ? ' selected' : '') + '>Mark Morning</option>';
-    html += '<option value="PM"' + (attSessionMode === 'PM' ? ' selected' : '') + '>Mark Afternoon</option>';
+    html += '<option value="AM"'   + (attSessionMode === 'AM'   ? ' selected' : '') + '>Mark Morning</option>';
+    html += '<option value="PM"'   + (attSessionMode === 'PM'   ? ' selected' : '') + '>Mark Afternoon</option>';
     html += '<option value="FULL"' + (attSessionMode === 'FULL' ? ' selected' : '') + '>Mark Full Day</option>';
     html += '</select>';
     html += '<button class="btn btn-sm btn-success" onclick="attMarkClassPresent()">Apply to Today</button>';
@@ -1839,46 +1878,42 @@
     html += '<button class="btn btn-sm btn-secondary" onclick="attDiscardChanges()">Discard</button>';
     html += '</div></div>';
 
-    // Weeks
     st.weeks.forEach(function (wk) {
       const isOpen = !!st.openWeeks[wk.weekNumber];
       const arrow = isOpen ? '▾' : '▸';
       const a = attWeekSummary(wk);
+      const lock = attWeekLockState(wk);
 
       html += '<div style="border:1px solid #e6e9f0;border-radius:8px;overflow:hidden;margin-bottom:10px;">';
       html += '<div onclick="attToggleWeek(' + wk.weekNumber + ')" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:#0d4d26;color:#fff;padding:10px 14px;flex-wrap:wrap;gap:8px;">';
       html += '<div style="font-weight:700;font-size:13px;">' + arrow + ' Week ' + wk.weekNumber + ' · Ending ' + fmtDateShort_(wk.weekEnding) + '</div>';
       html += '<div style="display:flex;gap:14px;font-size:11px;flex-wrap:wrap;">';
+      html += '<span>' + attWeekLockLabel(lock) + '</span>';
       html += '<span>Open: <b>' + a.openSlots + '</b></span>';
       html += '<span>🌅 M: <b>' + a.mPresent + '/' + a.mExpected + '</b> (' + a.mPct + '%)</span>';
       html += '<span>🌇 A: <b>' + a.aPresent + '/' + a.aExpected + '</b> (' + a.aPct + '%)</span>';
       html += '<span>♂ ' + (a.boysPresent === null ? '—' : a.boysPresent) + ' · ♀ ' + (a.girlsPresent === null ? '—' : a.girlsPresent) + '</span>';
       html += '</div></div>';
 
-      if (isOpen) html += renderWeekGrid(wk);
-
+      if (isOpen) html += renderWeekGrid(wk, lock);
       html += '</div>';
     });
 
     html += '</div>';
-
     setHTML('attendanceTermView', html);
 
-    // Wire the session dropdown after render
     const modeSel = document.getElementById('attSessionMode2');
-    if (modeSel) {
-      modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
-    }
+    if (modeSel) modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
   }
 
-  function renderWeekGrid(wk) {
+  function renderWeekGrid(wk, weekLock) {
     const st = attState;
     const days = wk.days;
+    const role = State.profile ? State.profile.role : 'operator';
+    const isAdmin = (role === 'admin' || role === 'super_admin');
 
-    let h = '<div style="overflow-x:auto;background:#fff;">';
+    let h = '<div style="position:relative;overflow-x:auto;background:#fff;">';
     h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">';
-
-    // Header rows
     h += '<thead><tr style="background:#e8f5e9;">';
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;">PIN</th>';
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:70px;z-index:2;">Name</th>';
@@ -1886,23 +1921,35 @@
     days.forEach(function (d, i) {
       const isHol = d.isHoliday;
       const shortDay = ['Mon','Tue','Wed','Thu','Fri'][i];
-      const dt = fmtDateShort_(d.date);
-      const thStyle = isHol ? 'background:#ffcdd2;color:#721c24;padding:4px 6px;' : 'padding:4px 6px;';
-      h += '<th colspan="2" style="' + thStyle + '">' + shortDay +
-           '<br><span style="font-size:10px;font-weight:400;">' + dt + '</span>' +
-           (isHol ? '<br><span style="font-size:9px;">' + esc(d.holidayName || 'Holiday') + '</span>' : '') +
-           '</th>';
+      if (isHol) {
+        // A holiday column: no M/A sub-header cells; the description
+        // fills the entire column as one vertical write-up.
+        h += '<th colspan="2" class="att-holiday-col" ' +
+             'style="position:relative;background:#ffcdd2;color:#721c24;padding:4px 6px;vertical-align:top;">' +
+             shortDay + '<br><span style="font-size:10px;font-weight:400;">' + fmtDateShort_(d.date) + '</span>' +
+             '<div class="att-holiday-veil">' +
+             '<div class="att-holiday-lines"></div>' +
+             '<div class="att-holiday-text">' + esc(d.holidayName || 'Holiday') + '</div>' +
+             '</div>' +
+             '</th>';
+      } else {
+        h += '<th colspan="2" style="padding:4px 6px;">' + shortDay +
+             '<br><span style="font-size:10px;font-weight:400;">' + fmtDateShort_(d.date) + '</span></th>';
+      }
     });
     h += '<th style="padding:6px;background:#c8e6c9;">Wkly</th>';
-    h += '<th style="padding:6px;background:#a5d6a7;">Term</th>';
-    h += '</tr>';
-
+    h += '<th style="padding:6px;background:#a5d6a7;">Term</th></tr>';
     h += '<tr style="background:#f1f8e9;">';
     h += '<th colspan="4" style="padding:2px;"></th>';
-    days.forEach(function () { h += '<th style="padding:2px 4px;font-size:10px;">M</th><th style="padding:2px 4px;font-size:10px;">A</th>'; });
+    days.forEach(function (d) {
+      if (d.isHoliday) {
+        h += '';   // no M/A headers for holiday columns
+      } else {
+        h += '<th style="padding:2px 4px;font-size:10px;">M</th><th style="padding:2px 4px;font-size:10px;">A</th>';
+      }
+    });
     h += '<th style="padding:2px;"></th><th style="padding:2px;"></th></tr></thead><tbody>';
 
-    // Body rows
     st.learners.forEach(function (l) {
       h += '<tr id="attRow_' + l.id + '">';
       h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;">' + esc(l.pin || '') + '</td>';
@@ -1914,12 +1961,24 @@
 
       let weeklyPresent = 0;
       days.forEach(function (d) {
+        if (d.isHoliday) {
+          // Render two shadow cells so column-count matches. The veil in
+          // the header overlays the entire holiday column visually.
+          h += '<td colspan="2" style="padding:4px;text-align:center;background:#fff5f5;"></td>';
+          return;
+        }
+
+        const dayLock = attDayLockState(d);
+        const canMark = attMarkableFor(weekLock, dayLock, role);
+
         const mark = attEffectiveMark(l.id, d.date);
         const ma = attMA(mark);
-        const isHol = d.isHoliday;
-        const isFuture = d.isFuture;
 
-        if (!isHol && !isFuture) {
+        if (canMark) {
+          if (ma.M === '\\') weeklyPresent++;
+          if (ma.A === '/')  weeklyPresent++;
+        } else if (dayLock !== 'future') {
+          // Past cell, but locked — count actual marks toward totals.
           if (ma.M === '\\') weeklyPresent++;
           if (ma.A === '/')  weeklyPresent++;
         }
@@ -1927,17 +1986,18 @@
         const cellIdM = 'attCell_' + l.id + '_' + d.date + '_M';
         const cellIdA = 'attCell_' + l.id + '_' + d.date + '_A';
 
-        if (isHol) {
-          h += '<td style="padding:4px;text-align:center;background:#ffcdd2;color:#721c24;">—</td>';
-          h += '<td style="padding:4px;text-align:center;background:#ffcdd2;color:#721c24;">—</td>';
-        } else if (isFuture) {
+        if (dayLock === 'future') {
           h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">·</td>';
           h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">·</td>';
-        } else {
+        } else if (canMark) {
           const mBg = ma.M === '\\' ? '#d4edda' : '#f8d7da';
           const aBg = ma.A === '/'  ? '#d4edda' : '#f8d7da';
-          h += '<td id="' + cellIdM + '" onclick="attCycleCell(' + l.id + ', \'' + d.date + '\', \'M\')" style="padding:4px;text-align:center;cursor:pointer;background:' + mBg + ';font-weight:700;user-select:none;">' + ma.M + '</td>';
-          h += '<td id="' + cellIdA + '" onclick="attCycleCell(' + l.id + ', \'' + d.date + '\', \'A\')" style="padding:4px;text-align:center;cursor:pointer;background:' + aBg + ';font-weight:700;user-select:none;">' + ma.A + '</td>';
+          h += '<td id="' + cellIdM + '" onclick="attCycleCell(' + l.id + ',\'' + d.date + '\',\'M\')" style="padding:4px;text-align:center;cursor:pointer;background:' + mBg + ';font-weight:700;user-select:none;">' + ma.M + '</td>';
+          h += '<td id="' + cellIdA + '" onclick="attCycleCell(' + l.id + ',\'' + d.date + '\',\'A\')" style="padding:4px;text-align:center;cursor:pointer;background:' + aBg + ';font-weight:700;user-select:none;">' + ma.A + '</td>';
+        } else {
+          // Locked — grey, no onclick, still shows the last mark.
+          h += '<td style="padding:4px;text-align:center;background:#eceff1;color:#78909c;font-weight:700;">' + ma.M + '</td>';
+          h += '<td style="padding:4px;text-align:center;background:#eceff1;color:#78909c;font-weight:700;">' + ma.A + '</td>';
         }
       });
 
@@ -1951,21 +2011,28 @@
     return h;
   }
 
-  // Toggle a single session cell. Only mutates the cell in place — no
-  // full re-render, so the scroll/focus does not jump.
   function attCycleCell(learnerId, dateISO, session) {
     if (!attState) return;
     const st = attState;
+    const role = State.profile ? State.profile.role : 'operator';
 
-    // Find day object
-    let day = null;
+    let day = null, week = null;
     for (let i = 0; i < st.weeks.length; i++) {
       for (let j = 0; j < st.weeks[i].days.length; j++) {
-        if (st.weeks[i].days[j].date === dateISO) { day = st.weeks[i].days[j]; break; }
+        if (st.weeks[i].days[j].date === dateISO) { day = st.weeks[i].days[j]; week = st.weeks[i]; break; }
       }
       if (day) break;
     }
-    if (!day || day.isHoliday || day.isFuture) return;
+    if (!day || day.isHoliday) return;
+
+    const dayLock = attDayLockState(day);
+    const weekLock = attWeekLockState(week);
+    if (!attMarkableFor(weekLock, dayLock, role)) {
+      if (dayLock === 'future') showToast('That date has not arrived yet', 'warning');
+      else if (weekLock === 'locked') showToast('That week is locked. Ask an admin to edit it.', 'warning');
+      else showToast('That week is not open for marking', 'warning');
+      return;
+    }
 
     const current = attEffectiveMark(learnerId, dateISO);
     const ma = attMA(current);
@@ -1981,30 +2048,20 @@
 
     st.editing[learnerId + '|' + dateISO] = next;
 
-    // Update just the two cells and the two totals — no table rebuild.
     const ma2 = attMA(next);
     const cellM = document.getElementById('attCell_' + learnerId + '_' + dateISO + '_M');
     const cellA = document.getElementById('attCell_' + learnerId + '_' + dateISO + '_A');
-    if (cellM) {
-      cellM.textContent = ma2.M;
-      cellM.style.background = ma2.M === '\\' ? '#d4edda' : '#f8d7da';
-    }
-    if (cellA) {
-      cellA.textContent = ma2.A;
-      cellA.style.background = ma2.A === '/' ? '#d4edda' : '#f8d7da';
-    }
+    if (cellM) { cellM.textContent = ma2.M; cellM.style.background = ma2.M === '\\' ? '#d4edda' : '#f8d7da'; }
+    if (cellA) { cellA.textContent = ma2.A; cellA.style.background = ma2.A === '/' ? '#d4edda' : '#f8d7da'; }
     const wkCell = document.getElementById('attWk_' + learnerId);
-    if (wkCell) wkCell.textContent = attLearnerWeekTotal(learnerId, st.weeks.find(function (w) { return w.days.indexOf(day) !== -1; }));
-    // Term column doesn't change until we know which week we're in — recalc full learner term total.
-    // (Cheap: just re-walk this learner's days.)
-    // Simplest: leave for after Save.
+    if (wkCell) wkCell.textContent = attLearnerWeekTotal(learnerId, week);
   }
 
   function attLearnerWeekTotal(learnerId, wk) {
     if (!wk) return 0;
     let n = 0;
     wk.days.forEach(function (d) {
-      if (d.isHoliday || d.isFuture) return;
+      if (d.isHoliday) return;
       const mark = attEffectiveMark(learnerId, d.date);
       const ma = attMA(mark);
       if (ma.M === '\\') n++;
@@ -2016,9 +2073,7 @@
   function attLearnerTermTotal(learnerId) {
     if (!attState) return 0;
     let n = 0;
-    attState.weeks.forEach(function (wk) {
-      n += attLearnerWeekTotal(learnerId, wk);
-    });
+    attState.weeks.forEach(function (wk) { n += attLearnerWeekTotal(learnerId, wk); });
     return n;
   }
 
@@ -2028,25 +2083,28 @@
     renderAttendanceRegister();
   }
 
-  // Bulk mark. Applies per the session mode:
-  //   AM   → present morning only (set the M half)
-  //   PM   → present afternoon only (set the A half)
-  //   FULL → present both
-  // Only touches the current day's column.
   function attMarkClassPresent() {
     if (!attState) return;
     const st = attState;
-    const today = new Date().toISOString().slice(0, 10);
+    const role = State.profile ? State.profile.role : 'operator';
+    const today = attTodayISO();
 
-    let targetDay = null;
+    let targetDay = null, targetWeek = null;
     for (let i = 0; i < st.weeks.length; i++) {
       for (let j = 0; j < st.weeks[i].days.length; j++) {
-        if (st.weeks[i].days[j].date === today) { targetDay = st.weeks[i].days[j]; break; }
+        if (st.weeks[i].days[j].date === today) { targetDay = st.weeks[i].days[j]; targetWeek = st.weeks[i]; break; }
       }
       if (targetDay) break;
     }
     if (!targetDay) { showToast('Today is not part of this term', 'warning'); return; }
     if (targetDay.isHoliday) { showToast('Today is a holiday', 'warning'); return; }
+
+    const dayLock = attDayLockState(targetDay);
+    const weekLock = attWeekLockState(targetWeek);
+    if (!attMarkableFor(weekLock, dayLock, role)) {
+      showToast('Today is not markable for your role', 'warning');
+      return;
+    }
 
     const mode = attSessionMode;
     const label = mode === 'AM' ? 'Morning' : (mode === 'PM' ? 'Afternoon' : 'Full day');
@@ -2114,28 +2172,30 @@
     renderAttendanceRegister();
   }
 
-  // Summary used by week header.
   function attWeekSummary(wk) {
     const st = attState;
-    let mPresent = 0, aPresent = 0, mExpected = 0, aExpected = 0;
-    let boysPresent = 0, girlsPresent = 0, genderKnown = false;
+
     let openSlots = 0;
+    wk.days.forEach(function (d) { if (!d.isHoliday) openSlots += 2; });
+
+    let mPresent = 0, aPresent = 0, boysPresent = 0, girlsPresent = 0, genderKnown = false;
 
     st.learners.forEach(function (l) {
-      const isBoy  = (l.gender || '').toLowerCase().indexOf('male') === 0
-                    && (l.gender || '').toLowerCase().indexOf('female') === -1;
-      const isGirl = (l.gender || '').toLowerCase().indexOf('female') === 0;
+      const g = (l.gender || '').toLowerCase();
+      const isBoy  = g.indexOf('male') === 0 && g.indexOf('female') === -1;
+      const isGirl = g.indexOf('female') === 0;
       wk.days.forEach(function (d) {
-        if (d.isHoliday || d.isFuture) return;
-        mExpected++;
-        aExpected++;
+        if (d.isHoliday) return;
+        if (d.date > attTodayISO()) return;   // future dates contribute nothing yet
         const mark = attEffectiveMark(l.id, d.date);
         const ma = attMA(mark);
-        if (ma.M === '\\') { mPresent++; if (isBoy) boysPresent++; if (isGirl) girlsPresent++; if (isBoy || isGirl) genderKnown = true; }
-        if (ma.A === '/')  { aPresent++; if (isBoy) boysPresent++; if (isGirl) girlsPresent++; if (isBoy || isGirl) genderKnown = true; }
+        if (ma.M === '\\') { mPresent++; if (isBoy) { boysPresent++; genderKnown = true; } else if (isGirl) { girlsPresent++; genderKnown = true; } }
+        if (ma.A === '/')  { aPresent++; if (isBoy) { boysPresent++; genderKnown = true; } else if (isGirl) { girlsPresent++; genderKnown = true; } }
       });
     });
-    wk.days.forEach(function (d) { if (!d.isHoliday && !d.isFuture) openSlots += 2; });
+
+    const mExpected = openSlots * st.learners.length;
+    const aExpected = openSlots * st.learners.length;
 
     return {
       openSlots: openSlots,
@@ -2148,7 +2208,6 @@
     };
   }
 
-  // Analysis panel — weekly rows + term totals.
   function renderClassAnalysisPanel() {
     if (!attState) return;
     const st = attState;
@@ -2164,8 +2223,7 @@
     html += '<th style="padding:6px;">Expected</th><th style="padding:6px;">Confirmed</th><th style="padding:6px;">%</th>';
     html += '</tr></thead><tbody>';
 
-    let tM = 0, tA = 0, tExpected = 0, tOpen = 0;
-    let tBoys = 0, tGirls = 0, tGenderKnown = false;
+    let tM = 0, tA = 0, tExpected = 0, tOpen = 0, tBoys = 0, tGirls = 0, tGenderKnown = false;
 
     st.weeks.forEach(function (wk) {
       const a = attWeekSummary(wk);
@@ -2208,7 +2266,6 @@
             '</tr>';
     html += '</tbody></table></div>';
 
-    // Summary strip
     html += '<div class="stats-grid" style="margin-top:12px;">';
     html += '<div class="stat-card"><div class="stat-label">Sum total school-open (term)</div><div class="stat-value">' + tOpen + '</div></div>';
     html += '<div class="stat-card gold"><div class="stat-label">Sum total attendance (term)</div><div class="stat-value gold">' + tConfirmed + '</div></div>';
@@ -2220,7 +2277,6 @@
     setHTML('analysisBody', html);
   }
 
-  // ---- Signatures panel ----
   async function renderSignaturePanel() {
     if (!attState) return;
     setHTML('signatureBody', pageLoaderHTML('Loading staff…'));
@@ -2231,7 +2287,7 @@
         staffNames = r.data.filter(function (s) { return s.status === 'Active' || !s.status; })
           .map(function (s) { return s.full_name; }).filter(Boolean);
       }
-    } catch (e) { /* silent */ }
+    } catch (e) {}
 
     let html = '<p style="font-size:11px;color:#666;margin:0 0 10px;">Sign each week as it is completed.</p>';
     html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;">';
@@ -2246,7 +2302,7 @@
         staffNames.forEach(function (n) { o += '<option value="' + escAttr(n) + '">' + esc(n) + '</option>'; });
         return o;
       };
-      const today = new Date().toISOString().slice(0, 10);
+      const today = attTodayISO();
       html += '<tr>' +
         '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
         '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
@@ -2260,6 +2316,19 @@
     setHTML('signatureBody', html);
   }
 
+  function attSaveSignatures() {
+    const rows = document.querySelectorAll('#signatureBody tbody tr');
+    let filled = 0;
+    rows.forEach(function (tr) {
+      const sels = tr.querySelectorAll('select');
+      let rowHas = false;
+      sels.forEach(function (s) { if (s.value) rowHas = true; });
+      if (rowHas) filled++;
+    });
+    if (filled === 0) { showToast('Pick at least one week to sign', 'warning'); return; }
+    showToast('Signatures captured for ' + filled + ' week(s). (Persistence coming.)', 'info');
+  }
+
   function fmtDateShort_(iso) {
     if (!iso) return '—';
     const d = new Date(iso + 'T00:00:00');
@@ -2268,7 +2337,7 @@
     return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
   }
 
-  // ---- Print dialog ----
+  // ---- Print dialog (unchanged) ----
   function attOpenPrintDialog() {
     window.TIS.listLearners().then(function (r) {
       const classes = {};
@@ -2284,24 +2353,19 @@
       html += '<div class="modal-box" style="max-width:460px;" onclick="event.stopPropagation()">';
       html += '<div class="modal-header"><h2>Print Attendance</h2>' +
               '<button class="close-btn" onclick="attClosePrintDialog()">&times;</button></div>';
-
       html += '<div class="form-group"><label>Class</label><select id="attPrintClass" style="width:100%;">';
       classNames.forEach(function (c) { html += '<option value="' + escAttr(c) + '">' + esc(c) + '</option>'; });
       html += '</select></div>';
-
       html += '<div class="form-group"><label>Term</label><select id="attPrintTerm" style="width:100%;">';
       ['1st','2nd','3rd'].forEach(function (t) {
         html += '<option value="' + t + '"' + (t === defTerm ? ' selected' : '') + '>' + t.toUpperCase() + ' TERM</option>';
       });
       html += '</select></div>';
-
       html += '<div class="form-group"><label>Year</label><input id="attPrintYear" type="text" value="' + escAttr(defYear) + '"></div>';
-
       html += '<div class="form-group"><label>Scope</label><select id="attPrintScope" style="width:100%;">';
       html += '<option value="ALL">All weeks (full term)</option>';
       for (let w = 1; w <= 20; w++) html += '<option value="W' + w + '">Week ' + w + '</option>';
       html += '</select></div>';
-
       html += '<div style="text-align:right;margin-top:14px;">';
       html += '<button class="btn btn-secondary" onclick="attClosePrintDialog()">Cancel</button> ';
       html += '<button class="btn btn-gold" onclick="attRunPrint()">Print</button>';
@@ -2359,10 +2423,15 @@
       html += '<h2>Week ' + wk.weekNumber + ' — Ending ' + fmtDateShort_(wk.weekEnding) + '</h2>';
       html += '<table><thead><tr><th>PIN</th><th>Name</th><th>Sex</th><th>Age</th>';
       wk.days.forEach(function (d, i) {
-        html += '<th colspan="2">' + ['Mon','Tue','Wed','Thu','Fri'][i] + '<br>' + fmtDateShort_(d.date) + '</th>';
+        const span = d.isHoliday ? 2 : 2;
+        html += '<th colspan="' + span + '">' + ['Mon','Tue','Wed','Thu','Fri'][i] + '<br>' + fmtDateShort_(d.date) +
+                (d.isHoliday ? '<br>' + esc(d.holidayName || 'Holiday') : '') + '</th>';
       });
       html += '<th>Wkly</th></tr><tr><th colspan="4"></th>';
-      wk.days.forEach(function () { html += '<th>M</th><th>A</th>'; });
+      wk.days.forEach(function (d) {
+        if (d.isHoliday) { html += '<th colspan="2" class="m-hol">Holiday</th>'; }
+        else { html += '<th>M</th><th>A</th>'; }
+      });
       html += '<th></th></tr></thead><tbody>';
 
       data.learners.forEach(function (l) {
@@ -2378,7 +2447,7 @@
           const mark = (d.marksByLearner || {})[l.id] || 'O O';
           const ma = attMA(mark);
           if (d.isHoliday) {
-            html += '<td class="m-hol">—</td><td class="m-hol">—</td>';
+            html += '<td colspan="2" class="m-hol">—</td>';
           } else {
             html += '<td class="' + (ma.M === '\\' ? 'm-ok' : '') + '">' + ma.M + '</td>';
             html += '<td class="' + (ma.A === '/'  ? 'm-ok' : '') + '">' + ma.A + '</td>';
@@ -2408,21 +2477,7 @@
   window.attRunPrint            = attRunPrint;
   window.renderClassAnalysisPanel = renderClassAnalysisPanel;
   window.renderSignaturePanel   = renderSignaturePanel;
-    function attSaveSignatures() {
-    // Signatures are captured locally for now. Persistence to Supabase
-    // will be added when attendance_signatures table exists.
-    const rows = document.querySelectorAll('#signatureBody tbody tr');
-    let filled = 0;
-    rows.forEach(function (tr) {
-      const sels = tr.querySelectorAll('select');
-      let rowHas = false;
-      sels.forEach(function (s) { if (s.value) rowHas = true; });
-      if (rowHas) filled++;
-    });
-    if (filled === 0) { showToast('Pick at least one week to sign', 'warning'); return; }
-    showToast('Signatures captured for ' + filled + ' week(s). (Persistence coming.)', 'info');
-  }
-  window.attSaveSignatures = attSaveSignatures;
+  window.attSaveSignatures      = attSaveSignatures;
   // ================================================================
   // [S11] STAFF ATTENDANCE
   // ================================================================
