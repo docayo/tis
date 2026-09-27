@@ -97,7 +97,7 @@
     }
 
     uploadedParsed = r;
-    uploadedSource = r.fileName || driveInput;
+        uploadedSource = driveInput.trim();   // keep the URL; commit re-uses it
     if (status) status.textContent = 'Parsed OK (' + (r.extractMethod || 'unknown') + '). Review below.';
     await checkAndRenderReview(r);
   }
