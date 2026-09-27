@@ -2,11 +2,9 @@
 // TIS EMIS — SUPABASE CLIENT
 // File: supabase-client.js
 // ================================================================
-// This version:
-//   - Adds full Users & Permissions support against public.users
-//   - Uses the `authorities` jsonb column (matches DDL in Supabase)
-//   - operator_id is the login key (passkey column ignored for login)
-//   - Keeps every previous function intact
+// - operator_id is the login key
+// - authorities column (jsonb) holds permissions
+// - learner_terms holds per-term fee + part payments
 // ================================================================
 
 (function () {
@@ -15,10 +13,8 @@
   const SUPABASE_URL      = 'https://ndsroviwrfjbgaucajri.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_vEa5YAU8ac7pyhCiejkMtw_PMiLDuhI';
   const SDK_URL           = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
-
   const OPERATOR_EMAIL_SUFFIX = '@tis.local';
 
-  // Canonical permission matrix — matches Users.gs v6 on the sheets side.
   const PERMISSION_MODULES = [
     { key: 'learners',         label: 'Learners',            defaultReadAll: false },
     { key: 'staff',            label: 'Staff',               defaultReadAll: false },
@@ -96,7 +92,6 @@
               : 'Unknown error';
     return { ok: false, error: msg };
   }
-
   function toAuthEmail(operatorId) {
     const id = String(operatorId || '').trim().toLowerCase();
     return id + OPERATOR_EMAIL_SUFFIX;
@@ -104,9 +99,7 @@
 
   const TIS = {};
 
-  // ----------------------------------------------------------------
-  // AUTH
-  // ----------------------------------------------------------------
+  // ---------------- AUTH ----------------
   TIS.signIn = async function (operatorId, password) {
     try {
       const sb = await loadSdk();
@@ -125,13 +118,11 @@
         await sb.auth.signOut();
         return fail('That account is currently inactive.');
       }
-
       try {
         await sb.from('users')
           .update({ last_login: new Date().toISOString() })
           .eq('id', data.user.id);
-      } catch (_) { /* silent */ }
-
+      } catch (_) {}
       return ok({ user: data.user, profile });
     } catch (err) { return fail(err); }
   };
@@ -165,26 +156,17 @@
       const sb = await loadSdk();
       const { error } = await sb.auth.updateUser({ password: newPassword });
       if (error) return fail(error.message);
-
       const { data: { user } } = await sb.auth.getUser();
       if (user) {
-        const { error: flagErr } = await sb.from('users')
-          .update({
-            must_change_password: false,
-            password_last_changed: new Date().toISOString()
-          })
+        await sb.from('users')
+          .update({ must_change_password: false, password_last_changed: new Date().toISOString() })
           .eq('id', user.id);
-        if (flagErr) {
-          return fail('Password changed, but profile flag not cleared: ' + flagErr.message);
-        }
       }
       return ok({});
     } catch (err) { return fail(err); }
   };
 
-  // ----------------------------------------------------------------
-  // Generic table helpers
-  // ----------------------------------------------------------------
+  // ---------------- Generic table helpers ----------------
   async function tableSelect(table, opts) {
     const sb = await loadSdk();
     let q = sb.from(table).select(opts && opts.select ? opts.select : '*');
@@ -197,14 +179,12 @@
     if (error) throw error;
     return data || [];
   }
-
   async function tableInsert(table, row) {
     const sb = await loadSdk();
     const { data, error } = await sb.from(table).insert(row).select().single();
     if (error) throw error;
     return data;
   }
-
   async function tableUpdate(table, patch, eq) {
     const sb = await loadSdk();
     let q = sb.from(table).update(patch);
@@ -214,351 +194,7 @@
     return data;
   }
 
-  async function tableDelete(table, eq) {
-    const sb = await loadSdk();
-    let q = sb.from(table).delete();
-    Object.keys(eq).forEach(k => { q = q.eq(k, eq[k]); });
-    const { error } = await q;
-    if (error) throw error;
-    return true;
-  }
-
-  // ----------------------------------------------------------------
-  // CLASSES / TERMS / LEARNERS / STAFF (kept from previous version)
-  // ----------------------------------------------------------------
-  TIS.listClasses = async function () {
-    try { return ok(await tableSelect('classes', { order: { column: 'name', ascending: true } })); }
-    catch (err) { return fail(err); }
-  };
-  TIS.createClass = async function (row) {
-    try { return ok(await tableInsert('classes', row)); }
-    catch (err) { return fail(err); }
-  };
-  TIS.updateClass = async function (id, patch) {
-    try { return ok(await tableUpdate('classes', patch, { id })); }
-    catch (err) { return fail(err); }
-  };
-  TIS.deleteClass = async function (id) {
-    try { await tableDelete('classes', { id }); return ok({}); }
-    catch (err) { return fail(err); }
-  };
-
-  TIS.listTerms = async function () {
-    try {
-      const rows = await tableSelect('terms', {
-        order: { column: 'year', ascending: false }
-      });
-      // Sort so 3rd → 2nd → 1st for the same year, newest year first.
-      rows.sort(function (a, b) {
-        if (a.year !== b.year) return b.year - a.year;
-        const order = { '3rd': 3, '2nd': 2, '1st': 1 };
-        return (order[b.term_type] || 0) - (order[a.term_type] || 0);
-      });
-      return ok(rows);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.getTerms = TIS.listTerms; // alias for the new UI
-
-  TIS.getActiveTerm = async function () {
-    try {
-      const rows = await tableSelect('terms', {
-        eq: { is_active: true },
-        limit: 1
-      });
-      return ok(rows[0] || null);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.createTerm = async function (row) {
-    try { return ok(await tableInsert('terms', row)); }
-    catch (err) { return fail(err); }
-  };
-
-  TIS.setActiveTerm = async function (termId) {
-    try {
-      const sb = await loadSdk();
-      // Clear all, then set one. Two quick calls.
-      const { error: clrErr } = await sb
-        .from('terms')
-        .update({ is_active: false })
-        .neq('id', -1); // matches all rows
-      if (clrErr) return fail(clrErr.message);
-
-      const { error: setErr } = await sb
-        .from('terms')
-        .update({ is_active: true })
-        .eq('id', termId);
-      if (setErr) return fail(setErr.message);
-
-      return ok({ id: termId });
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.listLearners = async function () {
-    try { return ok(await tableSelect('learners', { order: { column: 'name', ascending: true } })); }
-    catch (err) { return fail(err); }
-  };
-  TIS.searchLearners = async function (term) {
-    try {
-      const q = String(term || '').trim();
-      if (!q) return ok([]);
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('learners')
-        .select('*')
-        .or('pin.ilike.%' + q + '%,name.ilike.%' + q + '%')
-        .order('name', { ascending: true })
-        .limit(100);
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-  TIS.getLearner = async function (id) {
-    try {
-      const rows = await tableSelect('learners', { eq: { id }, limit: 1 });
-      return ok(rows[0] || null);
-    } catch (err) { return fail(err); }
-  };
-  TIS.createLearner = async function (row) {
-    try { return ok(await tableInsert('learners', row)); }
-    catch (err) { return fail(err); }
-  };
-  TIS.updateLearner = async function (id, patch) {
-    try { return ok(await tableUpdate('learners', patch, { id })); }
-    catch (err) { return fail(err); }
-  };
-  TIS.deleteLearner = async function (id) {
-    try { await tableDelete('learners', { id }); return ok({}); }
-    catch (err) { return fail(err); }
-  };
-
-  TIS.listStaff = async function () {
-    try { return ok(await tableSelect('staff', { order: { column: 'full_name', ascending: true } })); }
-    catch (err) { return fail(err); }
-  };
-  TIS.getStaff = async function (id) {
-    try {
-      const rows = await tableSelect('staff', { eq: { id }, limit: 1 });
-      return ok(rows[0] || null);
-    } catch (err) { return fail(err); }
-  };
-  TIS.createStaff = async function (row) {
-    try { return ok(await tableInsert('staff', row)); }
-    catch (err) { return fail(err); }
-  };
-  TIS.updateStaff = async function (id, patch) {
-    try { return ok(await tableUpdate('staff', patch, { id })); }
-    catch (err) { return fail(err); }
-  };
-
-  // ----------------------------------------------------------------
-  // ATTENDANCE (learners)
-  // ----------------------------------------------------------------
-  TIS.listAttendanceForClassTerm = async function (classId, termId) {
-    try {
-      return ok(await tableSelect('attendance_learner', {
-        eq: { class_id: classId, term_id: termId },
-        order: { column: 'attendance_date', ascending: true }
-      }));
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.saveLearnerAttendance = async function (termId, classId, dateISO, marks, markedBy) {
-    try {
-      if (!marks || marks.length === 0) return ok([]);
-      const sb = await loadSdk();
-      const rows = marks.map(function (m) {
-        return {
-          learner_id: m.learnerId,
-          term_id: termId,
-          class_id: classId,
-          attendance_date: dateISO,
-          mark: m.mark,
-          marked_by: markedBy || '',
-          marked_at: new Date().toISOString()
-        };
-      });
-      const { data, error } = await sb
-        .from('attendance_learner')
-        .upsert(rows, { onConflict: 'learner_id,attendance_date' })
-        .select();
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.classAnalysis = async function (classId, termId) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb.rpc('class_analysis', {
-        p_class_id: classId,
-        p_term_id: termId
-      });
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-
-  // ----------------------------------------------------------------
-  // ATTENDANCE (staff)
-  // ----------------------------------------------------------------
-  TIS.listStaffAttendanceToday = async function (dateISO) {
-    try {
-      return ok(await tableSelect('attendance_staff', { eq: { attendance_date: dateISO } }));
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.listStaffAttendanceForMonth = async function (year, month) {
-    try {
-      const sb = await loadSdk();
-      const fromDate = year + '-' + String(month).padStart(2, '0') + '-01';
-      const toDate   = year + '-' + String(month).padStart(2, '0') + '-31';
-      const { data, error } = await sb
-        .from('attendance_staff')
-        .select('*')
-        .gte('attendance_date', fromDate)
-        .lte('attendance_date', toDate)
-        .order('attendance_date', { ascending: false });
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.upsertStaffAttendance = async function (row) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('attendance_staff')
-        .upsert(row, { onConflict: 'staff_id,attendance_date' })
-        .select()
-        .single();
-      if (error) return fail(error.message);
-      return ok(data);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.staffMonthlySummary = async function (year, month) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb.rpc('staff_monthly_summary', {
-        p_year: year,
-        p_month: month
-      });
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-
-  // ----------------------------------------------------------------
-  // MOVEMENTS
-  // ----------------------------------------------------------------
-  TIS.listMovementsToday = async function (dateISO) {
-    try {
-      return ok(await tableSelect('movements', {
-        eq: { movement_date: dateISO },
-        order: { column: 'created_at', ascending: false }
-      }));
-    } catch (err) { return fail(err); }
-  };
-  TIS.createMovement = async function (row) {
-    try { return ok(await tableInsert('movements', row)); }
-    catch (err) { return fail(err); }
-  };
-
-  // ----------------------------------------------------------------
-  // PAYMENTS
-  // ----------------------------------------------------------------
-  TIS.listPayments = async function (learnerId) {
-    try {
-      return ok(await tableSelect('payments', {
-        eq: { learner_id: learnerId },
-        order: { column: 'payment_date', ascending: false }
-      }));
-    } catch (err) { return fail(err); }
-  };
-  TIS.recordPayment = async function (row) {
-    try { return ok(await tableInsert('payments', row)); }
-    catch (err) { return fail(err); }
-  };
-
-   // ----------------------------------------------------------------
-  // CALENDAR
-  // ----------------------------------------------------------------
-  // The active source of truth is academic_calendar (event-based, one
-  // row per event). The old `calendar` table is left alone but not used.
-  TIS.getCalendar = async function () {
-    try {
-      const rows = await tableSelect('academic_calendar', {
-        order: { column: 'event_date', ascending: true }
-      });
-      return ok(rows);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.listCalendar = TIS.getCalendar; // alias for old callers
-
-  TIS.getCalendarByYear = async function (academicYear) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('academic_calendar')
-        .select('*')
-        .eq('academic_year', academicYear)
-        .order('event_date', { ascending: true });
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-
-  // ----------------------------------------------------------------
-  // SUBJECTS
-  // ----------------------------------------------------------------
-  TIS.listSubjects = async function (classId) {
-    try {
-      const rows = await tableSelect('subjects', {
-        eq: classId ? { class_id: classId } : {},
-        order: { column: 'slot', ascending: true }
-      });
-      return ok(rows);
-    } catch (err) { return fail(err); }
-  };
-
-  // ----------------------------------------------------------------
-  // SETTINGS
-  // ----------------------------------------------------------------
-  TIS.getSetting = async function (key) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('settings')
-        .select('value')
-        .eq('key', key)
-        .maybeSingle();
-      if (error) return fail(error.message);
-      return ok(data ? data.value : null);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.setSetting = async function (key, value) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('settings')
-        .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
-        .select()
-        .single();
-      if (error) return fail(error.message);
-      return ok(data);
-    } catch (err) { return fail(err); }
-  };
-
-  // ================================================================
-  // USERS & PERMISSIONS  (new in this version)
-  // ================================================================
-
-  // Returns the shape the Users page needs: modules, actions, and each
-  // user's current authorities (falling back to role defaults).
+  // ---------------- USERS & PERMISSIONS ----------------
   TIS.getPermissionMatrix = async function () {
     try {
       const sb = await loadSdk();
@@ -572,8 +208,7 @@
         .filter(u => u.deleted !== true)
         .map(function (u) {
           const auth = (u.authorities && Object.keys(u.authorities).length > 0)
-            ? u.authorities
-            : roleDefaults(u.role);
+            ? u.authorities : roleDefaults(u.role);
           return {
             id: u.operator_id || u.id,
             uuid: u.id,
@@ -587,15 +222,10 @@
           };
         });
 
-      return ok({
-        modules: PERMISSION_MODULES,
-        actions: PERMISSION_ACTIONS,
-        users: users
-      });
+      return ok({ modules: PERMISSION_MODULES, actions: PERMISSION_ACTIONS, users: users });
     } catch (err) { return fail(err); }
   };
 
-  // Save one user's permissions. `id` may be operator_id or uuid.
   TIS.setUserAuthorities = async function (id, authorities) {
     try {
       const sb = await loadSdk();
@@ -623,11 +253,8 @@
   TIS.getUserById = async function (id) {
     try {
       const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('users')
-        .select('*')
-        .or('operator_id.eq.' + id + ',id.eq.' + id)
-        .maybeSingle();
+      const { data, error } = await sb.from('users').select('*')
+        .or('operator_id.eq.' + id + ',id.eq.' + id).maybeSingle();
       if (error) return fail(error.message);
       return ok(data || null);
     } catch (err) { return fail(err); }
@@ -636,8 +263,7 @@
   TIS.updateUser = async function (id, patch) {
     try {
       const sb = await loadSdk();
-      const { error } = await sb
-        .from('users')
+      const { error } = await sb.from('users')
         .update(Object.assign({}, patch, { updated_at: new Date().toISOString() }))
         .or('operator_id.eq.' + id + ',id.eq.' + id);
       if (error) return fail(error.message);
@@ -645,13 +271,8 @@
     } catch (err) { return fail(err); }
   };
 
-  TIS.deactivateUser = async function (id) {
-    return TIS.updateUser(id, { is_active: false });
-  };
-
-  TIS.reactivateUser = async function (id) {
-    return TIS.updateUser(id, { is_active: true });
-  };
+  TIS.deactivateUser = async function (id) { return TIS.updateUser(id, { is_active: false }); };
+  TIS.reactivateUser = async function (id) { return TIS.updateUser(id, { is_active: true }); };
 
   TIS.createUser = async function (data) {
     try {
@@ -666,23 +287,12 @@
         must_change_password: true,
         authorities: data.authorities || roleDefaults(data.role || 'teacher')
       };
-      const { data: inserted, error } = await sb
-        .from('users')
-        .insert(row)
-        .select()
-        .single();
+      const { data: inserted, error } = await sb.from('users').insert(row).select().single();
       if (error) return fail(error.message);
-
-      // Also create the Supabase Auth account. Requires the anon key to
-      // have permission to sign up — check Supabase Auth → Settings.
       try {
         const email = toAuthEmail(row.operator_id);
-        const { error: authErr } = await sb.auth.signUp({
-          email: email,
-          password: data.password || '1234'
-        });
+        const { error: authErr } = await sb.auth.signUp({ email: email, password: data.password || '1234' });
         if (authErr) {
-          // Roll back the row so a half-created user doesn't linger.
           await sb.from('users').delete().eq('operator_id', row.operator_id);
           return fail('Auth account creation failed: ' + authErr.message);
         }
@@ -690,19 +300,15 @@
         await sb.from('users').delete().eq('operator_id', row.operator_id);
         return fail('Auth exception: ' + (authErr.message || String(authErr)));
       }
-
       return ok(inserted);
     } catch (err) { return fail(err); }
   };
 
   TIS.adminResetPassword = async function (operatorId, newPassword, adminName) {
-    // Requires a Supabase Edge Function or Service Role key.
-    // Placeholder that surfaces a clear message until that's wired.
     return fail('Password reset requires an Edge Function. Admin "' + (adminName || '') +
-                '" tried to reset operator ' + operatorId + '.');
+                '" tried to reset ' + operatorId + '.');
   };
 
-  // Role defaults — mirrors Users.gs v6 getDefaultAuthorities.
   function roleDefaults(role) {
     const superAdmin = {
       learners: { read: true, write: true, print: true },
@@ -748,12 +354,9 @@
       classes: { read: true, write: false, print: false },
       users: { read: false, write: false, print: false }
     };
-
-    const profile =
-      role === 'super_admin' ? superAdmin :
-      role === 'admin'       ? admin :
-      role === 'teacher'     ? teacher : operator;
-
+    const profile = role === 'super_admin' ? superAdmin
+                  : role === 'admin' ? admin
+                  : role === 'teacher' ? teacher : operator;
     const auth = {};
     PERMISSION_MODULES.forEach(function (m) {
       const p = profile[m.key] || {};
@@ -765,16 +368,181 @@
   }
   TIS.roleDefaults = roleDefaults;
 
-  // ----------------------------------------------------------------
-  // STORAGE
-  // ----------------------------------------------------------------
-  TIS.uploadPhoto = async function (bucket, path, file) {
+  // ---------------- TERMS ----------------
+  TIS.listTerms = async function () {
+    try {
+      const rows = await tableSelect('terms', { order: { column: 'year', ascending: false } });
+      rows.sort(function (a, b) {
+        if (a.year !== b.year) return b.year - a.year;
+        const order = { '3rd': 3, '2nd': 2, '1st': 1 };
+        return (order[b.term_type] || 0) - (order[a.term_type] || 0);
+      });
+      return ok(rows);
+    } catch (err) { return fail(err); }
+  };
+  TIS.getTerms = TIS.listTerms;
+
+  TIS.getActiveTerm = async function () {
+    try {
+      const rows = await tableSelect('terms', { eq: { is_active: true }, limit: 1 });
+      return ok(rows[0] || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.setActiveTerm = async function (termId) {
     try {
       const sb = await loadSdk();
-      const { data, error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
+      const { error: clrErr } = await sb.from('terms').update({ is_active: false }).neq('id', -1);
+      if (clrErr) return fail(clrErr.message);
+      const { error: setErr } = await sb.from('terms').update({ is_active: true }).eq('id', termId);
+      if (setErr) return fail(setErr.message);
+      return ok({ id: termId });
+    } catch (err) { return fail(err); }
+  };
+
+  // ---------------- CALENDAR ----------------
+  TIS.getCalendar = async function () {
+    try {
+      const rows = await tableSelect('academic_calendar', { order: { column: 'event_date', ascending: true } });
+      return ok(rows);
+    } catch (err) { return fail(err); }
+  };
+  TIS.listCalendar = TIS.getCalendar;
+
+  // ---------------- LEARNERS ----------------
+  TIS.listLearners = async function () {
+    try {
+      const rows = await tableSelect('learners', { order: { column: 'name', ascending: true } });
+      return ok(rows);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.searchLearners = async function (term) {
+    try {
+      const q = String(term || '').trim();
+      if (!q) return ok([]);
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learners').select('*')
+        .or('pin.ilike.%' + q + '%,name.ilike.%' + q + '%')
+        .order('name', { ascending: true }).limit(100);
       if (error) return fail(error.message);
-      const { data: pub } = sb.storage.from(bucket).getPublicUrl(data.path);
-      return ok({ url: pub.publicUrl, path: data.path });
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearner = async function (id) {
+    try {
+      const rows = await tableSelect('learners', { eq: { id }, limit: 1 });
+      return ok(rows[0] || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearnerByPin = async function (pin) {
+    try {
+      const rows = await tableSelect('learners', { eq: { pin }, limit: 1 });
+      return ok(rows[0] || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createLearner = async function (row) {
+    try { return ok(await tableInsert('learners', row)); }
+    catch (err) { return fail(err); }
+  };
+
+  TIS.updateLearner = async function (id, patch) {
+    try { return ok(await tableUpdate('learners', patch, { id })); }
+    catch (err) { return fail(err); }
+  };
+
+  // ---------------- LEARNER TERMS (fees + part payments) ----------------
+  TIS.getLearnerTerms = async function (learnerId) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .order('year', { ascending: false });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearnerTermForActive = async function (learnerId) {
+    try {
+      const active = await TIS.getActiveTerm();
+      if (!active.ok || !active.data) return fail('No active term set.');
+      const t = active.data;
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', t.term_type)
+        .eq('year', t.year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok({ row: data || null, term: t });
+    } catch (err) { return fail(err); }
+  };
+
+  // Record a new part payment, writing to the next available slot.
+  // Auto-recomputes total_part_payment and balance_cf. Marks cleared
+  // when the balance reaches zero.
+  TIS.recordPartPayment = async function (learnerId, termType, year, amount, dateISO, mode) {
+    try {
+      const sb = await loadSdk();
+      const { data: row, error: rowErr } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (rowErr) return fail(rowErr.message);
+      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
+
+      // Find next empty slot.
+      const slots = [1, 2, 3, 4, 5];
+      let slot = null;
+      for (var i = 0; i < slots.length; i++) {
+        var n = slots[i];
+        if (!row['part_payment_' + n + '_amount']) { slot = n; break; }
+      }
+      if (slot === null) return fail('All 5 part-payment slots are full. See Accounts.');
+
+      const patch = {};
+      patch['part_payment_' + slot + '_amount'] = String(amount);
+      patch['part_payment_' + slot + '_date']   = dateISO || new Date().toISOString().slice(0, 10);
+
+      // Recompute total from all five slots after this insert.
+      var newTotal = 0;
+      for (var j = 0; j < slots.length; j++) {
+        var m = slots[j];
+        var v = (m === slot)
+          ? Number(String(amount).replace(/[^0-9.\-]/g, '')) || 0
+          : Number(String(row['part_payment_' + m + '_amount'] || '').replace(/[^0-9.\-]/g, '')) || 0;
+        newTotal += v;
+      }
+      patch.total_part_payment = String(newTotal);
+
+      // Balance C/F = balance_bf + bill + other_bill - total paid.
+      const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
+      const newBalance = num(row.balance_bf) + num(row.bill) + num(row.other_bill) - newTotal;
+      patch.balance_cf = String(newBalance);
+
+      if (newBalance <= 0) {
+        patch.cleared   = 'Yes';
+        patch.clearance = dateISO || new Date().toISOString().slice(0, 10);
+      }
+      patch.updated_at = new Date().toISOString();
+
+      const { error: updErr } = await sb.from('learner_terms')
+        .update(patch)
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (updErr) return fail(updErr.message);
+
+      return ok({ slot: slot, patch: patch });
     } catch (err) { return fail(err); }
   };
 
