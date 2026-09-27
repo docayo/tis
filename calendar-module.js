@@ -3,12 +3,12 @@
 // File: calendar-module.js
 // ================================================================
 // SECTION MAP:
-//   [CAL-FE-01] CONFIG + BACKEND URL
-//   [CAL-FE-02] JSONP HELPER (queries)
+//   [CAL-FE-01] CONFIG
+//   [CAL-FE-02] JSONP HELPER
 //   [CAL-FE-03] FILE UPLOAD (doPost)
 //   [CAL-FE-04] CALENDAR TAB RENDER
 //   [CAL-FE-05] UPLOAD MODAL
-//   [CAL-FE-06] REVIEW + COMMIT
+//   [CAL-FE-06] REVIEW + DUPLICATE CHECK + COMMIT
 //   [CAL-FE-07] PASTE FALLBACK
 //   [CAL-FE-08] HOLIDAY ADJUSTER
 //   [CAL-FE-09] PUBLIC API
@@ -23,12 +23,12 @@
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwp8WB7ZCYOiolA70SQAPi7--1cmclVwRQEMBaur6CwymD_8sDo9uL7dNNh9LFUkIZd/exec';
   let uploadedParsed = null;
   let uploadedSource = null;
+  window.__lastUploadResponse = null;
 
   function getSession() {
     const p = (window.State && window.State.profile) || {};
     return { userId: p.operator_id || '', userName: p.name || '' };
   }
-
   function showToast(msg, type) {
     if (typeof window.showToast === 'function') { window.showToast(msg, type); return; }
     console.log('[CAL]', msg);
@@ -101,7 +101,6 @@
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'CAL_upload',
-          fn: 'CAL_uploadViaPost',
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
           base64: base64,
@@ -109,18 +108,26 @@
         })
       });
       const data = await resp.json();
+      window.__lastUploadResponse = data;
 
       if (!data || !data.success) {
-        if (status) status.textContent = 'Parse failed: ' + (data && (data.message || data.error) || 'unknown');
-        showToast('Calendar parse failed. Use the paste fallback.', 'warning');
+        if (status) status.textContent = 'Parse failed: ' + ((data && (data.message || data.error)) || 'unknown');
+        showPasteFallback(true);
+        return;
+      }
+
+      if (!data.academicYear || !data.terms || !data.terms.length) {
+        if (status) status.textContent = 'Uploaded but not parsed. Try the paste fallback below.';
         showPasteFallback(true);
         return;
       }
 
       uploadedParsed = data;
       uploadedSource = file.name;
-      if (status) status.textContent = 'Parsed OK. Review the details below.';
-      renderReviewPanel(data);
+      if (status) status.textContent = 'Parsed OK (' + (data.extractMethod || 'unknown') + '). Review below.';
+
+      // Duplicate detection
+      await checkAndRenderReview(data);
     } catch (err) {
       if (status) status.textContent = 'Upload error: ' + err.message;
       showPasteFallback(true);
@@ -185,8 +192,7 @@
           html += '<button type="button" class="btn btn-sm btn-warning" onclick="CAL.openHolidayAdjuster(\'' +
                   escapeHtml(e.date) + '\',\'' + escapeHtml(e.holidayName || e.description || '') + '\')">Adjust</button>';
         }
-        html += '</td>';
-        html += '</tr>';
+        html += '</td></tr>';
       });
       html += '</tbody></table></div></details>';
     });
@@ -198,6 +204,9 @@
   // [CAL-FE-05] UPLOAD MODAL
   // ================================================================
   function openUploadModal() {
+    uploadedParsed = null;
+    uploadedSource = null;
+
     const html =
       '<div class="modal-overlay" onclick="if(event.target===this)CAL.closeModal()">' +
       '<div class="modal-box" style="max-width:600px;" onclick="event.stopPropagation()">' +
@@ -242,13 +251,45 @@
   }
 
   // ================================================================
-  // [CAL-FE-06] REVIEW + COMMIT
+  // [CAL-FE-06] REVIEW + DUPLICATE CHECK + COMMIT
   // ================================================================
+  async function checkAndRenderReview(data) {
+    const year = data.academicYear;
+    window.__dupCheckResult = null;
+
+    if (year) {
+      const chk = await calCall('CAL_checkYearExists', year);
+      if (chk && chk.success && chk.exists) {
+        window.__dupCheckResult = chk;
+      }
+    }
+    renderReviewPanel(data);
+  }
+
   function renderReviewPanel(data) {
     const panel = document.getElementById('cal_reviewPanel');
     if (!panel) return;
 
-    let html = '<div style="background:#f3f9ff;border-radius:8px;padding:10px;">';
+    const dup = window.__dupCheckResult;
+
+    let html = '';
+    if (dup && dup.exists) {
+      html += '<div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:8px;padding:10px;margin-bottom:10px;">';
+      html += '<div style="font-weight:700;color:#92400e;">⚠️ This academic year already exists</div>';
+      html += '<div style="font-size:12px;color:#78350f;margin-top:4px;">' +
+              'Academic year <b>' + escapeHtml(data.academicYear) + '</b> already has <b>' +
+              dup.rowCount + '</b> events in your calendar.<br>' +
+              'What do you want to do?</div>' +
+              '<div style="display:flex;gap:8px;margin-top:8px;">' +
+              '<button type="button" class="btn btn-danger btn-sm" onclick="CAL.setCommitMode(\'replace\')">Replace All</button>' +
+              '<button type="button" class="btn btn-warning btn-sm" onclick="CAL.setCommitMode(\'append\')">Add to Existing</button>' +
+              '<button type="button" class="btn btn-secondary btn-sm" onclick="CAL.cancelUpload()">Cancel</button>' +
+              '</div>';
+      html += '<div id="cal_commitModeNotice" style="font-size:11px;color:#78350f;margin-top:6px;"></div>';
+      html += '</div>';
+    }
+
+    html += '<div style="background:#f3f9ff;border-radius:8px;padding:10px;">';
     html += '<div style="font-weight:700;color:#0d4d26;">Detected Academic Year: <b>' +
             escapeHtml(data.academicYear || '—') + '</b></div>';
     html += '<div style="margin-top:6px;font-weight:700;">Terms found: ' + ((data.terms || []).length) + '</div>';
@@ -266,26 +307,69 @@
               escapeHtml(h.holidayName || h.description) + '</div>';
     });
 
+    html += '<div style="margin-top:6px;font-weight:700;">Total events: ' + ((data.events || []).length) + '</div>';
+    if (data.extractMethod) {
+      html += '<div style="font-size:11px;color:#666;margin-top:4px;">Extraction: ' + escapeHtml(data.extractMethod) + '</div>';
+    }
+    if (data.rawTextSnippet) {
+      html += '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:#666;">View raw extracted text (first 500 chars)</summary>' +
+              '<pre style="font-size:10px;background:#fff;padding:6px;border:1px solid #ccc;max-height:150px;overflow:auto;white-space:pre-wrap;">' +
+              escapeHtml(data.rawTextSnippet) + '</pre></details>';
+    }
     html += '</div>';
+
     panel.innerHTML = html;
 
+    const commitBtn = document.getElementById('cal_commitBtn');
+    if (commitBtn) {
+      // Only enable if not waiting for duplicate decision
+      commitBtn.disabled = (dup && dup.exists);
+    }
+  }
+
+  function setCommitMode(mode) {
+    window.__commitMode = mode;
+    const notice = document.getElementById('cal_commitModeNotice');
+    if (notice) notice.textContent = mode === 'replace'
+      ? '✓ Replace mode selected — existing events for this year will be deleted before writing.'
+      : '✓ Append mode selected — new events will be added alongside existing ones.';
     const commitBtn = document.getElementById('cal_commitBtn');
     if (commitBtn) commitBtn.disabled = false;
   }
 
+  function cancelUpload() {
+    uploadedParsed = null;
+    uploadedSource = null;
+    window.__dupCheckResult = null;
+    window.__commitMode = null;
+    closeModal();
+  }
+
   async function commitUpload() {
     if (!uploadedParsed) { showToast('No parsed calendar to commit.'); return; }
+
+    const dup = window.__dupCheckResult;
+    if (dup && dup.exists && !window.__commitMode) {
+      showToast('Choose Replace All or Add to Existing first.', 'warning');
+      return;
+    }
+
     const commitBtn = document.getElementById('cal_commitBtn');
     if (commitBtn) { commitBtn.disabled = true; commitBtn.textContent = 'Committing...'; }
 
     const r = await calCall('CAL_commitParsedCalendar', {
       parsed: uploadedParsed,
       sourceFileName: uploadedSource,
+      mode: window.__commitMode || 'replace',
       session: getSession()
     });
 
     if (r && r.success) {
-      showToast('Calendar committed. Terms and weeks updated.', 'success');
+      showToast('Calendar committed.', 'success');
+      uploadedParsed = null;
+      uploadedSource = null;
+      window.__dupCheckResult = null;
+      window.__commitMode = null;
       closeModal();
       renderCalendarTab();
     } else {
@@ -306,7 +390,6 @@
     const box = document.getElementById('cal_pasteBox');
     if (!box || !box.value.trim()) { showToast('Paste some text first.'); return; }
 
-    // Create a text file from the paste and send through the same path
     const blob = new Blob([box.value], { type: 'text/plain' });
     const f = new File([blob], 'pasted_calendar_' + Date.now() + '.txt', { type: 'text/plain' });
     await uploadCalendarFile(f);
@@ -362,7 +445,7 @@
   }
 
   async function submitHolidayAdjustment(oldDate) {
-    const action = (document.getElementById('cal_adjAction') || {}).value || 'move';
+    const action = document.getElementById('cal_adjAction').value || 'move';
     const newDate = (document.getElementById('cal_adjNewDate') || {}).value || '';
     const note = (document.getElementById('cal_adjNote') || {}).value || '';
 
@@ -401,10 +484,12 @@
     closeModal: closeModal,
     commitUpload: commitUpload,
     parsePasted: parsePasted,
+    setCommitMode: setCommitMode,
+    cancelUpload: cancelUpload,
     openHolidayAdjuster: openHolidayAdjuster,
     submitHolidayAdjustment: submitHolidayAdjustment
   };
 
-  console.log('[CAL] Academic Calendar module loaded.');
+  console.log('[CAL] Academic Calendar module loaded — duplicate detection active.');
 
 })();
