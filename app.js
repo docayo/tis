@@ -1848,6 +1848,169 @@
     setHTML('attendanceTermView', html);
   }
 
+  // ================================================================
+  // ATTENDANCE — Class Analysis (weekly + term totals)
+  // ================================================================
+  function renderClassAnalysisPanel() {
+    if (!attState) return;
+    const st = attState;
+
+    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</h4>';
+    html += '<div style="overflow-x:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:860px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+    html += '<th style="text-align:left;padding:6px;">Week</th>';
+    html += '<th style="padding:6px;">Ending</th>';
+    html += '<th style="padding:6px;">Open<br>(M/A)</th>';
+    html += '<th style="padding:6px;">🌅 M present</th>';
+    html += '<th style="padding:6px;">🌇 A present</th>';
+    html += '<th style="padding:6px;">♂ present</th>';
+    html += '<th style="padding:6px;">♀ present</th>';
+    html += '<th style="padding:6px;">Expected</th>';
+    html += '<th style="padding:6px;">Confirmed</th>';
+    html += '<th style="padding:6px;">%</th>';
+    html += '</tr></thead><tbody>';
+
+    let tM = 0, tA = 0, tMExpected = 0, tAExpected = 0, tBoys = 0, tGirls = 0;
+
+    st.weeks.forEach(function (wk) {
+      let mPres = 0, aPres = 0, boysPres = 0, girlsPres = 0, openDays = 0;
+      const st_ = attState;
+      st.learners.forEach(function (l) {
+        const isBoy  = (l.gender || '').toLowerCase().indexOf('male') === 0 && (l.gender || '').toLowerCase().indexOf('female') !== 0;
+        const isGirl = (l.gender || '').toLowerCase().indexOf('female') === 0;
+        wk.days.forEach(function (d) {
+          if (d.isHoliday || d.isFuture) return;
+          const key = l.id + '|' + d.date;
+          const mark = (st_.editing[key] !== undefined)
+            ? st_.editing[key]
+            : ((d.marksByLearner || {})[l.id] || 'O O');
+          const ma = attRenderMasterToMA(mark);
+          if (ma.M === '\\') { mPres++; if (isBoy) boysPres++; if (isGirl) girlsPres++; }
+          if (ma.A === '/')  { aPres++; if (isBoy) boysPres++; if (isGirl) girlsPres++; }
+        });
+      });
+      // Open days: days in this week that are not holidays and not in the future.
+      openDays = wk.days.filter(function (d) { return !d.isHoliday && !d.isFuture; }).length;
+
+      const expectedM = openDays * st.learners.length;
+      const expectedA = openDays * st.learners.length;
+      const expected  = expectedM + expectedA;
+      const confirmed = mPres + aPres;
+      const pct = expected > 0 ? (confirmed / expected * 100).toFixed(1) : '0.0';
+
+      tM += mPres; tA += aPres;
+      tMExpected += expectedM; tAExpected += expectedA;
+      tBoys += boysPres; tGirls += girlsPres;
+
+      html += '<tr>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + openDays + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + mPres + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + aPres + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + boysPres + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + girlsPres + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + expected + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + confirmed + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + pct + '%</td>' +
+              '</tr>';
+    });
+
+    const tExpected = tMExpected + tAExpected;
+    const tConfirmed = tM + tA;
+    const tPct = tExpected > 0 ? (tConfirmed / tExpected * 100).toFixed(1) : '0.0';
+
+    html += '<tr style="background:#e8f5e9;font-weight:700;">' +
+            '<td style="padding:6px;">TERM</td><td></td><td></td>' +
+            '<td style="padding:6px;text-align:center;">' + tM + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tA + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tBoys + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tGirls + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tExpected + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tConfirmed + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tPct + '%</td>' +
+            '</tr>';
+
+    html += '</tbody></table></div>';
+
+    // Summary strip underneath
+    html += '<div class="stats-grid" style="margin-top:12px;">';
+    html += '<div class="stat-card"><div class="stat-label">Total Times School Open (Term)</div><div class="stat-value">' + (tMExpected) + '</div></div>';
+    html += '<div class="stat-card gold"><div class="stat-label">Total Attendance (Sum)</div><div class="stat-value gold">' + tConfirmed + '</div></div>';
+    html += '<div class="stat-card red"><div class="stat-label">Total Boys Present</div><div class="stat-value red">' + tBoys + '</div></div>';
+    html += '<div class="stat-card blue"><div class="stat-label">Total Girls Present</div><div class="stat-value" style="color:#1a5276;">' + tGirls + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">Average Attendance</div><div class="stat-value green">' + tPct + '%</div></div>';
+    html += '</div>';
+
+    setHTML('analysisBody', html);
+  }
+
+  // ================================================================
+  // ATTENDANCE — Week Signatures panel
+  // ================================================================
+  async function renderSignaturePanel() {
+    if (!attState) return;
+    setHTML('signatureBody', pageLoaderHTML('Loading staff list…'));
+
+    let staffNames = [];
+    try {
+      const r = await window.TIS.listStaff();
+      if (r && r.ok && r.data) {
+        staffNames = r.data
+          .filter(function (s) { return s.status === 'Active' || !s.status; })
+          .map(function (s) { return s.full_name; })
+          .filter(Boolean);
+      }
+    } catch (e) { /* silent */ }
+
+    let html = '';
+    html += '<p style="font-size:11px;color:#666;margin:0 0 10px;">Sign each week as it is completed. Names come from the Staff module.</p>';
+    html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:620px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+    html += '<th style="text-align:left;padding:6px;">Week</th>';
+    html += '<th style="padding:6px;">Ending</th>';
+    html += '<th style="padding:6px;">Logged By</th>';
+    html += '<th style="padding:6px;">Confirmed By</th>';
+    html += '<th style="padding:6px;">Audited By</th>';
+    html += '<th style="padding:6px;">Date</th>';
+    html += '</tr></thead><tbody>';
+
+    attState.weeks.forEach(function (wk) {
+      const opts = function (val) {
+        let o = '<option value="">-- Select --</option>';
+        staffNames.forEach(function (n) {
+          o += '<option value="' + escAttr(n) + '"' + (n === val ? ' selected' : '') + '>' + esc(n) + '</option>';
+        });
+        return o;
+      };
+      const today = new Date().toISOString().slice(0, 10);
+      html += '<tr>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
+        '<td style="padding:4px;border-bottom:1px solid #eee;"><select data-sig="logged" data-wk="' + wk.weekNumber + '" style="width:100%;font-size:11px;">' + opts('') + '</select></td>' +
+        '<td style="padding:4px;border-bottom:1px solid #eee;"><select data-sig="confirmed" data-wk="' + wk.weekNumber + '" style="width:100%;font-size:11px;">' + opts('') + '</select></td>' +
+        '<td style="padding:4px;border-bottom:1px solid #eee;"><select data-sig="audited" data-wk="' + wk.weekNumber + '" style="width:100%;font-size:11px;">' + opts('') + '</select></td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + today + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+    html += '<div style="margin-top:10px;text-align:right;">';
+    html += '<button class="btn btn-success" onclick="attSaveSignatures()">Save Signatures</button>';
+    html += '</div>';
+    setHTML('signatureBody', html);
+  }
+
+  function attSaveSignatures() {
+    // For now, signatures are kept in the DOM (not persisted to Supabase
+    // until we create an attendance_signatures table). Save just confirms
+    // what the operator selected.
+    const rows = document.querySelectorAll('[data-sig="logged"]');
+    let collected = 0;
+    rows.forEach(function (sel) { if (sel.value) collected++; });
+    if (collected === 0) { showToast('Pick at least one week to sign', 'warning'); return; }
+    showToast('Signatures captured locally (' + collected + ' week(s)). Persistence coming next.', 'info');
+  }
   function renderWeekGrid(wk) {
     const st = attState;
     const days = wk.days;
