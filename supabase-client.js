@@ -120,6 +120,163 @@
     } catch (err) { return fail(err); }
   };
 
+  // ---------------- PROMOTION STATUS ----------------
+  // Figures out whether a term promotion is due.
+  // Returns:
+  //   {
+  //     needsTermPromotion: bool,
+  //     activeTerm: { term_type, year, label, end_date },
+  //     nextTerm:   { term_type, year, label },
+  //     pendingLearners: N
+  //   }
+  TIS.getPromotionStatus = async function () {
+    try {
+      const active = await TIS.getActiveTerm();
+      if (!active.ok || !active.data) return ok({ needsTermPromotion: false });
+      const t = active.data;
+
+      // Compute the next term in academic order.
+      let nextType, nextYear;
+      if (t.term_type === '1st') { nextType = '2nd'; nextYear = t.year; }
+      else if (t.term_type === '2nd') { nextType = '3rd'; nextYear = t.year; }
+      else { nextType = '1st'; nextYear = Number(t.year) + 1; }
+
+      // If today's date is before the active term's end_date, no
+      // promotion is due yet.
+      const today = new Date().toISOString().slice(0, 10);
+      const endDate = t.end_date || '';
+      if (!endDate || today <= endDate) {
+        return ok({
+          needsTermPromotion: false,
+          activeTerm: t,
+          nextTerm: { term_type: nextType, year: nextYear }
+        });
+      }
+
+      // Count how many active learners are missing a learner_terms row
+      // for the next term.
+      const sb = await loadSdk();
+      const learnersR = await sb.from('learners').select('id, date_of_withdrawal');
+      if (learnersR.error) return fail(learnersR.error.message);
+      const activeLearnerIds = (learnersR.data || [])
+        .filter(function (l) {
+          const w = (l.date_of_withdrawal || '').toString().trim();
+          return !(w && w !== '' && w !== 'N/A');
+        })
+        .map(function (l) { return l.id; });
+
+      if (activeLearnerIds.length === 0) {
+        return ok({ needsTermPromotion: false, activeTerm: t });
+      }
+
+      const termsR = await sb
+        .from('learner_terms')
+        .select('learner_id')
+        .eq('term_type', nextType)
+        .eq('year', nextYear)
+        .in('learner_id', activeLearnerIds);
+      if (termsR.error) return fail(termsR.error.message);
+
+      const haveIds = {};
+      (termsR.data || []).forEach(function (r) { haveIds[r.learner_id] = true; });
+      const pending = activeLearnerIds.filter(function (id) { return !haveIds[id]; });
+
+      return ok({
+        needsTermPromotion: pending.length > 0,
+        activeTerm: t,
+        nextTerm: { term_type: nextType, year: nextYear },
+        pendingLearners: pending.length,
+        totalActive: activeLearnerIds.length
+      });
+    } catch (err) { return fail(err); }
+  };
+
+  // ---------------- TERM PROMOTION (bulk, no class change) ----------------
+  // Creates learner_terms rows for the next term, carrying forward each
+  // learner's balance_cf as the next term's balance_bf.
+  TIS.termPromote = async function (fromTermType, fromYear, toTermType, toYear, learnerIds) {
+    try {
+      if (!learnerIds || learnerIds.length === 0) return ok({ created: 0 });
+      const sb = await loadSdk();
+
+      // Fetch the from-term rows for all selected learners in one query.
+      const fromR = await sb
+        .from('learner_terms')
+        .select('learner_id, balance_cf, class_name')
+        .eq('term_type', fromTermType)
+        .eq('year', fromYear)
+        .in('learner_id', learnerIds);
+      if (fromR.error) return fail(fromR.error.message);
+      const fromMap = {};
+      (fromR.data || []).forEach(function (r) { fromMap[r.learner_id] = r; });
+
+      // Fetch which learners already have a next-term row so we don't
+      // duplicate.
+      const existingR = await sb
+        .from('learner_terms')
+        .select('learner_id')
+        .eq('term_type', toTermType)
+        .eq('year', toYear)
+        .in('learner_id', learnerIds);
+      if (existingR.error) return fail(existingR.error.message);
+      const existsSet = {};
+      (existingR.data || []).forEach(function (r) { existsSet[r.learner_id] = true; });
+
+      const rowsToInsert = [];
+      learnerIds.forEach(function (id) {
+        if (existsSet[id]) return;
+        const from = fromMap[id];
+        rowsToInsert.push({
+          learner_id: id,
+          term_type: toTermType,
+          year: toYear,
+          class_name: from ? from.class_name : null,
+          balance_bf: from && from.balance_cf ? String(from.balance_cf) : null,
+          total_part_payment: '0',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      });
+
+      if (rowsToInsert.length === 0) return ok({ created: 0 });
+
+      const CHUNK = 100;
+      let created = 0;
+      for (let i = 0; i < rowsToInsert.length; i += CHUNK) {
+        const slice = rowsToInsert.slice(i, i + CHUNK);
+        const ins = await sb.from('learner_terms').insert(slice);
+        if (ins.error) return fail(ins.error.message);
+        created += slice.length;
+      }
+      return ok({ created: created });
+    } catch (err) { return fail(err); }
+  };
+
+  // ---------------- YEAR PROMOTION (class change) ----------------
+  // promotions: array of { learnerId, newClassName }.
+  // Warns about non-standard moves but does not block them.
+  TIS.yearPromote = async function (promotions) {
+    if (!promotions || promotions.length === 0) return ok({ applied: 0 });
+    return TIS.promoteLearners(promotions);
+  };
+
+  // ---------------- CLASS-BASED LEARNER LOOKUP ----------------
+  TIS.getLearnersForClasses = async function (classNames) {
+    try {
+      const sb = await loadSdk();
+      let q = sb.from('learners').select('*').order('name', { ascending: true });
+      if (classNames && classNames.length > 0) {
+        q = q.in('class_name', classNames);
+      }
+      const { data, error } = await q;
+      if (error) return fail(error.message);
+      const filtered = (data || []).filter(function (l) {
+        const w = (l.date_of_withdrawal || '').toString().trim();
+        return !(w && w !== '' && w !== 'N/A');
+      });
+      return ok(filtered);
+    } catch (err) { return fail(err); }
+  };
   TIS.signOut = async function () {
     try {
       const sb = await loadSdk();
