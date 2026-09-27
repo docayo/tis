@@ -20,6 +20,7 @@
     { key: 'reports',          label: 'Reports',             defaultReadAll: false },
     { key: 'calendar',         label: 'Calendar',            defaultReadAll: false },
     { key: 'classes',          label: 'Classes',             defaultReadAll: false },
+    { key: 'terms',            label: 'Terms & Promotion',   defaultReadAll: false },
     { key: 'users',            label: 'Users & Permissions', defaultReadAll: false }
   ];
   const PERMISSION_ACTIONS = ['read', 'write', 'print'];
