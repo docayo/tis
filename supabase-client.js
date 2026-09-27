@@ -129,6 +129,88 @@
     } catch (err) { return fail(err); }
   };
 
+  // ---------------- CLASSES ----------------
+  TIS.listClasses = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('classes')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createClass = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        name:       row.name || row.className,
+        level:      row.level || null,
+        stream:     row.stream || null,
+        next_class: row.next_class || row.nextClass || null,
+        is_active:  true,
+        notes:      row.notes || null
+      };
+      const { data, error } = await sb.from('classes').insert(payload).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.updateClass = async function (id, patch) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('classes').update(patch).eq('id', id).select();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteClass = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('classes').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({});
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getNextClass = async function (currentClassName) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('classes')
+        .select('next_class')
+        .eq('name', currentClassName)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data ? data.next_class : null);
+    } catch (err) { return fail(err); }
+  };
+
+  // ---------------- PROMOTION ----------------
+  // promotions: array of { learnerId, newClassName }
+  TIS.promoteLearners = async function (promotions) {
+    try {
+      if (!promotions || promotions.length === 0) return ok({ applied: 0 });
+      const sb = await loadSdk();
+      const CHUNK = 50;
+      let applied = 0;
+      for (let i = 0; i < promotions.length; i += CHUNK) {
+        const slice = promotions.slice(i, i + CHUNK);
+        await Promise.all(slice.map(function (p) {
+          return sb.from('learners')
+            .update({ class_name: p.newClassName, updated_at: new Date().toISOString() })
+            .eq('id', p.learnerId);
+        }));
+        applied += slice.length;
+      }
+      return ok({ applied: applied });
+    } catch (err) { return fail(err); }
+  };
   TIS.getCurrentProfile = async function () {
     try {
       const sb = await loadSdk();
