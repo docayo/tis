@@ -1353,585 +1353,939 @@
   window.openAddLearnerModal    = openAddLearnerModal;
   window.submitNewLearner       = submitNewLearner;
   window.printLearnerList       = printLearnerList;
-  // ================================================================
-  // [S08] STAFF
-  // ================================================================
    // ================================================================
-  // [S08] STAFF — cards, view, edit, add, photo
+  // [S07] LEARNERS — three-tier record + dropdowns + date pickers
   // ================================================================
-  async function loadStaff() {
-    setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
-    startLoader();
-    const r = await window.TIS.listStaff();
-    stopLoader();
-    if (!r || !r.ok) {
-      setHTML('staffGrid', errorHTML('Could not load staff', r && r.error));
-      return;
+  const CONTACT_LABELS = { father: 'Father', mother: 'Mother', guardian: 'Guardian' };
+  const RELIGION_OPTIONS = ['Christianity', 'Islam', 'Traditionalist'];
+
+  // Cached class list for dropdowns.
+  let __learnerClassesCache = null;
+  async function getClassNamesForDropdown() {
+    if (__learnerClassesCache) return __learnerClassesCache;
+    const r = await window.TIS.listClasses();
+    if (r && r.ok && r.data) {
+      __learnerClassesCache = r.data
+        .filter(function (c) { return c.is_active !== false; })
+        .map(function (c) { return c.name; })
+        .sort();
+    } else {
+      __learnerClassesCache = [];
     }
-    State.cachedStaff = r.data || [];
-    renderStaff(State.cachedStaff);
-    renderStaffStats(State.cachedStaff);
+    return __learnerClassesCache;
   }
 
-  function renderStaff(staff) {
-    if (!staff || staff.length === 0) {
-      setHTML('staffGrid', emptyHTML('fa-user-tie', 'No staff to show'));
+  // Escape helpers used inside templates
+  function parseNum(v) {
+    if (v === null || v === undefined || v === '') return 0;
+    const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+    return isNaN(n) ? 0 : n;
+  }
+  function moneyOrDash(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const s = String(v);
+    if (/^[₦$]/.test(s)) return s;
+    return '₦' + parseNum(s).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtDateOrDash(v) {
+    if (!v) return '—';
+    if (typeof v === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) return v;
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return dd + '/' + mm + '/' + d.getFullYear();
+  }
+  function isoToDateInput(v) {
+    if (!v) return '';
+    const s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  }
+
+  function isAdmin() { return !!(State.profile && (State.profile.role === 'admin' || State.profile.role === 'super_admin')); }
+  function isSuperAdmin() { return !!(State.profile && State.profile.role === 'super_admin'); }
+
+  function contactOrderOf(learner) {
+    const p1 = (learner.contact_priority_1 || '').toLowerCase();
+    const p2 = (learner.contact_priority_2 || '').toLowerCase();
+    const p3 = (learner.contact_priority_3 || '').toLowerCase();
+    const chosen = [p1, p2, p3].filter(function (x) { return CONTACT_LABELS[x]; });
+    const remaining = ['father', 'mother', 'guardian'].filter(function (x) { return chosen.indexOf(x) === -1; });
+    return chosen.concat(remaining).slice(0, 3);
+  }
+  function phoneFor(learner, slot) {
+    const role = contactOrderOf(learner)[slot - 1];
+    if (!role) return { role: null, label: '—', value: '—' };
+    let value = '—';
+    if (role === 'father')   value = learner.father_phone   || '—';
+    if (role === 'mother')   value = learner.mother_phone   || '—';
+    if (role === 'guardian') value = learner.guardian_phone || '—';
+    return { role: role, label: CONTACT_LABELS[role], value: value };
+  }
+
+  // ---------------- Load & grid ----------------
+  async function loadLearners() {
+    setHTML('learnersGrid', pageLoaderHTML('Loading learners…'));
+    startLoader();
+    const r = await window.TIS.listLearners();
+    stopLoader();
+    if (!r || !r.ok) {
+      setHTML('learnersGrid', errorHTML('Could not load learners', r && r.error));
+      return;
+    }
+    State.cachedLearners = r.data || [];
+    renderLearners(State.cachedLearners);
+    renderLearnerStats(State.cachedLearners);
+  }
+
+  function renderLearners(rows) {
+    if (!rows || rows.length === 0) {
+      setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
       return;
     }
     let html = '';
-    staff.forEach(function (s) {
-      const name = s.full_name || [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ') || '';
-      const photo = s.photo_url || '';
-      const badgeColor = (s.status === 'Inactive')
-        ? 'background:#c0392b;color:#fff;'
-        : 'background:rgba(255,255,255,0.08);';
-      html += '<div class="student-card" data-staffid="' + escAttr(s.id) + '">';
+    rows.forEach(function (row) {
+      const pin    = row.pin || '';
+      const name   = row.name || '';
+      const cls    = row.class_name || '';
+      const gender = (row.gender || '').toLowerCase();
+      const photo  = row.photo_url || '';
+      const nameColor = gender.indexOf('female') === 0 ? '#ff6b9d'
+                       : gender.indexOf('male')   === 0 ? '#6ddb9a' : 'white';
+      html += '<div class="student-card" data-pin="' + escAttr(pin) + '">';
       html += '<div class="card-header">';
-      html += '<div class="card-avatar">' + (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
-      html += '<div class="card-title"><h3>' + esc(name) + '</h3>';
-      html += '<div class="pin">' + esc(s.staff_id || s.id || '') + ' • ' + esc(s.department || '') + '</div></div>';
-      html += '<span class="card-badge" style="' + badgeColor + '">' + esc(s.status || 'Active') + '</span>';
-      html += '</div>';
+      html += '<div class="card-avatar">' +
+              (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
+      html += '<div class="card-title">';
+      html += '<h3 style="color:' + nameColor + ';">' + esc(name) + '</h3>';
+      html += '<div class="pin">' + esc(pin) + ' • ' + esc(cls) + '</div>';
+      html += '</div></div>';
       html += '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">';
-      html += '<button type="button" class="btn btn-sm btn-secondary" data-staff-action="view" data-staffid="' + escAttr(s.id) + '"><i class="fas fa-eye"></i> View</button>';
-      if (hasPermission('write_staff')) {
-        html += '<button type="button" class="btn btn-sm btn-primary" data-staff-action="edit" data-staffid="' + escAttr(s.id) + '"><i class="fas fa-pen"></i> Edit</button>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" data-action="view" data-pin="' + escAttr(pin) + '"><i class="fas fa-eye"></i> View</button>';
+      if (hasPermission('write_learners')) {
+        html += '<button type="button" class="btn btn-sm btn-primary" data-action="edit" data-pin="' + escAttr(pin) + '"><i class="fas fa-pen"></i> Edit</button>';
       }
-      if (hasPermission('print_staff')) {
-        html += '<button type="button" class="btn btn-sm btn-gold" data-staff-action="print" data-staffid="' + escAttr(s.id) + '"><i class="fas fa-print"></i> Print</button>';
+      if (hasPermission('print_learners')) {
+        html += '<button type="button" class="btn btn-sm btn-gold" data-action="print" data-pin="' + escAttr(pin) + '"><i class="fas fa-print"></i> Print</button>';
       }
       html += '</div></div>';
     });
-    setHTML('staffGrid', html);
+    setHTML('learnersGrid', html);
 
-    document.querySelectorAll('#staffGrid [data-staff-action]').forEach(function (btn) {
+    document.querySelectorAll('#learnersGrid [data-action]').forEach(function (btn) {
       btn.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
-        const id = btn.dataset.staffid;
-        const action = btn.dataset.staffAction;
-        if (action === 'view')  openStaffProfile(id);
-        else if (action === 'edit') openStaffEditModal(id);
-        else if (action === 'print') printStaffCard(id);
+        const pin = btn.dataset.pin;
+        const action = btn.dataset.action;
+        if (action === 'view')  openLearnerViewModal(pin);
+        else if (action === 'edit')  openLearnerEditModal(pin);
+        else if (action === 'print') openPrintOptionsModal(pin);
       });
     });
   }
 
-  function renderStaffStats(staff) {
-    let active = 0, inactive = 0, teaching = 0, nonTeaching = 0;
-    staff.forEach(function (s) {
-      if ((s.status || 'Active') === 'Active') active++; else inactive++;
-      if ((s.department || '').toLowerCase() === 'teaching') teaching++;
-      else nonTeaching++;
+  function renderLearnerStats(rows) {
+    const total = rows.length;
+    let exited = 0;
+    rows.forEach(function (r) {
+      const w = (r.date_of_withdrawal || '').toString().trim();
+      if (w && w !== '' && w !== 'N/A') exited++;
     });
-    setHTML('staffStats',
-      '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + staff.length + '</div></div>' +
-      '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value gold">' + active + '</div></div>' +
-      '<div class="stat-card red"><div class="stat-label">Inactive</div><div class="stat-value red">' + inactive + '</div></div>' +
-      '<div class="stat-card blue"><div class="stat-label">Teaching</div><div class="stat-value" style="color:#1a5276;">' + teaching + '</div></div>');
+    setHTML('learnerStats',
+      '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div>' +
+      '<div class="stat-card red"><div class="stat-label">Exited</div><div class="stat-value">' + exited + '</div></div>' +
+      '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value">' + (total - exited) + '</div></div>');
   }
 
-  function staffName(s) {
-    if (!s) return '';
-    if (s.full_name) return s.full_name;
-    return [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ');
+  function infoRow(label, value) {
+    const v = (value !== undefined && value !== null && value !== '') ? esc(value) : '—';
+    return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + v + '</span></div>';
   }
 
-  async function openStaffProfile(id) {
+  // ---------------- View modal ----------------
+  async function openLearnerViewModal(pin) {
     closeModal();
     startLoader();
-    const r = await window.TIS.getStaff(id);
-    stopLoader();
-    if (!r || !r.ok || !r.data) { showToast('Staff not found', 'error'); return; }
-    const s = r.data;
-    const name = staffName(s);
-    const photo = s.photo_url || '';
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>' + esc(name) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
-
-    html += '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;">';
-    html += '<div style="width:96px;height:96px;border-radius:50%;overflow:hidden;background:linear-gradient(135deg,#0d4d26,#d4a017);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:32px;flex-shrink:0;">';
-    html += photo ? '<img src="' + esc(photo) + '" style="width:100%;height:100%;object-fit:cover;">' : esc(name.charAt(0) || '?');
-    html += '</div>';
-    html += '<div style="flex:1;min-width:220px;">';
-    html += '<div style="font-weight:800;font-size:15px;color:#0d4d26;">' + esc(name) + '</div>';
-    html += '<div style="font-size:12px;color:#666;">' + esc(s.staff_id || '') + ' · ' + esc(s.department || '') + '</div>';
-    html += '<div style="font-size:12px;color:#666;">' + esc(s.position || s.qualification || '') + '</div>';
-    html += '</div>';
-    html += '<div style="display:flex;flex-direction:column;gap:6px;">';
-    if (hasPermission('write_staff')) {
-      html += '<button class="btn btn-sm btn-warning" onclick="openStaffPhotoModal(\'' + escAttr(id) + '\')"><i class="fas fa-camera"></i> Change photo</button>';
+    const learnerR = await window.TIS.getLearnerByPin(pin);
+    const termsR   = learnerR && learnerR.ok && learnerR.data
+      ? await window.TIS.getLearnerTermForActive(learnerR.data.id) : null;
+    let prevTermRow = null;
+    if (learnerR && learnerR.ok && learnerR.data) {
+      const prevR = await window.TIS.getLearnerTermFor(learnerR.data.id, '3rd', 2025);
+      if (prevR && prevR.ok) prevTermRow = prevR.data;
     }
-    html += '</div>';
+    stopLoader();
+
+    if (!learnerR || !learnerR.ok || !learnerR.data) {
+      showToast('Could not load learner ' + pin, 'error');
+      return;
+    }
+    const d = learnerR.data;
+    const termRow = termsR && termsR.ok ? termsR.data.row : null;
+    const term    = termsR && termsR.ok ? termsR.data.term : null;
+    const termLabel = term ? term.label : 'No active term';
+
+    const canA = true;
+    const canB = isAdmin();
+    const canC = isSuperAdmin();
+
+    const ph1 = phoneFor(d, 1);
+    const ph2 = phoneFor(d, 2);
+    const ph3 = phoneFor(d, 3);
+
+    const tuition     = parseNum(termRow && termRow.tuition);
+    const scholarship = parseNum(termRow && termRow.scholarship);
+    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
+    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
+    const books       = parseNum(termRow && termRow.books);
+    const netBills    = tuition + otherMajor + otherMinor + books;
+    const adjusted    = tuition - scholarship;
+
+    let ppRows = '';
+    if (termRow) {
+      for (let n = 1; n <= 5; n++) {
+        const dt = termRow['part_payment_' + n + '_date'];
+        const am = termRow['part_payment_' + n + '_amount'];
+        if ((!dt || dt === '') && (!am || am === '')) continue;
+        ppRows += '<div class="info-row" style="background:#f7fbf7;">' +
+                  '<span class="info-label">Part Payment ' + n + '</span>' +
+                  '<span class="info-value">' + fmtDateOrDash(dt) + ' — ' + moneyOrDash(am) + '</span></div>';
+      }
+    }
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeLearnerModal()">';
+    html += '<div class="modal-box wide lbModal" onclick="event.stopPropagation()">';
+
+    html += '<div style="background:linear-gradient(135deg,#0d4d26,#1a8a3a);color:#fff;padding:14px 18px;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;gap:14px;">';
+    html += '<div style="display:flex;align-items:center;gap:12px;">';
+    if (d.photo_url) {
+      html += '<img src="' + esc(d.photo_url) + '" style="width:52px;height:52px;border-radius:50%;border:2px solid #fff;object-fit:cover;">';
+    } else {
+      html += '<div style="width:52px;height:52px;border-radius:50%;background:#fff;color:#0d4d26;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px;">' + esc((d.name || '?').charAt(0)) + '</div>';
+    }
+    html += '<div>';
+    html += '<div style="font-weight:800;font-size:15px;letter-spacing:1px;">' + esc(d.name || '') + '</div>';
+    html += '<div style="font-size:11px;opacity:.9;">PIN: ' + esc(d.pin || '') + ' · Class: ' + esc(d.class_name || '') + '</div>';
+    html += '<div style="font-size:11px;opacity:.9;">Active Term: ' + esc(termLabel) + '</div>';
+    html += '</div></div>';
+    html += '<div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" onclick="toggleKeysHelp()" title="Keyboard shortcuts">?</button>';
+    html += '<button type="button" class="close-btn" onclick="closeLearnerModal()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;margin-left:8px;">&times;</button>';
+    html += '</div></div>';
+
+    html += '<div id="lbKeysHelp" style="display:none;background:#e8f5e9;padding:6px 18px;font-size:11px;color:#0d4d26;border-bottom:1px solid #c8e6c9;">';
+    html += '<b>E</b> expand all · <b>C</b> collapse all · <b>P</b> print · <b>Esc</b> close';
     html += '</div>';
 
-    html += '<div class="expandable open lbStaffSec">';
-    html += '<div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Profile</div>';
-    html += '<div class="expandable-body">';
-    html += infoRow('Staff ID', s.staff_id);
-    html += infoRow('Full Name', name);
-    html += infoRow('Gender', s.gender);
-    html += infoRow('Department', s.department);
-    html += infoRow('Phone', s.phone);
-    html += infoRow('Email', s.email);
-    html += infoRow('Employment Date', fmtDateOrDash(s.employment_date));
-    html += infoRow('Qualification', s.qualification);
-    html += infoRow('Graduation Year', s.graduation_year);
-    html += infoRow('Course of Study', s.course_of_study);
-    html += infoRow('Subjects Taught', s.subjects_taught);
-    html += infoRow('Bank', s.bank);
-    html += infoRow('Account Number', s.account_number);
-    html += infoRow('Salary', moneyOrDash(s.salary));
-    html += infoRow('Status', s.status);
-    html += infoRow('Resume Time', s.resume_time);
-    html += infoRow('Close Time', s.close_time);
-    html += infoRow('Late Cutoff', s.late_cutoff);
-    html += infoRow('Early Cutoff', s.early_cutoff);
+    html += '<div style="padding:14px 18px;" id="lbModalBody">';
+
+    if (canA) {
+      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section A — Identity</div><div class="expandable-body">';
+      html += infoRow('Class', d.class_name);
+      html += infoRow('PIN', d.pin);
+      html += infoRow('Learner Name', d.name);
+      html += infoRow('Gender', d.gender);
+      html += infoRow('1st Phone (' + ph1.label + ')', ph1.value);
+      html += infoRow('Account Number', d.account_number);
+      html += infoRow('Clearance Status', termRow ? termRow.cleared : '—');
+      html += infoRow('Clearance Date', termRow ? fmtDateOrDash(termRow.clearance) : '—');
+      html += infoRow('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
+      html += '</div></div>';
+    }
+
+    if (canB) {
+      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
+      html += infoRow('Previous Term Balance B/F', prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(termRow && termRow.balance_bf));
+      html += infoRow('Current Term Tuition', moneyOrDash(termRow && termRow.tuition));
+      html += infoRow('Scholarship Amount', moneyOrDash(termRow && termRow.scholarship));
+      html += infoRow('Adjusted Tuition Total', moneyOrDash(adjusted));
+      if (ppRows) {
+        html += '<div style="margin:8px 0 4px;font-weight:700;font-size:11px;color:#0d4d26;">Part Payments</div>';
+        html += ppRows;
+      }
+      html += infoRow('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
+      html += infoRow('Books', moneyOrDash(termRow && termRow.books));
+      html += infoRow('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
+      html += infoRow('Net Bills', moneyOrDash(netBills));
+      html += infoRow('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
+      html += infoRow('Blood Group / Genotype', d.blood_group);
+      html += infoRow('Allergy', d.allergy);
+      html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
+      html += '</div></div>';
+    }
+
+    if (canC) {
+      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section C — History & Origin</div><div class="expandable-body">';
+      html += infoRow('Class Before Admission', d.class_before_admission);
+      html += infoRow('Date of Admission', d.date_of_admission);
+      html += infoRow('Class Admitted Into', d.class_admitted_into);
+      html += infoRow('LIN', d.lin);
+      html += infoRow('Exit Class', d.class_at_withdrawal);
+      html += infoRow('Exit Reason', d.exit_reason);
+      html += infoRow('Religion', d.religion);
+      html += infoRow('Date of Birth', d.date_of_birth);
+      html += infoRow('Parents Name', d.parents_name);
+      html += infoRow('Address', d.address);
+      html += infoRow('State of Origin', d.state_of_origin);
+      html += infoRow('LGA of Origin', d.lga_of_origin);
+      html += infoRow('State of Birth', d.state_of_birth);
+      html += infoRow('LGA of Birth', d.lga_of_birth);
+      html += infoRow('3rd Phone (' + ph3.label + ')', ph3.value);
+      html += '</div></div>';
+    }
+
+    html += '</div>';
+
+    html += '<div style="padding:12px 18px;border-top:1px solid #e6e9f0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">';
+    html += '<button class="btn btn-secondary" onclick="closeLearnerModal()">Close (Esc)</button>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    if (hasPermission('write_learners')) {
+      html += '<button class="btn btn-warning" onclick="openPartPaymentModal(' + d.id + ')">Update Payment</button>';
+    }
+    if (hasPermission('print_learners')) {
+      html += '<button class="btn btn-gold" onclick="openPrintOptionsModal(\'' + escAttr(pin) + '\')">Print (P)</button>';
+    }
+    if (hasPermission('write_learners')) {
+      html += '<button class="btn btn-primary" onclick="openLearnerEditModal(\'' + escAttr(pin) + '\')">Edit</button>';
+    }
     html += '</div></div>';
+
+    html += '</div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  function closeLearnerModal() { closeModal(); }
+  window.toggleKeysHelp = function () {
+    const el = document.getElementById('lbKeysHelp');
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  };
+
+  // ---------------- Edit modal (dropdowns + date pickers) ----------------
+  async function openLearnerEditModal(pin) {
+    closeModal();
+    startLoader();
+    const r = await window.TIS.getLearnerByPin(pin);
+    stopLoader();
+    if (!r || !r.ok || !r.data) { showToast('Could not load learner ' + pin, 'error'); return; }
+    const d = r.data;
+    const order = contactOrderOf(d);
+    const classNames = await getClassNamesForDropdown();
+
+    const textField = function (id, label, value, type) {
+      const t = type || 'text';
+      return '<div class="form-group"><label>' + esc(label) + '</label>' +
+             '<input id="' + id + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
+    };
+    const classField = function (id, label, value) {
+      let opts = '<option value="">— Select class —</option>';
+      classNames.forEach(function (c) {
+        opts += '<option value="' + escAttr(c) + '"' + (c === value ? ' selected' : '') + '>' + esc(c) + '</option>';
+      });
+      // Add the current value if it's not in the list so we don't lose it.
+      if (value && classNames.indexOf(value) === -1) {
+        opts += '<option value="' + escAttr(value) + '" selected>' + esc(value) + '</option>';
+      }
+      return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + id + '">' + opts + '</select></div>';
+    };
+    const religionField = function (id, label, value) {
+      let opts = '<option value="">— Select —</option>';
+      RELIGION_OPTIONS.forEach(function (rel) {
+        opts += '<option value="' + escAttr(rel) + '"' + (rel === value ? ' selected' : '') + '>' + esc(rel) + '</option>';
+      });
+      if (value && RELIGION_OPTIONS.indexOf(value) === -1) {
+        opts += '<option value="' + escAttr(value) + '" selected>' + esc(value) + '</option>';
+      }
+      return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + id + '">' + opts + '</select></div>';
+    };
+    const genderField = function (id, label, value) {
+      const opts = ['', 'Male', 'Female'].map(function (g) {
+        return '<option value="' + g + '"' + (g === value ? ' selected' : '') + '>' + (g || '—') + '</option>';
+      }).join('');
+      return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + id + '">' + opts + '</select></div>';
+    };
+    const phoneField = function (id, label, value, slotIndex) {
+      const current = order[slotIndex - 1] || '';
+      let opts = '<option value="">—</option>';
+      ['father', 'mother', 'guardian'].forEach(function (role) {
+        opts += '<option value="' + role + '"' + (current === role ? ' selected' : '') + '>' + CONTACT_LABELS[role] + '</option>';
+      });
+      return '<div class="form-group"><label>' + esc(label) + ' <span style="font-weight:400;color:#666;">(who is this?)</span></label>' +
+             '<div style="display:flex;gap:6px;">' +
+             '<input id="' + id + '" value="' + escAttr(value || '') + '" style="flex:2;">' +
+             '<select id="' + id + '_who" style="flex:1;">' + opts + '</select>' +
+             '</div></div>';
+    };
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Edit — ' + esc(d.name) + '</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+
+    html += '<div class="form-row">' + textField('ed_name', 'Name', d.name) + classField('ed_class_name', 'Class', d.class_name) + '</div>';
+    html += '<div class="form-row">' + genderField('ed_gender', 'Gender', d.gender) + textField('ed_date_of_birth', 'Date of Birth', isoToDateInput(d.date_of_birth), 'date') + '</div>';
+
+    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin:8px 0;">';
+    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Contact priority — which number is 1st, 2nd, 3rd</div>';
+    html += phoneField('ed_prio_father', "Father's phone", d.father_phone, 1);
+    html += phoneField('ed_prio_mother', "Mother's phone", d.mother_phone, 2);
+    html += phoneField('ed_prio_guardian', "Guardian's phone", d.guardian_phone, 3);
+    html += '</div>';
+
+    html += '<div class="form-row">' + textField('ed_account_number', 'Account Number', d.account_number) + textField('ed_blood_group', 'Blood Group / Genotype', d.blood_group) + '</div>';
+    html += '<div class="form-row">' + religionField('ed_religion', 'Religion', d.religion) + textField('ed_allergy', 'Allergy', d.allergy) + '</div>';
+    html += textField('ed_parents_name', 'Parents Name', d.parents_name);
+    html += '<div class="form-group"><label>Address</label><textarea id="ed_address" rows="2">' + esc(d.address || '') + '</textarea></div>';
+    html += '<div class="form-row">' +
+      textField('ed_state_of_origin', 'State of Origin', d.state_of_origin) +
+      textField('ed_lga_of_origin', 'LGA of Origin', d.lga_of_origin) + '</div>';
+    html += '<div class="form-row">' +
+      textField('ed_state_of_birth', 'State of Birth', d.state_of_birth) +
+      textField('ed_lga_of_birth', 'LGA of Birth', d.lga_of_birth) + '</div>';
+    html += textField('ed_lin', 'LIN', d.lin);
+
+    const EXIT_REASONS = [
+      'Completion of Studies',
+      'Inability to Pay Tuition',
+      'Change of Location',
+      'Parent Differences',
+      'School Vs Parent Ideology',
+      'Discipline / Expulsion',
+      'Health Grounds',
+      'Life'
+    ];
+    let exitOpts = '<option value="">— none —</option>';
+    EXIT_REASONS.forEach(function (rs) {
+      exitOpts += '<option value="' + escAttr(rs) + '"' + (rs === d.exit_reason ? ' selected' : '') + '>' + esc(rs) + '</option>';
+    });
+    html += '<div class="form-group"><label>Exit Reason</label><select id="ed_exit_reason">' + exitOpts + '</select></div>';
 
     html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Close</button> ';
-    if (hasPermission('write_staff')) {
-      html += '<button class="btn btn-primary" onclick="openStaffEditModal(\'' + escAttr(id) + '\')">Edit</button>';
+    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" onclick="saveLearnerEdits(' + d.id + ')">Save</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  async function saveLearnerEdits(id) {
+    const get = function (id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const fields = {
+      name:             get('ed_name'),
+      class_name:       get('ed_class_name'),
+      gender:           get('ed_gender'),
+      date_of_birth:    get('ed_date_of_birth'),
+      father_phone:     get('ed_prio_father'),
+      mother_phone:     get('ed_prio_mother'),
+      guardian_phone:   get('ed_prio_guardian'),
+      account_number:   get('ed_account_number'),
+      blood_group:      get('ed_blood_group'),
+      religion:         get('ed_religion'),
+      allergy:          get('ed_allergy'),
+      parents_name:     get('ed_parents_name'),
+      address:          get('ed_address'),
+      state_of_origin:  get('ed_state_of_origin'),
+      lga_of_origin:    get('ed_lga_of_origin'),
+      state_of_birth:   get('ed_state_of_birth'),
+      lga_of_birth:     get('ed_lga_of_birth'),
+      lin:              get('ed_lin'),
+      exit_reason:      get('ed_exit_reason')
+    };
+    const p1 = get('ed_prio_father_who');
+    const p2 = get('ed_prio_mother_who');
+    const p3 = get('ed_prio_guardian_who');
+
+    startLoader();
+    const r = await window.TIS.updateLearner(id, fields);
+    if (r && r.ok) {
+      await window.TIS.setLearnerContactPriority(id, { p1: p1, p2: p2, p3: p3 });
     }
-    html += '</div>';
-    html += '</div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  function closeStaffModal() {
-    document.querySelectorAll('.modal-overlay').forEach(function (el) { el.remove(); });
-    setHTML('modalContainer', '');
-  }
-
-  async function openStaffEditModal(id) {
-    closeModal();
-    startLoader();
-    const r = await window.TIS.getStaff(id);
     stopLoader();
-    if (!r || !r.ok || !r.data) { showToast('Staff not found', 'error'); return; }
-    const s = r.data;
-
-    const f = function (fid, label, value, type) {
-      const t = type || 'text';
-      return '<div class="form-group"><label>' + esc(label) + '</label><input id="' + fid + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
-    };
-    const sel = function (fid, label, value, options) {
-      let o = '';
-      options.forEach(function (opt) {
-        o += '<option value="' + escAttr(opt) + '"' + (opt === value ? ' selected' : '') + '>' + esc(opt) + '</option>';
-      });
-      return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + fid + '">' + o + '</select></div>';
-    };
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Edit — ' + esc(staffName(s)) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
-
-    html += '<div class="form-row">' + f('es_staff_id', 'Staff ID', s.staff_id) + f('es_surname', 'Surname', s.surname) + '</div>';
-    html += '<div class="form-row">' + f('es_first_name', 'First Name', s.first_name) + f('es_middle_name', 'Middle Name', s.middle_name) + '</div>';
-    html += '<div class="form-row">' +
-            sel('es_gender', 'Gender', s.gender, ['', 'Male', 'Female']) +
-            f('es_phone', 'Phone', s.phone) + '</div>';
-    html += '<div class="form-row">' +
-            f('es_email', 'Email', s.email) +
-            sel('es_department', 'Department', s.department, ['', 'Teaching', 'Admin', 'Support']) + '</div>';
-    html += '<div class="form-row">' +
-            f('es_qualification', 'Qualification', s.qualification) +
-            f('es_employment_date', 'Employment Date', s.employment_date, 'text') + '</div>';
-    html += '<div class="form-row">' +
-            f('es_graduation_year', 'Graduation Year', s.graduation_year) +
-            f('es_course_of_study', 'Course of Study', s.course_of_study) + '</div>';
-    html += f('es_subjects_taught', 'Subjects Taught', s.subjects_taught);
-    html += '<div class="form-row">' +
-            f('es_bank', 'Bank', s.bank) +
-            f('es_account_number', 'Account Number', s.account_number) + '</div>';
-    html += '<div class="form-row">' +
-            f('es_salary', 'Salary (₦)', s.salary) +
-            f('es_position', 'Position', s.position) + '</div>';
-    html += '<div class="form-row">' +
-            f('es_resume_time', 'Resume Time', s.resume_time) +
-            f('es_close_time', 'Close Time', s.close_time) + '</div>';
-    html += '<div class="form-row">' +
-            f('es_late_cutoff', 'Late Cutoff', s.late_cutoff) +
-            f('es_early_cutoff', 'Early Cutoff', s.early_cutoff) + '</div>';
-    html += '<div class="form-row">' +
-            sel('es_status', 'Status', s.status, ['Active', 'Inactive']) + '</div>';
-
-    html += '<div style="text-align:right;margin-top:14px;">';
-    html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="saveStaffEdits(\'' + escAttr(id) + '\')">Save</button>';
-    html += '</div>';
-    html += '</div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  async function saveStaffEdits(id) {
-    const patch = {
-      staff_id:        $('es_staff_id')        ? $('es_staff_id').value.trim() : '',
-      surname:         $('es_surname')         ? $('es_surname').value.trim() : '',
-      first_name:      $('es_first_name')      ? $('es_first_name').value.trim() : '',
-      middle_name:     $('es_middle_name')     ? $('es_middle_name').value.trim() : '',
-      gender:          $('es_gender')          ? $('es_gender').value : '',
-      phone:           $('es_phone')           ? $('es_phone').value.trim() : '',
-      email:           $('es_email')           ? $('es_email').value.trim() : '',
-      department:      $('es_department')      ? $('es_department').value : '',
-      qualification:   $('es_qualification')   ? $('es_qualification').value.trim() : '',
-      employment_date: $('es_employment_date') ? $('es_employment_date').value.trim() : '',
-      graduation_year: $('es_graduation_year') ? $('es_graduation_year').value.trim() : '',
-      course_of_study: $('es_course_of_study') ? $('es_course_of_study').value.trim() : '',
-      subjects_taught: $('es_subjects_taught') ? $('es_subjects_taught').value.trim() : '',
-      bank:            $('es_bank')            ? $('es_bank').value.trim() : '',
-      account_number:  $('es_account_number')  ? $('es_account_number').value.trim() : '',
-      salary:          $('es_salary')          ? $('es_salary').value.trim() : '',
-      position:        $('es_position')        ? $('es_position').value.trim() : '',
-      resume_time:     $('es_resume_time')     ? $('es_resume_time').value.trim() : '',
-      close_time:      $('es_close_time')      ? $('es_close_time').value.trim() : '',
-      late_cutoff:     $('es_late_cutoff')     ? $('es_late_cutoff').value.trim() : '',
-      early_cutoff:    $('es_early_cutoff')    ? $('es_early_cutoff').value.trim() : '',
-      status:          $('es_status')          ? $('es_status').value : 'Active'
-    };
-    patch.full_name = [patch.surname, patch.first_name, patch.middle_name].filter(Boolean).join(' ');
-
-    startLoader();
-    const r = await window.TIS.updateStaff(id, patch);
-    stopLoader();
-    if (r && r.ok) { showToast('Staff updated', 'success'); closeStaffModal(); loadStaff(); }
+    if (r && r.ok) { showToast('Learner updated', 'success'); closeModal(); loadLearners(); }
     else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
   }
 
-  function openAddStaffModal() {
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Add Staff</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+  // ---------------- Add learner ----------------
+  function openAddLearnerModal() {
+    getClassNamesForDropdown().then(function (classNames) {
+      let classOpts = '<option value="">— Select class —</option>';
+      classNames.forEach(function (c) { classOpts += '<option value="' + escAttr(c) + '">' + esc(c) + '</option>'; });
 
-    html += '<div class="form-row"><div class="form-group"><label>Staff ID</label><input id="ns_staff_id"></div>' +
-            '<div class="form-group"><label>Surname</label><input id="ns_surname"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>First Name</label><input id="ns_first_name"></div>' +
-            '<div class="form-group"><label>Middle Name</label><input id="ns_middle_name"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Gender</label><select id="ns_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
-            '<div class="form-group"><label>Phone</label><input id="ns_phone"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Email</label><input id="ns_email"></div>' +
-            '<div class="form-group"><label>Department</label><select id="ns_department"><option value="">—</option><option>Teaching</option><option>Admin</option><option>Support</option></select></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Qualification</label><input id="ns_qualification"></div>' +
-            '<div class="form-group"><label>Employment Date</label><input id="ns_employment_date" placeholder="01-Jan-2026"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Resume Time</label><input id="ns_resume_time" value="07:00"></div>' +
-            '<div class="form-group"><label>Close Time</label><input id="ns_close_time" value="16:30"></div></div>';
+      let relOpts = '<option value="">— Select —</option>';
+      RELIGION_OPTIONS.forEach(function (rel) { relOpts += '<option value="' + escAttr(rel) + '">' + esc(rel) + '</option>'; });
 
-    html += '<div style="text-align:right;margin-top:14px;">';
-    html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="submitNewStaff()">Add staff</button>';
-    html += '</div>';
-    html += '</div></div>';
-    setHTML('modalContainer', html);
+      const f = function (id, label, value, type) {
+        const t = type || 'text';
+        return '<div class="form-group"><label>' + esc(label) + '</label>' +
+               '<input id="' + id + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
+      };
+
+      let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+      html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+      html += '<div class="modal-header"><h2>Add New Learner</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+
+      html += '<div class="form-row">' +
+              f('nl_pin', 'PIN', '') +
+              f('nl_name', 'Learner Name', '') + '</div>';
+      html += '<div class="form-row">' +
+              '<div class="form-group"><label>Class</label><select id="nl_class_name">' + classOpts + '</select></div>' +
+              '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
+              '</div>';
+      html += '<div class="form-row">' +
+              f('nl_date_of_birth', 'Date of Birth', '', 'date') +
+              f('nl_blood_group', 'Blood Group / Genotype', '') + '</div>';
+      html += '<div class="form-row">' +
+              f('nl_father_phone', "Father's Phone", '') +
+              f('nl_mother_phone', "Mother's Phone", '') + '</div>';
+      html += '<div class="form-row">' +
+              f('nl_guardian_phone', "Guardian's Phone", '') +
+              f('nl_account_number', 'Account Number', '') + '</div>';
+      html += '<div class="form-row">' +
+              '<div class="form-group"><label>Religion</label><select id="nl_religion">' + relOpts + '</select></div>' +
+              f('nl_allergy', 'Allergy', '') + '</div>';
+      html += f('nl_parents_name', 'Parents Name', '');
+      html += '<div class="form-group"><label>Address</label><textarea id="nl_address" rows="2"></textarea></div>';
+      html += '<div class="form-row">' +
+              f('nl_state_of_origin', 'State of Origin', '') +
+              f('nl_lga_of_origin', 'LGA of Origin', '') + '</div>';
+      html += '<div class="form-row">' +
+              f('nl_state_of_birth', 'State of Birth', '') +
+              f('nl_lga_of_birth', 'LGA of Birth', '') + '</div>';
+      html += f('nl_lin', 'LIN', '');
+
+      html += '<div style="text-align:right;margin-top:14px;">';
+      html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
+      html += '<button class="btn btn-success" onclick="submitNewLearner()">Add learner</button>';
+      html += '</div></div></div>';
+      setHTML('modalContainer', html);
+    });
   }
 
-  async function submitNewStaff() {
-    const surname = $('ns_surname') ? $('ns_surname').value.trim() : '';
-    const firstName = $('ns_first_name') ? $('ns_first_name').value.trim() : '';
-    const middleName = $('ns_middle_name') ? $('ns_middle_name').value.trim() : '';
+  async function submitNewLearner() {
+    const get = function (id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
     const row = {
-      staff_id: $('ns_staff_id') ? $('ns_staff_id').value.trim() : '',
-      surname: surname,
-      first_name: firstName,
-      middle_name: middleName,
-      full_name: [surname, firstName, middleName].filter(Boolean).join(' '),
-      gender: $('ns_gender') ? $('ns_gender').value : '',
-      phone: $('ns_phone') ? $('ns_phone').value.trim() : '',
-      email: $('ns_email') ? $('ns_email').value.trim() : '',
-      department: $('ns_department') ? $('ns_department').value : '',
-      qualification: $('ns_qualification') ? $('ns_qualification').value.trim() : '',
-      employment_date: $('ns_employment_date') ? $('ns_employment_date').value.trim() : '',
-      resume_time: $('ns_resume_time') ? $('ns_resume_time').value.trim() : '07:00',
-      close_time: $('ns_close_time') ? $('ns_close_time').value.trim() : '16:30',
-      status: 'Active'
+      pin:             get('nl_pin'),
+      name:            get('nl_name'),
+      class_name:      get('nl_class_name'),
+      gender:          get('nl_gender'),
+      date_of_birth:   get('nl_date_of_birth'),
+      blood_group:     get('nl_blood_group'),
+      father_phone:    get('nl_father_phone'),
+      mother_phone:    get('nl_mother_phone'),
+      guardian_phone:  get('nl_guardian_phone'),
+      account_number:  get('nl_account_number'),
+      religion:        get('nl_religion'),
+      allergy:         get('nl_allergy'),
+      parents_name:    get('nl_parents_name'),
+      address:         get('nl_address'),
+      state_of_origin: get('nl_state_of_origin'),
+      lga_of_origin:   get('nl_lga_of_origin'),
+      state_of_birth:  get('nl_state_of_birth'),
+      lga_of_birth:    get('nl_lga_of_birth'),
+      lin:             get('nl_lin')
     };
-    if (!row.staff_id || !row.full_name) { showToast('Staff ID and name are required', 'warning'); return; }
+    if (!row.pin || !row.name) { showToast('PIN and Name are required', 'warning'); return; }
 
     startLoader();
-    const r = await window.TIS.createStaff(row);
+    const existing = await window.TIS.getLearnerByPin(row.pin);
+    if (existing && existing.ok && existing.data) {
+      stopLoader();
+      showToast('PIN ' + row.pin + ' already exists', 'error');
+      return;
+    }
+    const r = await window.TIS.createLearner(row);
     stopLoader();
-    if (r && r.ok) { showToast('Staff added', 'success'); closeStaffModal(); loadStaff(); }
-    else showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error');
-  }
-
-  function openStaffPhotoModal(id) {
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
-    html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Photo — ' + esc(id) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
-    html += '<div style="text-align:center;">';
-    html += '<input type="file" id="staffPhotoInput" accept="image/*" style="margin-bottom:14px;">';
-    html += '<div id="staffPhotoPreview" style="width:120px;height:120px;margin:10px auto;border-radius:50%;border:3px solid #d4a017;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f5f5f5;color:#666;font-size:12px;">preview</div>';
-    html += '<button class="btn btn-primary" onclick="submitStaffPhoto(\'' + escAttr(id) + '\')">Upload photo</button>';
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-
-    const inp = $('staffPhotoInput');
-    if (inp) {
-      inp.addEventListener('change', function (e) {
-        const f = e.target.files[0];
-        if (!f) return;
-        const reader = new FileReader();
-        reader.onload = function (ev) {
-          $('staffPhotoPreview').innerHTML = '<img src="' + ev.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
-          window.__staffPhotoDataUrl = ev.target.result;
-        };
-        reader.readAsDataURL(f);
-      });
+    if (r && r.ok) {
+      showToast('Learner added: ' + row.name, 'success');
+      closeModal();
+      loadLearners();
+    } else {
+      showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error');
     }
   }
 
-  async function submitStaffPhoto(id) {
-    const dataUrl = window.__staffPhotoDataUrl;
-    if (!dataUrl) { showToast('Choose a photo first', 'warning'); return; }
+  // ---------------- Part payment (date picker) ----------------
+  async function openPartPaymentModal(learnerId) {
+    closeModal();
+    startLoader();
+    const r = await window.TIS.getLearnerTermForActive(learnerId);
+    stopLoader();
+    if (!r || !r.ok || !r.data.term) { showToast('No active term set', 'error'); return; }
+    const term = r.data.term;
+    const row  = r.data.row;
 
-    // Extract the base64 payload.
-    const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (!m) { showToast('Invalid image', 'error'); return; }
-    const mime = m[1];
-    const b64 = m[2];
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeLearnerModal()">';
+    html += '<div class="modal-box" style="max-width:440px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Update Payment</h2><button class="close-btn" onclick="closeLearnerModal()">&times;</button></div>';
+    html += '<p style="font-size:12px;margin:0 0 10px;">' + esc(term.label) + '</p>';
+    if (row) {
+      html += '<p style="font-size:12px;margin:0 0 10px;">' +
+              'Bill: ' + moneyOrDash(row.bill) +
+              ' · Other: ' + moneyOrDash(row.other_bill) +
+              ' · Paid: ' + moneyOrDash(row.total_part_payment) +
+              ' · Balance: ' + moneyOrDash(row.balance_cf) + '</p>';
+    }
+    html += '<div class="form-group"><label>Amount Paid (₦)</label><input id="pp_amount" type="number" step="0.01" placeholder="0.00"></div>';
+    html += '<div class="form-group"><label>Date</label><input id="pp_date" type="date" value="' + new Date().toISOString().slice(0,10) + '"></div>';
+    html += '<div class="form-group"><label>Mode</label><select id="pp_mode"><option>Cash</option><option>Transfer</option><option>POS</option><option>Cheque</option></select></div>';
+    html += '<div style="text-align:right;margin-top:12px;">';
+    html += '<button class="btn btn-secondary" onclick="closeLearnerModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" onclick="submitPartPayment(' + learnerId + ', \'' + escAttr(term.term_type) + '\', ' + term.year + ')">Record</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  async function submitPartPayment(learnerId, termType, year) {
+    const amount = $('pp_amount') ? $('pp_amount').value : '';
+    const date   = $('pp_date')   ? $('pp_date').value   : '';
+    const mode   = $('pp_mode')   ? $('pp_mode').value   : 'Cash';
+    if (!amount || Number(amount) <= 0) { showToast('Enter a positive amount', 'warning'); return; }
 
     startLoader();
-    // Ask Supabase storage to store it as a blob.
-    // We use the SDK indirectly by way of a signed URL upload, or by
-    // sending the base64 to the client wrapper if such a function exists.
-    // For now, we store the data URL directly in the photo_url column.
-    const r = await window.TIS.updateStaff(id, { photo_url: dataUrl });
+    const r = await window.TIS.recordPartPayment(learnerId, termType, year, amount, date, mode);
     stopLoader();
 
     if (r && r.ok) {
-      showToast('Photo saved', 'success');
-      window.__staffPhotoDataUrl = null;
-      closeStaffModal();
-      loadStaff();
+      showToast('Payment recorded (slot ' + r.data.slot + ')', 'success');
+      closeModal();
+      const l = State.cachedLearners.find(function (x) { return x.id === learnerId; });
+      if (l) openLearnerViewModal(l.pin);
     } else {
-      showToast('Upload failed: ' + ((r && r.error) || 'unknown'), 'error');
+      showToast('Could not record: ' + ((r && r.error) || 'unknown'), 'error');
     }
   }
 
-  function printStaffCard(id) {
-    const s = (State.cachedStaff || []).find(function (x) { return String(x.id) === String(id); });
-    if (!s) { showToast('Staff not found', 'warning'); return; }
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-    const name = staffName(s);
-    let html = '<html><head><title>' + esc(name) + '</title>' +
-      '<style>body{font-family:Arial;padding:24px;}' +
-      '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:8px;}' +
-      '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0;font-size:20px;}' +
-      'table{width:100%;border-collapse:collapse;margin-top:12px;}' +
-      'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:12px;}td.k{color:#666;width:35%;}' +
-      '</style></head><body>';
-    html += '<div class="hdr">';
-    html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
-    html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1><div style="font-style:italic;color:#666;font-size:12px;">Scientia est potentia</div></div>';
-    html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
-    html += '</div>';
-    html += '<h2 style="margin-top:16px;color:#0b6623;">' + esc(name) + ' — ' + esc(s.staff_id || '') + '</h2>';
-    html += '<table>';
-    const rows = [
-      ['Department', s.department],
-      ['Gender', s.gender],
-      ['Phone', s.phone],
-      ['Email', s.email],
-      ['Employment Date', s.employment_date],
-      ['Qualification', s.qualification],
-      ['Graduation Year', s.graduation_year],
-      ['Course of Study', s.course_of_study],
-      ['Subjects Taught', s.subjects_taught],
-      ['Bank', s.bank],
-      ['Account Number', s.account_number],
-      ['Salary', s.salary],
-      ['Status', s.status]
-    ];
-    rows.forEach(function (r) {
-      html += '<tr><td class="k">' + esc(r[0]) + '</td><td>' + esc(r[1] || '') + '</td></tr>';
-    });
-    html += '</table></body></html>';
-    w.document.write(html); w.document.close(); w.print();
-  }
-
-  function initStaffTab() {
-    const input = $('staffSearchInput');
-    if (input) {
-      input.addEventListener('input', debounce(function () {
-        const q = input.value.trim().toLowerCase();
-        if (!q) { renderStaff(State.cachedStaff); return; }
-        const filtered = (State.cachedStaff || []).filter(function (s) {
-          return (staffName(s) || '').toLowerCase().indexOf(q) !== -1 ||
-                 (s.staff_id || '').toLowerCase().indexOf(q) !== -1 ||
-                 (s.phone || '').indexOf(q) !== -1 ||
-                 (s.email || '').toLowerCase().indexOf(q) !== -1;
-        });
-        renderStaff(filtered);
-      }, 250));
-    }
-    const add = $('btnAddStaff');     if (add && !add.__wired) { add.addEventListener('click', openAddStaffModal); add.__wired = true; }
-    const rf  = $('btnRefreshStaff'); if (rf  && !rf.__wired)  { rf.addEventListener('click', loadStaff); rf.__wired = true; }
-    const pr  = $('btnPrintStaff');   if (pr  && !pr.__wired)  { pr.addEventListener('click', function () { if (State.cachedStaff && State.cachedStaff.length) printStaffList(); else showToast('Load the list first', 'warning'); }); pr.__wired = true; }
-  }
-
-  function printStaffList() {
-    if (!State.cachedStaff.length) { showToast('Load the list first', 'warning'); return; }
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-    let html = '<html><head><title>Staff</title><style>' +
-      'body{font-family:Arial;padding:20px;}h1{color:#0b6623;text-align:center;}' +
-      'table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:white;padding:8px;font-size:11px;}' +
-      'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}</style></head><body>';
-    html += '<h1>THE IDEAL SCHOOLS — Staff List</h1>';
-    html += '<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Phone</th><th>Status</th></tr></thead><tbody>';
-    State.cachedStaff.forEach(function (s) {
-      html += '<tr><td>' + esc(s.staff_id || '') + '</td><td>' + esc(staffName(s)) + '</td>' +
-              '<td>' + esc(s.department || '') + '</td><td>' + esc(s.phone || '') + '</td>' +
-              '<td>' + esc(s.status || 'Active') + '</td></tr>';
-    });
-    html += '</tbody></table></body></html>';
-    w.document.write(html); w.document.close(); w.print();
-  }
-
-  // ---------------- Globals ----------------
-  window.loadStaff            = loadStaff;
-  window.openStaffProfile     = openStaffProfile;
-  window.openStaffEditModal   = openStaffEditModal;
-  window.saveStaffEdits       = saveStaffEdits;
-  window.openAddStaffModal    = openAddStaffModal;
-  window.submitNewStaff       = submitNewStaff;
-  window.openStaffPhotoModal  = openStaffPhotoModal;
-  window.submitStaffPhoto     = submitStaffPhoto;
-  window.printStaffCard       = printStaffCard;
-  window.printStaffList       = printStaffList;
-  window.closeStaffModal      = closeStaffModal;
-  async function loadStaff() {
-    setHTML('staffGrid', pageLoaderHTML('Loading staff...'));
-    startLoader();
-    const r = await window.TIS.listStaff();
-    stopLoader();
-    if (!r.ok) { setHTML('staffGrid', errorHTML('Could not load staff', r.error)); return; }
-    State.cachedStaff = r.data || [];
-    renderStaff(State.cachedStaff);
-    renderStaffStats(State.cachedStaff);
-  }
-
-  function renderStaff(staff) {
-    if (!staff || staff.length === 0) { setHTML('staffGrid', emptyHTML('fa-user-tie', 'No staff to show')); return; }
-    let html = '';
-    staff.forEach(s => {
-      const name = s.full_name || '';
-      const photo = s.photo_url || '';
-      html += '<div class="student-card" data-staffid="' + escAttr(s.id) + '">' +
-        '<div class="card-header">' +
-        '<div class="card-avatar">' + (photo ? '<img src="' + esc(photo) + '">' : esc(name.charAt(0) || '?')) + '</div>' +
-        '<div class="card-title"><h3>' + esc(name) + '</h3>' +
-        '<div class="pin">' + esc(s.staff_id || '') + ' • ' + esc(s.department || '') + '</div></div>' +
-        '<span class="card-badge">' + esc(s.status || 'Active') + '</span>' +
-        '</div></div>';
-    });
-    setHTML('staffGrid', html);
-    document.querySelectorAll('#staffGrid .student-card').forEach(card => {
-      card.addEventListener('click', () => openStaffProfile(card.dataset.staffid));
-    });
-  }
-
-  function renderStaffStats(staff) {
-    let active = 0, inactive = 0;
-    staff.forEach(s => { if (s.status === 'Active') active++; else inactive++; });
-    setHTML('staffStats',
-      '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + staff.length + '</div></div>' +
-      '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value">' + active + '</div></div>' +
-      '<div class="stat-card red"><div class="stat-label">Inactive</div><div class="stat-value">' + inactive + '</div></div>');
-  }
-
-  async function openStaffProfile(id) {
-    startLoader();
-    const r = await window.TIS.getStaff(id);
-    stopLoader();
-    if (!r.ok || !r.data) { showToast('Staff not found', 'error'); return; }
-    const s = r.data;
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
-      '<div class="modal-box" onclick="event.stopPropagation()">' +
-      '<div class="modal-header"><h2>' + esc(s.full_name) + '</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-    html += infoRow('ID', s.staff_id) + infoRow('Gender', s.gender) + infoRow('Department', s.department) +
-            infoRow('Phone', s.phone) + infoRow('Email', s.email) + infoRow('Employment', fmtDate(s.employment_date)) +
-            infoRow('Qualification', s.qualification) + infoRow('Resume', s.resume_time) + infoRow('Close', s.close_time);
-    html += '</div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  function openAddStaffModal() {
-    const html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
-      '<div class="modal-box" onclick="event.stopPropagation()">' +
-      '<div class="modal-header"><h2>Add Staff</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>' +
-      '<div class="form-row"><div class="form-group"><label>Staff ID</label><input id="ns_staffId"></div><div class="form-group"><label>Surname</label><input id="ns_surname"></div></div>' +
-      '<div class="form-row"><div class="form-group"><label>First Name</label><input id="ns_firstName"></div><div class="form-group"><label>Middle</label><input id="ns_middleName"></div></div>' +
-      '<div class="form-row"><div class="form-group"><label>Gender</label><select id="ns_gender"><option>Male</option><option>Female</option></select></div><div class="form-group"><label>Phone</label><input id="ns_phone"></div></div>' +
-      '<div class="form-row"><div class="form-group"><label>Email</label><input id="ns_email"></div><div class="form-group"><label>Department</label><select id="ns_department"><option>Teaching</option><option>Admin</option><option>Support</option></select></div></div>' +
-      '<div class="form-row"><div class="form-group"><label>Qualification</label><input id="ns_qualification"></div><div class="form-group"><label>Employment Date</label><input id="ns_employmentDate" type="date"></div></div>' +
-      '<div style="text-align:right;margin-top:16px;"><button class="btn btn-success" id="ns_submit" type="button">Save staff</button></div>' +
-      '</div></div>';
-    setHTML('modalContainer', html);
-    const btn = $('ns_submit');
-    if (btn) btn.addEventListener('click', submitNewStaff);
-  }
-
-  async function submitNewStaff() {
-    const first = $('ns_firstName').value.trim();
-    const surname = $('ns_surname').value.trim();
-    const middle = $('ns_middleName').value.trim();
-    const row = {
-      staff_id: $('ns_staffId').value.trim(),
-      surname: surname,
-      first_name: first,
-      middle_name: middle,
-      full_name: [surname, first, middle].filter(Boolean).join(' '),
-      gender: $('ns_gender').value,
-      phone: $('ns_phone').value.trim(),
-      email: $('ns_email').value.trim(),
-      department: $('ns_department').value,
-      qualification: $('ns_qualification').value.trim(),
-      employment_date: $('ns_employmentDate').value || null,
-      status: 'Active'
-    };
-    if (!row.staff_id || !row.full_name) { showToast('ID and name required', 'warning'); return; }
-    startLoader();
-    const r = await window.TIS.createStaff(row);
-    stopLoader();
-    if (!r.ok) { showToast(r.error || 'Could not add staff', 'error'); return; }
-    showToast('Staff added', 'success');
+  // ---------------- Print chooser + print ----------------
+  async function openPrintOptionsModal(pin) {
     closeModal();
-    loadStaff();
+    startLoader();
+    const r = await window.TIS.getLearnerByPin(pin);
+    stopLoader();
+    if (!r || !r.ok || !r.data) { showToast('Could not load learner ' + pin, 'error'); return; }
+
+    const canA = true;
+    const canB = isAdmin();
+    const canC = isSuperAdmin();
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+    html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Print Options</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+    html += '<p style="font-size:12px;margin:0 0 8px;">Choose sections and paper size.</p>';
+    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:10px;">';
+    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Sections</div>';
+    if (canA) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secA" checked> Section A — Identity</label>';
+    if (canB) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secB" checked> Section B — Fees</label>';
+    if (canC) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secC" checked> Section C — History & Origin</label>';
+    html += '</div>';
+    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:10px;">';
+    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Paper</div>';
+    html += '<label style="display:block;padding:4px 0;"><input type="radio" name="pp_paper" value="A4" checked> A4 (full page)</label>';
+    html += '<label style="display:block;padding:4px 0;"><input type="radio" name="pp_paper" value="80mm"> POS / Thermal (80mm)</label>';
+    html += '</div>';
+    html += '<div style="text-align:right;margin-top:12px;">';
+    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-gold" onclick="printLearnerCard(\'' + escAttr(pin) + '\')">Print</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
   }
 
-  function initStaffTab() {
-    const input = $('staffSearchInput');
-    if (input) {
-      input.addEventListener('input', debounce(() => {
-        const q = input.value.trim().toLowerCase();
-        if (!q) { renderStaff(State.cachedStaff); return; }
-        renderStaff(State.cachedStaff.filter(s =>
-          (s.full_name || '').toLowerCase().indexOf(q) !== -1 ||
-          (s.staff_id || '').toLowerCase().indexOf(q) !== -1 ||
-          (s.phone || '').indexOf(q) !== -1));
-      }, 250));
-    }
-    const add = $('btnAddStaff');       if (add) add.addEventListener('click', openAddStaffModal);
-    const rf  = $('btnRefreshStaff');   if (rf)  rf.addEventListener('click', loadStaff);
-    const pr  = $('btnPrintStaff');     if (pr)  pr.addEventListener('click', printStaff);
-  }
+  async function printLearnerCard(pin) {
+    const secA = document.getElementById('pp_secA');
+    const secB = document.getElementById('pp_secB');
+    const secC = document.getElementById('pp_secC');
+    const wantA = secA ? secA.checked : true;
+    const wantB = secB ? secB.checked : isAdmin();
+    const wantC = secC ? secC.checked : isSuperAdmin();
+    const paperEl = document.querySelector('input[name="pp_paper"]:checked');
+    const paper = paperEl ? paperEl.value : 'A4';
 
-  function printStaff() {
-    if (!State.cachedStaff.length) { showToast('Load the list first', 'warning'); return; }
+    startLoader();
+    const r = await window.TIS.getLearnerByPin(pin);
+    const termsR = r && r.ok && r.data ? await window.TIS.getLearnerTermForActive(r.data.id) : null;
+    stopLoader();
+    if (!r || !r.ok || !r.data) { showToast('Could not load learner', 'error'); return; }
+    const d = r.data;
+    const termRow = termsR && termsR.ok ? termsR.data.row : null;
+    const term    = termsR && termsR.ok ? termsR.data.term : null;
+    const termLabel = term ? term.label : 'No active term';
+
+    const ph1 = phoneFor(d, 1);
+    const ph2 = phoneFor(d, 2);
+    const ph3 = phoneFor(d, 3);
+
+    const tuition     = parseNum(termRow && termRow.tuition);
+    const scholarship = parseNum(termRow && termRow.scholarship);
+    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
+    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
+    const books       = parseNum(termRow && termRow.books);
+    const netBills    = tuition + otherMajor + otherMinor + books;
+    const adjusted    = tuition - scholarship;
+
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-    let html = '<html><head><title>Staff</title></head><body><h1>The Ideal Schools — Staff List</h1>';
-    html += '<table border="1" cellpadding="6" style="border-collapse:collapse;width:100%"><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Phone</th></tr></thead><tbody>';
-    State.cachedStaff.forEach(s => {
-      html += '<tr><td>' + esc(s.staff_id) + '</td><td>' + esc(s.full_name) + '</td><td>' + esc(s.department) + '</td><td>' + esc(s.phone) + '</td></tr>';
+
+    const cssA4 = 'body{font-family:Arial;padding:24px;color:#111;}' +
+                  '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:10px;}' +
+                  '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0 0 4px;font-size:22px;}' +
+                  'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
+                  '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
+                  '.info-label{color:#666;}.info-value{font-weight:600;}';
+    const css80  = '@page{size:80mm auto;margin:3mm;}body{font-family:Arial;font-size:11px;color:#000;}' +
+                   '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:6px;}' +
+                   'h1{font-size:14px;margin:0;}h2{font-size:11px;margin:6px 0 2px;border-bottom:1px dotted #000;}' +
+                   '.info-row{display:flex;justify-content:space-between;font-size:10px;padding:2px 0;}' +
+                   '.info-label{color:#333;}.info-value{font-weight:700;}';
+
+    let html = '<html><head><title>' + esc(d.name) + '</title><style>' + (paper === '80mm' ? css80 : cssA4) + '</style></head><body>';
+    html += '<div class="hdr">';
+    if (paper === 'A4') html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
+    html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
+            (paper === 'A4' ? '<div style="font-style:italic;color:#666;font-size:12px;">Scientia est potentia</div>' : '') +
+            '</div>';
+    if (paper === 'A4') html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
+    html += '</div>';
+    html += '<h2 style="margin-top:14px;">' + esc(d.name) + ' — ' + esc(d.pin) + '</h2>';
+    html += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Class: ' + esc(d.class_name) + ' · Active Term: ' + esc(termLabel) + '</div>';
+
+    const rowFn = function (label, value) {
+      return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + esc(value) + '</span></div>';
+    };
+
+    if (wantA) {
+      html += '<h2>Section A — Identity</h2>';
+      html += rowFn('Class', d.class_name || '—');
+      html += rowFn('PIN', d.pin || '—');
+      html += rowFn('Name', d.name || '—');
+      html += rowFn('Gender', d.gender || '—');
+      html += rowFn('1st Phone (' + ph1.label + ')', ph1.value);
+      html += rowFn('Account', d.account_number || '—');
+      html += rowFn('Clearance', (termRow && termRow.cleared) || '—');
+      html += rowFn('Clearance Date', (termRow && fmtDateOrDash(termRow.clearance)) || '—');
+      html += rowFn('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
+    }
+    if (wantB) {
+      html += '<h2>Section B — Fees (' + termLabel + ')</h2>';
+      html += rowFn('Tuition', moneyOrDash(termRow && termRow.tuition));
+      html += rowFn('Scholarship', moneyOrDash(termRow && termRow.scholarship));
+      html += rowFn('Adjusted Tuition', moneyOrDash(adjusted));
+      if (termRow) {
+        for (let n = 1; n <= 5; n++) {
+          const dt = termRow['part_payment_' + n + '_date'];
+          const am = termRow['part_payment_' + n + '_amount'];
+          if ((!dt || dt === '') && (!am || am === '')) continue;
+          html += rowFn('Part Payment ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
+        }
+      }
+      html += rowFn('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
+      html += rowFn('Books', moneyOrDash(termRow && termRow.books));
+      html += rowFn('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
+      html += rowFn('Net Bills', moneyOrDash(netBills));
+      html += rowFn('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
+      html += rowFn('Blood Group / Genotype', d.blood_group || '—');
+      html += rowFn('Allergy', d.allergy || '—');
+      html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
+    }
+    if (wantC) {
+      html += '<h2>Section C — History & Origin</h2>';
+      html += rowFn('Class Before Admission', d.class_before_admission || '—');
+      html += rowFn('Date of Admission', d.date_of_admission || '—');
+      html += rowFn('Class Admitted Into', d.class_admitted_into || '—');
+      html += rowFn('LIN', d.lin || '—');
+      html += rowFn('Exit Class', d.class_at_withdrawal || '—');
+      html += rowFn('Exit Reason', d.exit_reason || '—');
+      html += rowFn('Religion', d.religion || '—');
+      html += rowFn('Date of Birth', d.date_of_birth || '—');
+      html += rowFn('Parents Name', d.parents_name || '—');
+      html += rowFn('Address', d.address || '—');
+      html += rowFn('State of Origin', d.state_of_origin || '—');
+      html += rowFn('LGA of Origin', d.lga_of_origin || '—');
+      html += rowFn('State of Birth', d.state_of_birth || '—');
+      html += rowFn('LGA of Birth', d.lga_of_birth || '—');
+      html += rowFn('3rd Phone (' + ph3.label + ')', ph3.value);
+    }
+
+    html += '</body></html>';
+    w.document.write(html); w.document.close();
+    setTimeout(function () { w.print(); }, 250);
+    closeModal();
+  }
+
+  // ---------------- Live search ----------------
+  let learnerSearchTimer = null;
+  function learnerLiveSearch() {
+    if (learnerSearchTimer) clearTimeout(learnerSearchTimer);
+    learnerSearchTimer = setTimeout(function () {
+      const el = document.getElementById('learnerSearchInput');
+      const q = el ? el.value.trim() : '';
+      if (!q) { renderLearners(State.cachedLearners); return; }
+      const lower = q.toLowerCase();
+      const filtered = State.cachedLearners.filter(function (r) {
+        return (r.name || '').toLowerCase().indexOf(lower) !== -1 ||
+               (r.pin || '').toLowerCase().indexOf(lower) !== -1 ||
+               (r.father_phone || '').indexOf(q) !== -1 ||
+               (r.mother_phone || '').indexOf(q) !== -1 ||
+               (r.guardian_phone || '').indexOf(q) !== -1 ||
+               (r.account_number || '').indexOf(q) !== -1;
+      });
+      renderLearners(filtered);
+    }, 200);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const inp = document.getElementById('learnerSearchInput');
+    if (inp && !inp.__wired) { inp.addEventListener('input', learnerLiveSearch); inp.__wired = true; }
+  });
+
+  // Keyboard shortcuts in the modal.
+  document.addEventListener('keydown', function (e) {
+    const modalBody = document.getElementById('lbModalBody');
+    if (!modalBody) return;
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'escape') { closeLearnerModal(); e.preventDefault(); return; }
+    if (k === 'e') { document.querySelectorAll('.lbSec').forEach(function (s) { s.classList.add('open'); }); e.preventDefault(); }
+    else if (k === 'c') { document.querySelectorAll('.lbSec').forEach(function (s) { s.classList.remove('open'); }); e.preventDefault(); }
+    else if (k === 'p') {
+      if (hasPermission('print_learners')) {
+        const btn = modalBody.parentElement.querySelector('.btn-gold');
+        if (btn) btn.click();
+      }
+      e.preventDefault();
+    }
+  });
+
+  // ---------------- Toolbar wiring ----------------
+  function initLearnersTab() {
+    const refresh = document.getElementById('btnRefreshLearners');
+    if (refresh && !refresh.__wired) { refresh.addEventListener('click', function (e) { e.preventDefault(); loadLearners(); }); refresh.__wired = true; }
+    const printBtn = document.getElementById('btnPrintLearners');
+    if (printBtn && !printBtn.__wired) { printBtn.addEventListener('click', function (e) { e.preventDefault(); printLearnerList(); }); printBtn.__wired = true; }
+    const dl = document.getElementById('btnDownloadTemplate');
+    if (dl && !dl.__wired) { dl.addEventListener('click', function (e) { e.preventDefault(); downloadLearnerTemplate(); }); dl.__wired = true; }
+    const upBtn = document.getElementById('btnUploadUpdates');
+    const upFile = document.getElementById('learnerUploadFile');
+    if (upBtn && upFile && !upBtn.__wired) {
+      upBtn.addEventListener('click', function (e) { e.preventDefault(); upFile.click(); });
+      upFile.addEventListener('change', function (ev) { const f = ev.target.files[0]; if (f) uploadLearnerUpdates(f); upFile.value = ''; });
+      upBtn.__wired = true;
+    }
+    const add = document.getElementById('btnAddLearner');
+    if (add && !add.__wired) { add.addEventListener('click', function (e) { e.preventDefault(); openAddLearnerModal(); }); add.__wired = true; }
+  }
+
+  function downloadLearnerTemplate() {
+    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded — reload the page', 'error'); return; }
+    const columns = [
+      'PIN','LEARNERS NAME','CLASS','GENDER','DATE OF BIRTH',
+      'FATHERS PHONE NUMBER','MOTHERS PHONE NUMBER','GUARDIAN PHONE NUMBER',
+      'ACCOUNT NUMBER','BLOOD GROUP','RELIGION','ALLERGY',
+      'PARENTS NAME','ADDRESS','STATE OF ORIGIN','LGA OF ORIGIN',
+      'STATE OF BIRTH','LGA OF BIRTH','LIN'
+    ];
+    const sample = [{
+      'PIN': 'TIS0001', 'LEARNERS NAME': 'SAMPLE LEARNER', 'CLASS': 'JSS 1', 'GENDER': 'Male',
+      'DATE OF BIRTH': '2015-01-01', 'FATHERS PHONE NUMBER': '08000000000',
+      'RELIGION': 'Islam'
+    }];
+    const ws = XLSX.utils.json_to_sheet(sample, { header: columns });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Learners');
+    XLSX.writeFile(wb, 'TIS_Learners_Template_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+    showToast('Template downloaded', 'success');
+  }
+
+  async function uploadLearnerUpdates(file) {
+    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded — reload the page', 'error'); return; }
+    if (!confirm('Upload "' + file.name + '"?\n\nRows matching an existing PIN will be updated. New PINs will be created.')) return;
+    startLoader();
+    let wb;
+    try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
+    catch (e) { stopLoader(); showToast('Could not read the file', 'error'); return; }
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    if (!rows.length) { stopLoader(); showToast('No rows in that sheet', 'warning'); return; }
+
+    const FIELD_MAP = {
+      'PIN': 'pin', 'LEARNERS NAME': 'name', 'CLASS': 'class_name', 'GENDER': 'gender',
+      'DATE OF BIRTH': 'date_of_birth',
+      'FATHERS PHONE NUMBER': 'father_phone', 'MOTHERS PHONE NUMBER': 'mother_phone',
+      'GUARDIAN PHONE NUMBER': 'guardian_phone', 'ACCOUNT NUMBER': 'account_number',
+      'BLOOD GROUP': 'blood_group', 'RELIGION': 'religion', 'ALLERGY': 'allergy',
+      'PARENTS NAME': 'parents_name', 'ADDRESS': 'address',
+      'STATE OF ORIGIN': 'state_of_origin', 'LGA OF ORIGIN': 'lga_of_origin',
+      'STATE OF BIRTH': 'state_of_birth', 'LGA OF BIRTH': 'lga_of_birth',
+      'LIN': 'lin'
+    };
+
+    let updated = 0, created = 0, failed = 0;
+    const errors = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const pin = String(row['PIN'] || '').trim();
+      if (!pin) { failed++; errors.push('Row ' + (i + 2) + ': no PIN'); continue; }
+      const patch = {};
+      Object.keys(FIELD_MAP).forEach(function (col) {
+        if (row[col] !== undefined && row[col] !== '') patch[FIELD_MAP[col]] = String(row[col]).trim();
+      });
+      if (!Object.keys(patch).length) { failed++; continue; }
+
+      const existing = await window.TIS.getLearnerByPin(pin);
+      if (existing && existing.ok && existing.data) {
+        const r = await window.TIS.updateLearner(existing.data.id, patch);
+        if (r && r.ok) updated++; else { failed++; errors.push(pin); }
+      } else {
+        const r = await window.TIS.createLearner(patch);
+        if (r && r.ok) created++; else { failed++; errors.push(pin); }
+      }
+    }
+    stopLoader();
+    const msg = 'Updated ' + updated + ' · Created ' + created + ' · Failed ' + failed;
+    if (failed === 0) showToast(msg, 'success');
+    else { showToast(msg + ' — see console for details', 'warning'); console.warn('[Upload errors]', errors); }
+    loadLearners();
+  }
+
+  function printLearnerList() {
+    const rows = State.cachedLearners || [];
+    if (!rows.length) { showToast('Load the list first', 'warning'); return; }
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+    let html = '<html><head><title>Learners</title><style>' +
+      'body{font-family:Arial;padding:20px;}h1{color:#0b6623;text-align:center;margin:0 0 12px;}' +
+      'table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:#fff;padding:8px;font-size:11px;text-align:left;}' +
+      'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}' +
+      '.m{color:#1a5276;font-weight:600;}.f{color:#c0392b;font-weight:600;}</style></head><body>';
+    html += '<h1>THE IDEAL SCHOOLS — Learners List</h1>';
+    html += '<div style="text-align:center;font-size:11px;color:#666;margin-bottom:10px;">Printed ' + new Date().toLocaleString() + ' · ' + rows.length + ' learners</div>';
+    html += '<table><thead><tr><th>Class</th><th>PIN</th><th>Name</th><th>Gender</th><th>Father Phone</th><th>Mother Phone</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      const g = (r.gender || '').toLowerCase();
+      const cls = g.indexOf('female') === 0 ? 'f' : (g.indexOf('male') === 0 ? 'm' : '');
+      html += '<tr><td>' + esc(r.class_name || '') + '</td><td>' + esc(r.pin || '') + '</td>' +
+              '<td class="' + cls + '">' + esc(r.name || '') + '</td>' +
+              '<td>' + esc(r.gender || '') + '</td>' +
+              '<td>' + esc(r.father_phone || '') + '</td><td>' + esc(r.mother_phone || '') + '</td></tr>';
     });
     html += '</tbody></table></body></html>';
-    w.document.write(html); w.document.close(); w.print();
+    w.document.write(html); w.document.close(); setTimeout(function () { w.print(); }, 250);
   }
+
+  window.loadLearners           = loadLearners;
+  window.openLearnerViewModal   = openLearnerViewModal;
+  window.openLearnerEditModal   = openLearnerEditModal;
+  window.saveLearnerEdits       = saveLearnerEdits;
+  window.openAddLearnerModal    = openAddLearnerModal;
+  window.submitNewLearner       = submitNewLearner;
+  window.openPartPaymentModal   = openPartPaymentModal;
+  window.submitPartPayment      = submitPartPayment;
+  window.openPrintOptionsModal  = openPrintOptionsModal;
+  window.printLearnerCard       = printLearnerCard;
+  window.printLearnerList       = printLearnerList;
+  window.closeLearnerModal      = closeLearnerModal;
+  window.initLearnersTab        = initLearnersTab;
+  window.downloadLearnerTemplate = downloadLearnerTemplate;
+  window.uploadLearnerUpdates   = uploadLearnerUpdates;
   // ================================================================
   // [S09] TERMS  (promotion: term + year, class-based + special)
   // ================================================================
