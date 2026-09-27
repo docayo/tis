@@ -3102,43 +3102,179 @@
     });
   }
 
-  // ================================================================
-  // [S14] QR
+   // ================================================================
+  // [S14] QR — staff clock-in token
   // ================================================================
   async function loadActiveQR() {
-    setHTML('qrContent', pageLoaderHTML('Loading QR code...'));
-    const r = await window.TIS.getSetting('qr_active_token');
-    if (!r.ok || !r.data) {
-      setHTML('qrContent', emptyHTML('fa-qrcode', 'No active QR code', 'Generate one to let staff clock in.'));
+    setHTML('qrContent', pageLoaderHTML('Loading QR code…'));
+    const r = await window.TIS.getActiveQRToken();
+    if (!r || !r.ok) {
+      setHTML('qrContent', errorHTML('Could not load QR code', r && r.error));
       return;
     }
-    const token = r.data;
-    const appUrl = window.location.origin + window.location.pathname;
-    const payload = appUrl + '?qrtoken=' + encodeURIComponent(token);
-    const url = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' + encodeURIComponent(payload);
-    let html = '<div class="card-bg qr-box"><img src="' + esc(url) + '" alt="QR code">';
-    html += '<p style="font-size:11px;margin-top:10px;">Token: <code>' + esc(token) + '</code></p>';
-    html += '<div style="margin-top:12px;"><a href="' + esc(url) + '" target="_blank" class="btn btn-primary"><i class="fas fa-download"></i> Download</a></div></div>';
+    if (!r.data) {
+      setHTML('qrContent', emptyHTML('fa-qrcode', 'No active QR code',
+        'Click Generate New QR to create one.'));
+      return;
+    }
+    renderQR(r.data);
+  }
+
+  function renderQR(row) {
+    const token = row.token || '';
+    const base = window.location.origin + window.location.pathname;
+    const payload = base + '?qrtoken=' + encodeURIComponent(token);
+    const imgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=10&data=' +
+                   encodeURIComponent(payload);
+
+    const generated = row.generateddate ? new Date(row.generateddate).toLocaleString() : '—';
+    const expires   = row.expirydate   ? new Date(row.expirydate).toLocaleDateString()  : '—';
+
+    let html = '<div class="card-bg qr-box" style="text-align:center;padding:24px;">';
+    html += '<img src="' + esc(imgUrl) + '" alt="QR code" style="max-width:340px;width:100%;border:6px solid #d4a017;border-radius:14px;background:#fff;padding:8px;">';
+    html += '<div style="margin-top:14px;font-size:12px;color:#666;">';
+    html += '<div>Token: <code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;">' + esc(token) + '</code></div>';
+    html += '<div>Generated: ' + esc(generated) + '</div>';
+    html += '<div>Expires: ' + esc(expires) + '</div>';
+    html += '</div>';
+    html += '<div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">';
+    html += '<a href="' + esc(imgUrl) + '" target="_blank" class="btn btn-primary"><i class="fas fa-download"></i> Open Full Size</a> ';
+    html += '<button class="btn btn-secondary" onclick="copyQRToken(\'' + escAttr(token) + '\')"><i class="fas fa-copy"></i> Copy Token</button>';
+    html += '</div>';
+    html += '<div style="margin-top:14px;font-size:11px;color:#666;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.5;">';
+    html += 'Print this QR code and post it at the school gate. Staff scan it with their phone camera to clock in. ';
+    html += 'The camera opens the URL encoded in the code, which records their clock-in automatically.';
+    html += '</div></div>';
     setHTML('qrContent', html);
   }
 
   async function generateQR() {
-    if (!confirm('Generate a new QR code? The current one stops working.')) return;
-    const token = 'QR' + Date.now() + Math.random().toString(36).substring(2, 10);
+    if (!confirm('Generate a new QR code?\n\nThe current one stops working immediately. Staff must use the new code from now on.')) return;
+
     startLoader();
-    const r1 = await window.TIS.setSetting('qr_active_token', token);
-    const r2 = await window.TIS.setSetting('qr_generated_at', new Date().toISOString());
+    const r = await window.TIS.generateQRToken(
+      (State.profile && State.profile.name) || 'Portal'
+    );
     stopLoader();
-    if (!r1.ok || !r2.ok) { showToast('Could not generate QR', 'error'); return; }
-    showToast('New QR code generated', 'success');
-    loadActiveQR();
+
+    if (r && r.ok) {
+      showToast('New QR code generated', 'success');
+      renderQR(r.data);
+    } else {
+      showToast('Could not generate QR: ' + ((r && r.error) || 'unknown'), 'error');
+    }
+  }
+
+  function copyQRToken(token) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(token).then(function () {
+        showToast('Token copied', 'success');
+      }, function () {
+        showToast('Copy manually: ' + token, 'info');
+      });
+    } else {
+      showToast('Copy manually: ' + token, 'info');
+    }
   }
 
   function initQRTab() {
-    const r1 = $('btnGenerateQR'); if (r1) r1.addEventListener('click', generateQR);
-    const r2 = $('btnShowActiveQR'); if (r2) r2.addEventListener('click', loadActiveQR);
+    const g = document.getElementById('btnGenerateQR');
+    if (g && !g.__wired) {
+      g.addEventListener('click', function (e) { e.preventDefault(); generateQR(); });
+      g.__wired = true;
+    }
+    const s = document.getElementById('btnShowActiveQR');
+    if (s && !s.__wired) {
+      s.addEventListener('click', function (e) { e.preventDefault(); loadActiveQR(); });
+      s.__wired = true;
+    }
+    // Load once on tab entry.
+    loadActiveQR();
   }
 
+  // ---------- QR SCAN HANDLER (runs at boot if the URL contains ?qrtoken=) ----------
+  async function handleQRScanIfPresent() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('qrtoken');
+    if (!token) return false;
+
+    // Confirm the token is still active.
+    startLoader();
+    const r = await window.TIS.getQRTokenByValue(token);
+    stopLoader();
+
+    if (!r || !r.ok || !r.data || r.data.isactive !== true) {
+      document.body.innerHTML =
+        '<div style="font-family:Arial;padding:40px;text-align:center;color:#c0392b;">' +
+        '<h1>Invalid or expired QR code</h1>' +
+        '<p>The code you scanned is no longer active. Ask the school office for the current one.</p>' +
+        '</div>';
+      return true;
+    }
+
+    // Ask the user for their staff ID, then record a clock-in.
+    const staffId = prompt('Enter your Staff ID to clock in:');
+    if (!staffId) {
+      document.body.innerHTML =
+        '<div style="font-family:Arial;padding:40px;text-align:center;">' +
+        '<h1>Clock-in cancelled</h1><p>Reload the page or scan the QR code again to try.</p></div>';
+      return true;
+    }
+
+    // Look up the staff.
+    startLoader();
+    const staffR = await window.TIS.listStaff();
+    stopLoader();
+
+    const staff = (staffR && staffR.ok ? staffR.data : []).find(function (s) {
+      return String(s.staff_id || '').toUpperCase() === String(staffId).trim().toUpperCase();
+    });
+
+    if (!staff) {
+      document.body.innerHTML =
+        '<div style="font-family:Arial;padding:40px;text-align:center;color:#c0392b;">' +
+        '<h1>Staff ID not found</h1><p>Check the ID and try again, or contact the office.</p>' +
+        '<p style="font-size:13px;color:#666;">You entered: ' + esc(staffId) + '</p></div>';
+      return true;
+    }
+
+    // Record clock-in for today.
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dateISO = now.toISOString().slice(0, 10);
+
+    startLoader();
+    const upR = await window.TIS.upsertStaffAttendance({
+      staff_id:        staff.id,
+      attendance_date: dateISO,
+      clock_in:        t,
+      status:          'Present',
+      logged_by:       'QR scan'
+    });
+    stopLoader();
+
+    if (upR && upR.ok) {
+      document.body.innerHTML =
+        '<div style="font-family:Arial;padding:40px;text-align:center;">' +
+        '<h1 style="color:#0d4d26;">✓ Clocked in</h1>' +
+        '<p style="font-size:16px;">' + esc(staff.full_name || staffId) + '</p>' +
+        '<p style="font-size:14px;color:#666;">at <strong>' + t + '</strong> on ' + dateISO + '</p>' +
+        '<p style="margin-top:20px;"><a href="' + window.location.pathname + '" style="color:#0d4d26;">Back to portal</a></p>' +
+        '</div>';
+    } else {
+      document.body.innerHTML =
+        '<div style="font-family:Arial;padding:40px;text-align:center;color:#c0392b;">' +
+        '<h1>Clock-in failed</h1>' +
+        '<p>' + esc((upR && upR.error) || 'unknown error') + '</p></div>';
+    }
+    return true;
+  }
+
+  window.loadActiveQR    = loadActiveQR;
+  window.generateQR      = generateQR;
+  window.copyQRToken     = copyQRToken;
+  window.handleQRScanIfPresent = handleQRScanIfPresent;
+  window.initQRTab       = initQRTab;
   // ================================================================
   // [S15] REPORTS
   // ================================================================
