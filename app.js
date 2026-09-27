@@ -3358,8 +3358,8 @@
     const imgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=10&data=' +
                    encodeURIComponent(payload);
 
-    const generated = row.generateddate ? new Date(row.generateddate).toLocaleString() : '—';
-    const expires   = row.expirydate   ? new Date(row.expirydate).toLocaleDateString()  : '—';
+const generated = row.generated_at ? new Date(row.generated_at).toLocaleString() : '—';
+const expires   = row.expires_at   ? new Date(row.expires_at).toLocaleDateString()  : '—';
 
     let html = '<div class="card-bg qr-box" style="text-align:center;padding:24px;">';
     html += '<img src="' + esc(imgUrl) + '" alt="QR code" style="max-width:340px;width:100%;border:6px solid #d4a017;border-radius:14px;background:#fff;padding:8px;">';
@@ -3434,7 +3434,7 @@
     const r = await window.TIS.getQRTokenByValue(token);
     stopLoader();
 
-    if (!r || !r.ok || !r.data || r.data.isactive !== true) {
+if (!r || !r.ok || !r.data || r.data.is_active !== true) {
       document.body.innerHTML =
         '<div style="font-family:Arial;padding:40px;text-align:center;color:#c0392b;">' +
         '<h1>Invalid or expired QR code</h1>' +
