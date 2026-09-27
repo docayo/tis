@@ -297,7 +297,7 @@
     }
   }
 
-  // [CAL-FE-07] PASTE FALLBACK (server parses as if it were a text file)
+  // [CAL-FE-07] PASTE FALLBACK
   function showPasteFallback() {
     const el = document.getElementById('cal_pasteFallback');
     if (el) el.open = true;
@@ -306,23 +306,11 @@
     const box = document.getElementById('cal_pasteBox');
     if (!box || !box.value.trim()) { showToast('Paste some text first.'); return; }
 
-    // Upload the paste as a text file to Drive via base64 (small size, safe)
-    const blob = new Blob([box.value], { type: 'text/plain' });
-    const f = new File([blob], 'pasted_calendar_' + Date.now() + '.txt', { type: 'text/plain' });
-    const base64 = await new Promise(function (resolve, reject) {
-      const r = new FileReader();
-      r.onload = function () { resolve(String(r.result).split(',')[1]); };
-      r.onerror = function () { reject(new Error('Read failed.')); };
-      r.readAsDataURL(f);
-    });
-
     const status = document.getElementById('cal_uploadStatus');
     if (status) status.textContent = 'Parsing pasted text...';
 
-    const r = await calCall('CAL_handleUploadFromGet_', {
-      fileName: f.name,
-      mimeType: 'text/plain',
-      base64: base64,
+    const r = await calCall('CAL_handlePastedText_', {
+      text: box.value,
       session: getSession()
     });
     window.__lastUploadResponse = r;
