@@ -101,6 +101,7 @@
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'CAL_upload',
+          fn: 'CAL_uploadViaPost',
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
           base64: base64,
@@ -110,7 +111,7 @@
       const data = await resp.json();
 
       if (!data || !data.success) {
-        if (status) status.textContent = 'Parse failed: ' + (data && data.message || 'unknown');
+        if (status) status.textContent = 'Parse failed: ' + (data && (data.message || data.error) || 'unknown');
         showToast('Calendar parse failed. Use the paste fallback.', 'warning');
         showPasteFallback(true);
         return;
