@@ -1206,22 +1206,23 @@ input:focus, select:focus, textarea:focus {
   .module-view { box-shadow: none; padding: 0; }
   body { background: white; }
 }
-/* ================================================================
+/*/* ================================================================
    Attendance — holiday column veil
-   Renders one shared, bottom-to-top write-up over the entire
-   holiday column of a week. Blue bold text on three thin red lines.
+   One shared, bottom-to-top write-up over the entire holiday
+   column of a week. Blue bold text on thin red horizontal lines.
    ================================================================ */
 .att-holiday-col {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 .att-holiday-veil {
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
   bottom: 0;
+  left: 0;
+  right: 0;
   pointer-events: none;
+  z-index: 1;
 }
 .att-holiday-lines {
   position: absolute;
@@ -1230,25 +1231,29 @@ input:focus, select:focus, textarea:focus {
     repeating-linear-gradient(
       to bottom,
       transparent 0,
-      transparent 28px,
-      #d32f2f 28px,
-      #d32f2f 30px
+      transparent 26px,
+      #d32f2f 26px,
+      #d32f2f 28px
     );
-  opacity: 0.6;
+  opacity: 0.55;
 }
 .att-holiday-text {
   position: absolute;
-  top: 0;
+  top: 4px;
   left: 50%;
   transform: translateX(-50%) rotate(180deg);
   writing-mode: vertical-rl;
   text-orientation: mixed;
   font-weight: 900;
   font-size: 13px;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   color: #0d47a1;
   white-space: nowrap;
-  text-shadow: 0 0 1px #fff, 0 0 1px #fff;
+  text-shadow:
+    0 0 2px #fff,
+    0 0 2px #fff,
+    0 0 2px #fff;
+  line-height: 1.1;
 }
 /* ================================================================
    END OF PART 4 OF 4
