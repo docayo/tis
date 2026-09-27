@@ -1144,7 +1144,7 @@
     w.document.write(html); w.document.close(); w.print();
   }
 
-    // ================================================================
+     // ================================================================
   // [S09] TERMS
   // ================================================================
   async function initTermsTab() {
@@ -1194,13 +1194,17 @@
       html += '<div style="font-size:11px;color:#666;margin-top:2px;">' +
               fmt(t.start_date) + ' → ' + fmt(t.end_date) + ' • ' + weeks + ' weeks</div>';
       html += '</div>';
-      if (!t.is_active) {
-        html += '<div><button class="btn btn-sm btn-success" ' +
-                'onclick="activateTerm(' + t.id + ', \'' + escAttr(t.label) + '\')">' +
-                'Set Active</button></div>';
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+      if (t.is_active) {
+        html += '<button class="btn btn-sm btn-primary" onclick="openPromotionChooser(' + t.id + ')">' +
+                'Promote Learners</button>';
+        html += '<span style="color:#27ae60;font-weight:700;font-size:12px;align-self:center;">✓ Currently active</span>';
       } else {
-        html += '<div style="color:#27ae60;font-weight:700;font-size:12px;">✓ Currently active</div>';
+        html += '<button class="btn btn-sm btn-success" ' +
+                'onclick="activateTerm(' + t.id + ', \'' + escAttr(t.label) + '\')">' +
+                'Set Active</button>';
       }
+      html += '</div>';
       html += '</div>';
     });
 
@@ -1208,8 +1212,7 @@
   }
 
   async function activateTerm(id, label) {
-    if (!confirm('Set "' + label + '" as the active term?\n\n' +
-                 'Only one term can be active at a time.')) return;
+    if (!confirm('Set "' + label + '" as the active term?\n\nOnly one term can be active at a time.')) return;
     startLoader();
     const r = await window.TIS.setActiveTerm(id);
     stopLoader();
@@ -1226,9 +1229,193 @@
       'Archive view will be enabled once learners are migrated.'));
   }
 
-  function initTermsWiring() { /* no-op; buttons wired by onclick in markup */ }
+  function initTermsWiring() { /* no-op */ }
+
+  // ================================================================
+  // PROMOTION CHOOSER
+  // ================================================================
+  let promotionState = null;
+
+  async function openPromotionChooser(activeTermId) {
+    startLoader();
+    const activeR = await window.TIS.getActiveTerm();
+    const learnersR = await window.TIS.listLearners();
+    const classesR = await window.TIS.listClasses();
+    stopLoader();
+
+    if (!activeR || !activeR.ok || !activeR.data) { showToast('No active term', 'error'); return; }
+    if (!learnersR || !learnersR.ok) { showToast('Could not load learners', 'error'); return; }
+    if (!classesR || !classesR.ok) { showToast('Could not load classes', 'error'); return; }
+
+    const activeTerm = activeR.data;
+    const learners = learnersR.data || [];
+    const classes = classesR.data || [];
+
+    const nextMap = {};
+    classes.forEach(function (c) { nextMap[c.name] = c.next_class || null; });
+
+    const eligible = learners.filter(function (l) {
+      if (!l.class_name) return false;
+      const w = (l.date_of_withdrawal || '').toString().trim();
+      if (w && w !== '' && w !== 'N/A') return false;
+      return true;
+    });
+
+    promotionState = {
+      activeTerm: activeTerm,
+      learners: eligible,
+      nextMap: nextMap,
+      choices: {},
+      filter: ''
+    };
+    eligible.forEach(function (l) { promotionState.choices[l.id] = 'next'; });
+
+    renderPromotionChooser();
+  }
+
+  function renderPromotionChooser() {
+    if (!promotionState) return;
+    const st = promotionState;
+    const filter = (st.filter || '').toLowerCase();
+    const shown = st.learners.filter(function (l) {
+      if (!filter) return true;
+      return (l.name || '').toLowerCase().indexOf(filter) !== -1 ||
+             (l.pin || '').toLowerCase().indexOf(filter) !== -1 ||
+             (l.class_name || '').toLowerCase().indexOf(filter) !== -1;
+    });
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closePromotionChooser()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()" style="max-width:900px;">';
+    html += '<div class="modal-header">';
+    html += '<h2>Promote Learners — ' + esc(st.activeTerm.label) + '</h2>';
+    html += '<button class="close-btn" onclick="closePromotionChooser()">&times;</button>';
+    html += '</div>';
+
+    html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">';
+    html += '<input type="text" id="promoFilter" placeholder="Filter by name, PIN, or class…" ' +
+            'value="' + escAttr(st.filter) + '" oninput="applyPromotionFilter(this.value)" style="flex:1;min-width:200px;">';
+    html += '<button class="btn btn-sm btn-secondary" onclick="setAllPromotionChoices(\'next\')">All Next</button>';
+    html += '<button class="btn btn-sm btn-secondary" onclick="setAllPromotionChoices(\'keep\')">All Keep</button>';
+    html += '</div>';
+
+    html += '<div style="max-height:55vh;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead style="position:sticky;top:0;background:#0d4d26;color:#fff;z-index:1;">';
+    html += '<tr>';
+    html += '<th style="text-align:left;padding:6px;">PIN</th>';
+    html += '<th style="text-align:left;padding:6px;">Name</th>';
+    html += '<th style="text-align:left;padding:6px;">Current</th>';
+    html += '<th style="text-align:center;padding:6px;">Action</th>';
+    html += '</tr></thead><tbody>';
+
+    shown.forEach(function (l) {
+      const current = l.class_name || '';
+      const next = st.nextMap[current] || null;
+      const choice = st.choices[l.id] || 'next';
+      const nextDisabled = !next || next.toLowerCase() === 'graduated';
+      const nextLabel = next || '—';
+
+      html += '<tr>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.pin || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.name || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(current) + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">';
+      if (nextDisabled) {
+        html += '<span style="color:#888;font-size:11px;">Graduated / no next class — will keep</span>';
+      } else {
+        const nextChecked = choice === 'next' ? ' checked' : '';
+        const keepChecked = choice === 'keep' ? ' checked' : '';
+        html += '<label style="margin-right:8px;font-size:11px;">';
+        html += '<input type="radio" name="promo_' + l.id + '" value="next" ' + nextChecked +
+                ' onchange="setPromotionChoice(' + l.id + ',\'next\')"> Next (' + esc(nextLabel) + ')';
+        html += '</label>';
+        html += '<label style="font-size:11px;">';
+        html += '<input type="radio" name="promo_' + l.id + '" value="keep" ' + keepChecked +
+                ' onchange="setPromotionChoice(' + l.id + ',\'keep\')"> Keep';
+        html += '</label>';
+      }
+      html += '</td></tr>';
+    });
+
+    html += '</tbody></table></div>';
+
+    html += '<div style="margin-top:12px;text-align:right;">';
+    html += '<span style="margin-right:12px;font-size:12px;color:#666;">' +
+            shown.length + ' learner(s) shown</span>';
+    html += '<button class="btn btn-secondary" onclick="closePromotionChooser()">Cancel</button> ';
+    html += '<button class="btn btn-success" onclick="applyPromotion()">Apply Promotion</button>';
+    html += '</div>';
+
+    html += '</div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  function applyPromotionFilter(val) {
+    if (!promotionState) return;
+    promotionState.filter = val || '';
+    renderPromotionChooser();
+    setTimeout(function () {
+      const inp = document.getElementById('promoFilter');
+      if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    }, 0);
+  }
+
+  function setPromotionChoice(learnerId, choice) {
+    if (!promotionState) return;
+    promotionState.choices[learnerId] = choice;
+  }
+
+  function setAllPromotionChoices(choice) {
+    if (!promotionState) return;
+    promotionState.learners.forEach(function (l) { promotionState.choices[l.id] = choice; });
+    renderPromotionChooser();
+  }
+
+  async function applyPromotion() {
+    if (!promotionState) return;
+    const st = promotionState;
+    const promotions = [];
+
+    st.learners.forEach(function (l) {
+      if (st.choices[l.id] === 'keep') return;
+      const next = st.nextMap[l.class_name] || null;
+      if (!next || next.toLowerCase() === 'graduated') return;
+      promotions.push({ learnerId: l.id, newClassName: next });
+    });
+
+    if (promotions.length === 0) {
+      showToast('Nothing to promote — every learner is marked Keep.', 'info');
+      return;
+    }
+
+    if (!confirm('Promote ' + promotions.length + ' learner(s) to their next class?\n\n' +
+                 'This updates learners.class_name in Supabase.')) return;
+
+    startLoader();
+    const r = await window.TIS.promoteLearners(promotions);
+    stopLoader();
+
+    if (r && r.ok) {
+      showToast('Promoted ' + r.data.applied + ' learner(s).', 'success');
+      closePromotionChooser();
+      loadLearners();
+    } else {
+      showToast('Promotion failed: ' + ((r && r.error) || 'unknown'), 'error');
+    }
+  }
+
+  function closePromotionChooser() {
+    promotionState = null;
+    setHTML('modalContainer', '');
+  }
 
   window.activateTerm = activateTerm;
+  window.openPromotionChooser = openPromotionChooser;
+  window.applyPromotionFilter = applyPromotionFilter;
+  window.setPromotionChoice = setPromotionChoice;
+  window.setAllPromotionChoices = setAllPromotionChoices;
+  window.applyPromotion = applyPromotion;
+  window.closePromotionChooser = closePromotionChooser;
   // ================================================================
   // [S10] LEARNER ATTENDANCE
   // ================================================================
