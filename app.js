@@ -2408,6 +2408,21 @@
   window.attRunPrint            = attRunPrint;
   window.renderClassAnalysisPanel = renderClassAnalysisPanel;
   window.renderSignaturePanel   = renderSignaturePanel;
+    function attSaveSignatures() {
+    // Signatures are captured locally for now. Persistence to Supabase
+    // will be added when attendance_signatures table exists.
+    const rows = document.querySelectorAll('#signatureBody tbody tr');
+    let filled = 0;
+    rows.forEach(function (tr) {
+      const sels = tr.querySelectorAll('select');
+      let rowHas = false;
+      sels.forEach(function (s) { if (s.value) rowHas = true; });
+      if (rowHas) filled++;
+    });
+    if (filled === 0) { showToast('Pick at least one week to sign', 'warning'); return; }
+    showToast('Signatures captured for ' + filled + ' week(s). (Persistence coming.)', 'info');
+  }
+  window.attSaveSignatures = attSaveSignatures;
   // ================================================================
   // [S11] STAFF ATTENDANCE
   // ================================================================
