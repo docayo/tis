@@ -327,29 +327,40 @@
       console.error('[switchTab]', name, err);
     }
   }
-
   // ================================================================
   // [S07] LEARNERS — three-tier permission-gated record
+  // Single canonical implementation. Contains:
+  //   • module-scope constants (CONTACT_LABELS, RELIGION_OPTIONS, EXIT_REASONS)
+  //   • three-tier view modal (A: all, B: admin+, C: super_admin only)
+  //   • edit modal with class / religion / gender dropdowns + date picker
+  //   • part-payment recording
+  //   • print (A4 + 80mm) with section chooser
+  //   • add learner, bulk upload, template download
+  //   • live search + keyboard shortcuts
   // ================================================================
-  const CONTACT_LABELS = { father: 'Father', mother: 'Mother', guardian: 'Guardian' };
-   // Populate Exit Reason dropdown on the Terms tab.
+
+  // ---------- Module-scope constants ----------
+  const CONTACT_LABELS  = { father: 'Father', mother: 'Mother', guardian: 'Guardian' };
+  const RELIGION_OPTIONS = ['Christianity', 'Islam', 'Traditionalist'];
+  const EXIT_REASONS = [
+    'Completion of Studies',
+    'Inability to Pay Tuition',
+    'Change of Location',
+    'Parent Differences',
+    'School Vs Parent Ideology',
+    'Discipline / Expulsion',
+    'Health Grounds',
+    'Life'
+  ];
+
+  // ---------- Populate the Terms-tab exit-reason dropdown ----------
   (function populateExitReasons() {
-    const EXIT_REASONS_LIST = [
-      'Completion of Studies',
-      'Inability to Pay Tuition',
-      'Change of Location',
-      'Parent Differences',
-      'School Vs Parent Ideology',
-      'Discipline / Expulsion',
-      'Health Grounds',
-      'Life'
-    ];
     function fill() {
       const sel = document.getElementById('exitReasonSelect');
       if (!sel) return;
       if (sel.options.length > 0 && sel.options[0].value !== '') return;
       sel.innerHTML = '';
-      EXIT_REASONS_LIST.forEach(function (r) {
+      EXIT_REASONS.forEach(function (r) {
         const o = document.createElement('option');
         o.value = r;
         o.textContent = r;
@@ -361,7 +372,6 @@
     } else {
       fill();
     }
-    // Also refill when the Terms tab is opened (in case it re-renders).
     document.addEventListener('click', function (e) {
       if (e.target && e.target.matches && e.target.matches('.nav-tab[data-tab="terms"]')) {
         setTimeout(fill, 300);
@@ -369,1013 +379,7 @@
     });
   })();
 
-  function parseNum(v) {
-    if (v === null || v === undefined || v === '') return 0;
-    const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
-    return isNaN(n) ? 0 : n;
-  }
-  function moneyOrDash(v) {
-    if (v === null || v === undefined || v === '') return '—';
-    const s = String(v);
-    if (/^[₦$]/.test(s)) return s;
-    const n = parseNum(s);
-    return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  function fmtDateOrDash(v) {
-    if (!v) return '—';
-    if (typeof v === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) return v;
-    const d = new Date(v);
-    if (isNaN(d.getTime())) return String(v);
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return dd + '/' + mm + '/' + d.getFullYear();
-  }
-
-  function isAdmin() { return !!(State.profile && (State.profile.role === 'admin' || State.profile.role === 'super_admin')); }
-  function isSuperAdmin() { return !!(State.profile && State.profile.role === 'super_admin'); }
-
-  function contactOrderOf(learner) {
-    // Returns ['father','mother','guardian'] in the learner's priority order.
-    const p1 = (learner.contact_priority_1 || '').toLowerCase();
-    const p2 = (learner.contact_priority_2 || '').toLowerCase();
-    const p3 = (learner.contact_priority_3 || '').toLowerCase();
-    const chosen = [p1, p2, p3].filter(function (x) { return CONTACT_LABELS[x]; });
-    const all = ['father', 'mother', 'guardian'];
-    const remaining = all.filter(function (x) { return chosen.indexOf(x) === -1; });
-    const finalOrder = chosen.concat(remaining).slice(0, 3);
-    return finalOrder;
-  }
-  function phoneFor(learner, slot) {
-    const order = contactOrderOf(learner);
-    const role = order[slot - 1];
-    if (!role) return { role: null, label: '—', value: '—' };
-    let value = '—';
-    if (role === 'father')   value = learner.father_phone   || '—';
-    if (role === 'mother')   value = learner.mother_phone   || '—';
-    if (role === 'guardian') value = learner.guardian_phone || '—';
-    return { role: role, label: CONTACT_LABELS[role], value: value };
-  }
-
-  // ---------------- Load & render ----------------
-  async function loadLearners() {
-    setHTML('learnersGrid', pageLoaderHTML('Loading learners…'));
-    startLoader();
-    const r = await window.TIS.listLearners();
-    stopLoader();
-    if (!r || !r.ok) {
-      setHTML('learnersGrid', errorHTML('Could not load learners', r && r.error));
-      return;
-    }
-    State.cachedLearners = r.data || [];
-    renderLearners(State.cachedLearners);
-    renderLearnerStats(State.cachedLearners);
-  }
-
-  function renderLearners(rows) {
-    if (!rows || rows.length === 0) {
-      setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
-      return;
-    }
-    let html = '';
-    rows.forEach(function (row) {
-      const pin    = row.pin || '';
-      const name   = row.name || '';
-      const cls    = row.class_name || '';
-      const gender = (row.gender || '').toLowerCase();
-      const photo  = row.photo_url || '';
-      const nameColor = gender.indexOf('female') === 0 ? '#ff6b9d'
-                       : gender.indexOf('male')   === 0 ? '#6ddb9a' : 'white';
-      html += '<div class="student-card" data-pin="' + escAttr(pin) + '">';
-      html += '<div class="card-header">';
-      html += '<div class="card-avatar">' +
-              (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
-      html += '<div class="card-title">';
-      html += '<h3 style="color:' + nameColor + ';">' + esc(name) + '</h3>';
-      html += '<div class="pin">' + esc(pin) + ' • ' + esc(cls) + '</div>';
-      html += '</div></div>';
-      html += '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">';
-      html += '<button type="button" class="btn btn-sm btn-secondary" data-action="view" data-pin="' + escAttr(pin) + '"><i class="fas fa-eye"></i> View</button>';
-      if (hasPermission('write_learners')) {
-        html += '<button type="button" class="btn btn-sm btn-primary" data-action="edit" data-pin="' + escAttr(pin) + '"><i class="fas fa-pen"></i> Edit</button>';
-      }
-      if (hasPermission('print_learners')) {
-        html += '<button type="button" class="btn btn-sm btn-gold" data-action="print" data-pin="' + escAttr(pin) + '"><i class="fas fa-print"></i> Print</button>';
-      }
-      html += '</div></div>';
-    });
-    setHTML('learnersGrid', html);
-
-    document.querySelectorAll('#learnersGrid [data-action]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.preventDefault(); e.stopPropagation();
-        const pin = btn.dataset.pin;
-        const action = btn.dataset.action;
-        if (action === 'view')  openLearnerViewModal(pin);
-        else if (action === 'edit')  openLearnerEditModal(pin);
-        else if (action === 'print') openPrintOptionsModal(pin);
-      });
-    });
-  }
-
-  function renderLearnerStats(rows) {
-    const total = rows.length;
-    let exited = 0;
-    rows.forEach(function (r) {
-      const w = (r.date_of_withdrawal || '').toString().trim();
-      if (w && w !== '' && w !== 'N/A') exited++;
-    });
-    setHTML('learnerStats',
-      '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div>' +
-      '<div class="stat-card red"><div class="stat-label">Exited</div><div class="stat-value">' + exited + '</div></div>' +
-      '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value">' + (total - exited) + '</div></div>');
-  }
-
-  function infoRow(label, value) {
-    const v = (value !== undefined && value !== null && value !== '') ? esc(value) : '—';
-    return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + v + '</span></div>';
-  }
-
-  // ---------------- View modal ----------------
-  async function openLearnerViewModal(pin) {
-    closeModal();
-    startLoader();
-    const learnerR = await window.TIS.getLearnerByPin(pin);
-    const termsR   = learnerR && learnerR.ok && learnerR.data
-      ? await window.TIS.getLearnerTermForActive(learnerR.data.id) : null;
-    let prevTermRow = null;
-    if (learnerR && learnerR.ok && learnerR.data) {
-      const prevR = await window.TIS.getLearnerTermFor(learnerR.data.id, '3rd', 2025);
-      if (prevR && prevR.ok) prevTermRow = prevR.data;
-    }
-    stopLoader();
-
-    if (!learnerR || !learnerR.ok || !learnerR.data) {
-      showToast('Could not load learner ' + pin, 'error');
-      return;
-    }
-    const d = learnerR.data;
-    const termRow = termsR && termsR.ok ? termsR.data.row : null;
-    const term    = termsR && termsR.ok ? termsR.data.term : null;
-    const termLabel = term ? term.label : 'No active term';
-
-    const canA = true;
-    const canB = isAdmin();
-    const canC = isSuperAdmin();
-
-    const ph1 = phoneFor(d, 1);
-    const ph2 = phoneFor(d, 2);
-    const ph3 = phoneFor(d, 3);
-
-    // Derive Tier B aggregates
-    const tuition     = parseNum(termRow && termRow.tuition);
-    const scholarship = parseNum(termRow && termRow.scholarship);
-    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
-    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
-    const books       = parseNum(termRow && termRow.books);
-    const netBills    = tuition + otherMajor + otherMinor + books;
-    const adjusted    = tuition - scholarship;
-
-    // Build Section B part-payment rows
-    let ppRows = '';
-    if (termRow) {
-      for (let n = 1; n <= 5; n++) {
-        const dt = termRow['part_payment_' + n + '_date'];
-        const am = termRow['part_payment_' + n + '_amount'];
-        if ((!dt || dt === '') && (!am || am === '')) continue;
-        ppRows += '<div class="info-row" style="background:#f7fbf7;">' +
-                  '<span class="info-label">Part Payment ' + n + '</span>' +
-                  '<span class="info-value">' + fmtDateOrDash(dt) + ' — ' + moneyOrDash(am) + '</span>' +
-                  '</div>';
-      }
-    }
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeLearnerModal()">';
-    html += '<div class="modal-box wide lbModal" onclick="event.stopPropagation()">';
-
-    // Header
-    html += '<div style="background:linear-gradient(135deg,#0d4d26,#1a8a3a);color:#fff;padding:14px 18px;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;gap:14px;">';
-    html += '<div style="display:flex;align-items:center;gap:12px;">';
-    if (d.photo_url) {
-      html += '<img src="' + esc(d.photo_url) + '" style="width:52px;height:52px;border-radius:50%;border:2px solid #fff;object-fit:cover;">';
-    } else {
-      html += '<div style="width:52px;height:52px;border-radius:50%;background:#fff;color:#0d4d26;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px;">' + esc((d.name || '?').charAt(0)) + '</div>';
-    }
-    html += '<div>';
-    html += '<div style="font-weight:800;font-size:15px;letter-spacing:1px;">' + esc(d.name || '') + '</div>';
-    html += '<div style="font-size:11px;opacity:.9;">PIN: ' + esc(d.pin || '') + ' · Class: ' + esc(d.class_name || '') + '</div>';
-    html += '<div style="font-size:11px;opacity:.9;">Active Term: ' + esc(termLabel) + '</div>';
-    html += '</div></div>';
-    html += '<div>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" onclick="toggleKeysHelp()" id="lbHelpBtn" title="Keyboard shortcuts">?</button>';
-    html += '<button type="button" class="close-btn" onclick="closeLearnerModal()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;margin-left:8px;">&times;</button>';
-    html += '</div></div>';
-
-    // Keyboard hints (hidden by default)
-    html += '<div id="lbKeysHelp" style="display:none;background:#e8f5e9;padding:6px 18px;font-size:11px;color:#0d4d26;border-bottom:1px solid #c8e6c9;">';
-    html += '<b>E</b> expand all · <b>C</b> collapse all · <b>P</b> print · <b>Esc</b> close';
-    html += '</div>';
-
-    html += '<div style="padding:14px 18px;" id="lbModalBody">';
-
-    // Section A
-    if (canA) {
-      html += '<div class="expandable open lbSec" data-sec="A">';
-      html += '<div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section A — Identity</div>';
-      html += '<div class="expandable-body">';
-      html += infoRow('Class', d.class_name);
-      html += infoRow('PIN', d.pin);
-      html += infoRow('Learner Name', d.name);
-      html += infoRow('Gender', d.gender);
-      html += infoRow('1st Phone (' + ph1.label + ')', ph1.value);
-      html += infoRow('Account Number', d.account_number);
-      html += infoRow('Clearance Status', termRow ? termRow.cleared : '—');
-      html += infoRow('Clearance Date', termRow ? fmtDateOrDash(termRow.clearance) : '—');
-      html += infoRow('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
-      html += '</div></div>';
-    }
-
-    // Section B
-    if (canB) {
-      html += '<div class="expandable open lbSec" data-sec="B">';
-      html += '<div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div>';
-      html += '<div class="expandable-body">';
-      html += infoRow('Previous Term Balance B/F', prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(termRow && termRow.balance_bf));
-      html += infoRow('Current Term Tuition', moneyOrDash(termRow && termRow.tuition));
-      html += infoRow('Scholarship Amount', moneyOrDash(termRow && termRow.scholarship));
-      html += infoRow('Adjusted Tuition Total', moneyOrDash(adjusted));
-      if (ppRows) {
-        html += '<div style="margin:8px 0 4px;font-weight:700;font-size:11px;color:#0d4d26;">Part Payments</div>';
-        html += ppRows;
-      }
-      html += infoRow('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
-      html += infoRow('Books', moneyOrDash(termRow && termRow.books));
-      html += infoRow('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
-      html += infoRow('Net Bills', moneyOrDash(netBills));
-      html += infoRow('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
-      html += infoRow('Blood Group / Genotype', d.blood_group);
-      html += infoRow('Allergy', d.allergy);
-      html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
-      html += '</div></div>';
-    }
-
-    // Section C
-    if (canC) {
-      html += '<div class="expandable open lbSec" data-sec="C">';
-      html += '<div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section C — History & Origin</div>';
-      html += '<div class="expandable-body">';
-      html += infoRow('Class Before Admission', d.class_before_admission);
-      html += infoRow('Date of Admission', d.date_of_admission);
-      html += infoRow('Class Admitted Into', d.class_admitted_into);
-      html += infoRow('LIN', d.lin);
-      html += infoRow('Exit Class', d.class_at_withdrawal);
-      html += infoRow('Exit Reason', d.exit_reason);
-      html += infoRow('Religion', d.religion);
-      html += infoRow('Date of Birth', d.date_of_birth);
-      html += infoRow('Parents Name', d.parents_name);
-      html += infoRow('Address', d.address);
-      html += infoRow('State of Origin', d.state_of_origin);
-      html += infoRow('LGA of Origin', d.lga_of_origin);
-      html += infoRow('State of Birth', d.state_of_birth);
-      html += infoRow('LGA of Birth', d.lga_of_birth);
-      html += infoRow('3rd Phone (' + ph3.label + ')', ph3.value);
-      html += '</div></div>';
-    }
-
-    html += '</div>';
-
-    // Footer
-    html += '<div style="padding:12px 18px;border-top:1px solid #e6e9f0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">';
-    html += '<button class="btn btn-secondary" onclick="closeLearnerModal()">Close (Esc)</button>';
-    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
-    if (hasPermission('write_learners')) {
-      html += '<button class="btn btn-warning" onclick="openPartPaymentModal(' + d.id + ')">Update Payment</button>';
-    }
-    if (hasPermission('print_learners')) {
-      html += '<button class="btn btn-gold" onclick="openPrintOptionsModal(\'' + escAttr(pin) + '\')">Print (P)</button>';
-    }
-    if (hasPermission('write_learners')) {
-      html += '<button class="btn btn-primary" onclick="openLearnerEditModal(\'' + escAttr(pin) + '\')">Edit</button>';
-    }
-    html += '</div></div>';
-
-    html += '</div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  function closeLearnerModal() {
-    document.querySelectorAll('.modal-overlay').forEach(function (el) { el.remove(); });
-    setHTML('modalContainer', '');
-  }
-  window.toggleKeysHelp = function () {
-    const el = document.getElementById('lbKeysHelp');
-    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-  };
-
-  // ---------------- Edit modal ----------------
-  async function openLearnerEditModal(pin) {
-    closeModal();
-    startLoader();
-    const r = await window.TIS.getLearnerByPin(pin);
-    stopLoader();
-    if (!r || !r.ok || !r.data) { showToast('Could not load learner ' + pin, 'error'); return; }
-    const d = r.data;
-    const order = contactOrderOf(d);
-
-    const field = function (id, label, value) {
-      return '<div class="form-group"><label>' + esc(label) + '</label><input id="' + id + '" value="' + escAttr(value || '') + '"></div>';
-    };
-    const phoneField = function (id, label, value, slotKey) {
-      const current = order[slotKey - 1] || '';
-      let opts = '<option value="">—</option>';
-      ['father', 'mother', 'guardian'].forEach(function (role) {
-        opts += '<option value="' + role + '"' + (current === role ? ' selected' : '') + '>' + CONTACT_LABELS[role] + '</option>';
-      });
-      return '<div class="form-group"><label>' + esc(label) + ' <span style="font-weight:400;color:#666;">(who is this?)</span></label>' +
-             '<div style="display:flex;gap:6px;">' +
-             '<input id="' + id + '" value="' + escAttr(value || '') + '" style="flex:2;">' +
-             '<select id="' + id + '_who" style="flex:1;">' + opts + '</select>' +
-             '</div></div>';
-    };
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Edit — ' + esc(d.name) + '</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
-
-    html += '<div class="form-row">' + field('ed_name', 'Name', d.name) + field('ed_class_name', 'Class', d.class_name) + '</div>';
-    html += '<div class="form-row">' + field('ed_gender', 'Gender', d.gender) + field('ed_date_of_birth', 'Date of Birth', d.date_of_birth) + '</div>';
-
-    // Priority — three slots
-    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin:8px 0;">';
-    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Contact priority — for which number is 1st, 2nd, 3rd</div>';
-    html += phoneField('ed_prio_father', "Father's phone", d.father_phone, 1);
-    html += phoneField('ed_prio_mother', "Mother's phone", d.mother_phone, 2);
-    html += phoneField('ed_prio_guardian', "Guardian's phone", d.guardian_phone, 3);
-    html += '</div>';
-
-    html += '<div class="form-row">' + field('ed_account_number', 'Account Number', d.account_number) + field('ed_blood_group', 'Blood Group', d.blood_group) + '</div>';
-    html += '<div class="form-row">' + field('ed_religion', 'Religion', d.religion) + field('ed_allergy', 'Allergy', d.allergy) + '</div>';
-    html += field('ed_parents_name', 'Parents Name', d.parents_name);
-    html += '<div class="form-group"><label>Address</label><textarea id="ed_address" rows="2">' + esc(d.address || '') + '</textarea></div>';
-
-    // Exit reason dropdown (only for admins/super admin per spec, but keep visible for writers)
-    let exitOpts = '<option value="">— none —</option>';
-    EXIT_REASONS.forEach(function (rs) {
-      exitOpts += '<option value="' + escAttr(rs) + '"' + (rs === d.exit_reason ? ' selected' : '') + '>' + esc(rs) + '</option>';
-    });
-    html += '<div class="form-group"><label>Exit Reason</label><select id="ed_exit_reason">' + exitOpts + '</select></div>';
-
-    html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="saveLearnerEdits(' + d.id + ')">Save</button>';
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  async function saveLearnerEdits(id) {
-    const fields = {
-      name: $('ed_name') ? $('ed_name').value.trim() : '',
-      class_name: $('ed_class_name') ? $('ed_class_name').value.trim() : '',
-      gender: $('ed_gender') ? $('ed_gender').value.trim() : '',
-      date_of_birth: $('ed_date_of_birth') ? $('ed_date_of_birth').value.trim() : '',
-      father_phone: $('ed_prio_father') ? $('ed_prio_father').value.trim() : '',
-      mother_phone: $('ed_prio_mother') ? $('ed_prio_mother').value.trim() : '',
-      guardian_phone: $('ed_prio_guardian') ? $('ed_prio_guardian').value.trim() : '',
-      account_number: $('ed_account_number') ? $('ed_account_number').value.trim() : '',
-      blood_group: $('ed_blood_group') ? $('ed_blood_group').value.trim() : '',
-      religion: $('ed_religion') ? $('ed_religion').value.trim() : '',
-      allergy: $('ed_allergy') ? $('ed_allergy').value.trim() : '',
-      parents_name: $('ed_parents_name') ? $('ed_parents_name').value.trim() : '',
-      address: $('ed_address') ? $('ed_address').value.trim() : '',
-      exit_reason: $('ed_exit_reason') ? $('ed_exit_reason').value : ''
-    };
-    // Contact priority choices — one per slot
-    const p1 = $('ed_prio_father_who')   ? $('ed_prio_father_who').value   : '';
-    const p2 = $('ed_prio_mother_who')   ? $('ed_prio_mother_who').value   : '';
-    const p3 = $('ed_prio_guardian_who') ? $('ed_prio_guardian_who').value : '';
-
-    startLoader();
-    const r = await window.TIS.updateLearner(id, fields);
-    if (r && r.ok) {
-      await window.TIS.setLearnerContactPriority(id, { p1: p1, p2: p2, p3: p3 });
-    }
-    stopLoader();
-    if (r && r.ok) { showToast('Learner updated', 'success'); closeModal(); loadLearners(); }
-    else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
-  }
-
-  // ---------------- Part payment modal ----------------
-  async function openPartPaymentModal(learnerId) {
-    closeModal();
-    startLoader();
-    const r = await window.TIS.getLearnerTermForActive(learnerId);
-    stopLoader();
-    if (!r || !r.ok || !r.data.term) { showToast('No active term set', 'error'); return; }
-    const term = r.data.term;
-    const row  = r.data.row;
-
-    let html = '<div class="modal-overlay" id="lbPartPayModal" onclick="if(event.target===this)closeLearnerModal()">';
-    html += '<div class="modal-box" style="max-width:440px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Update Payment</h2><button class="close-btn" onclick="closeLearnerModal()">&times;</button></div>';
-    html += '<p style="font-size:12px;margin:0 0 10px;">' + esc(term.label) + '</p>';
-    if (row) {
-      html += '<p style="font-size:12px;margin:0 0 10px;">' +
-              'Bill: ' + moneyOrDash(row.bill) +
-              ' · Other: ' + moneyOrDash(row.other_bill) +
-              ' · Paid: ' + moneyOrDash(row.total_part_payment) +
-              ' · Balance: ' + moneyOrDash(row.balance_cf) +
-              '</p>';
-    }
-    html += '<div class="form-group"><label>Amount Paid (₦)</label><input id="pp_amount" type="number" step="0.01" placeholder="0.00"></div>';
-    html += '<div class="form-group"><label>Date</label><input id="pp_date" type="date" value="' + (new Date().toISOString().slice(0,10)) + '"></div>';
-    html += '<div class="form-group"><label>Mode</label><select id="pp_mode"><option>Cash</option><option>Transfer</option><option>POS</option><option>Cheque</option></select></div>';
-    html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="closeLearnerModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="submitPartPayment(' + learnerId + ', \'' + escAttr(term.term_type) + '\', ' + term.year + ')">Record</button>';
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  async function submitPartPayment(learnerId, termType, year) {
-    const amount = $('pp_amount') ? $('pp_amount').value : '';
-    const date   = $('pp_date')   ? $('pp_date').value   : '';
-    const mode   = $('pp_mode')   ? $('pp_mode').value   : 'Cash';
-    if (!amount || Number(amount) <= 0) { showToast('Enter a positive amount', 'warning'); return; }
-
-    startLoader();
-    const r = await window.TIS.recordPartPayment(learnerId, termType, year, amount, date, mode);
-    stopLoader();
-
-    if (r && r.ok) {
-      showToast('Payment recorded (slot ' + r.data.slot + ')', 'success');
-      closeLearnerModal();
-      const l = State.cachedLearners.find(function (x) { return x.id === learnerId; });
-      if (l) openLearnerViewModal(l.pin);
-    } else {
-      showToast('Could not record: ' + ((r && r.error) || 'unknown'), 'error');
-    }
-  }
-
-  // ---------------- Print options chooser ----------------
-  async function openPrintOptionsModal(pin) {
-    closeModal();
-    startLoader();
-    const r = await window.TIS.getLearnerByPin(pin);
-    stopLoader();
-    if (!r || !r.ok || !r.data) { showToast('Could not load learner ' + pin, 'error'); return; }
-
-    const canA = true;
-    const canB = isAdmin();
-    const canC = isSuperAdmin();
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
-    html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Print Options</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
-    html += '<p style="font-size:12px;margin:0 0 8px;">Choose sections and paper size.</p>';
-
-    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:10px;">';
-    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Sections</div>';
-    if (canA) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secA" checked> Section A — Identity</label>';
-    if (canB) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secB" checked> Section B — Fees</label>';
-    if (canC) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secC" checked> Section C — History & Origin</label>';
-    html += '</div>';
-
-    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:10px;">';
-    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Paper</div>';
-    html += '<label style="display:block;padding:4px 0;"><input type="radio" name="pp_paper" value="A4" checked> A4 (full page)</label>';
-    html += '<label style="display:block;padding:4px 0;"><input type="radio" name="pp_paper" value="80mm"> POS / Thermal (80mm)</label>';
-    html += '</div>';
-
-    html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
-    html += '<button class="btn btn-gold" onclick="printLearnerCard(\'' + escAttr(pin) + '\')">Print</button>';
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  async function printLearnerCard(pin) {
-    const secA = document.getElementById('pp_secA');
-    const secB = document.getElementById('pp_secB');
-    const secC = document.getElementById('pp_secC');
-    // If the chooser is not open (P shortcut from modal), default to all permitted
-    const wantA = secA ? secA.checked : true;
-    const wantB = secB ? secB.checked : isAdmin();
-    const wantC = secC ? secC.checked : isSuperAdmin();
-    const paperEl = document.querySelector('input[name="pp_paper"]:checked');
-    const paper = paperEl ? paperEl.value : 'A4';
-
-    startLoader();
-    const r = await window.TIS.getLearnerByPin(pin);
-    const termsR = r && r.ok && r.data ? await window.TIS.getLearnerTermForActive(r.data.id) : null;
-    stopLoader();
-    if (!r || !r.ok || !r.data) { showToast('Could not load learner', 'error'); return; }
-    const d = r.data;
-    const termRow = termsR && termsR.ok ? termsR.data.row : null;
-    const term    = termsR && termsR.ok ? termsR.data.term : null;
-    const termLabel = term ? term.label : 'No active term';
-
-    const ph1 = phoneFor(d, 1);
-    const ph2 = phoneFor(d, 2);
-    const ph3 = phoneFor(d, 3);
-
-    const tuition     = parseNum(termRow && termRow.tuition);
-    const scholarship = parseNum(termRow && termRow.scholarship);
-    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
-    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
-    const books       = parseNum(termRow && termRow.books);
-    const netBills    = tuition + otherMajor + otherMinor + books;
-    const adjusted    = tuition - scholarship;
-
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-
-    const cssA4 = 'body{font-family:Arial;padding:24px;color:#111;}' +
-                  '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:10px;}' +
-                  '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0 0 4px;font-size:22px;}' +
-                  'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
-                  '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
-                  '.info-label{color:#666;}.info-value{font-weight:600;}';
-    const css80  = '@page{size:80mm auto;margin:3mm;}body{font-family:Arial;font-size:11px;color:#000;}' +
-                   '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:6px;}' +
-                   'h1{font-size:14px;margin:0;}h2{font-size:11px;margin:6px 0 2px;border-bottom:1px dotted #000;}' +
-                   '.info-row{display:flex;justify-content:space-between;font-size:10px;padding:2px 0;}' +
-                   '.info-label{color:#333;}.info-value{font-weight:700;}';
-
-    let html = '<html><head><title>' + esc(d.name) + '</title><style>' + (paper === '80mm' ? css80 : cssA4) + '</style></head><body>';
-
-    html += '<div class="hdr">';
-    if (paper === 'A4') {
-      html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
-    }
-    html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
-            (paper === 'A4' ? '<div style="font-style:italic;color:#666;font-size:12px;">Scientia est potentia</div>' : '') +
-            '</div>';
-    if (paper === 'A4') {
-      html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
-    }
-    html += '</div>';
-
-    html += '<h2 style="margin-top:14px;">' + esc(d.name) + ' — ' + esc(d.pin) + '</h2>';
-    if (paper === 'A4') {
-      html += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Class: ' + esc(d.class_name) + ' · Active Term: ' + esc(termLabel) + '</div>';
-    } else {
-      html += '<div style="font-size:10px;">' + esc(d.class_name) + ' · ' + esc(termLabel) + '</div>';
-    }
-
-    function row(label, value) {
-      return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + esc(value) + '</span></div>';
-    }
-
-    if (wantA) {
-      html += '<h2>Section A — Identity</h2>';
-      html += row('Class', d.class_name || '—');
-      html += row('PIN', d.pin || '—');
-      html += row('Name', d.name || '—');
-      html += row('Gender', d.gender || '—');
-      html += row('1st Phone (' + ph1.label + ')', ph1.value);
-      html += row('Account', d.account_number || '—');
-      html += row('Clearance', (termRow && termRow.cleared) || '—');
-      html += row('Clearance Date', (termRow && fmtDateOrDash(termRow.clearance)) || '—');
-      html += row('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
-    }
-    if (wantB) {
-      html += '<h2>Section B — Fees (' + termLabel + ')</h2>';
-      html += row('Tuition', moneyOrDash(termRow && termRow.tuition));
-      html += row('Scholarship', moneyOrDash(termRow && termRow.scholarship));
-      html += row('Adjusted Tuition', moneyOrDash(adjusted));
-      if (termRow) {
-        for (let n = 1; n <= 5; n++) {
-          const dt = termRow['part_payment_' + n + '_date'];
-          const am = termRow['part_payment_' + n + '_amount'];
-          if ((!dt || dt === '') && (!am || am === '')) continue;
-          html += row('Part Payment ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
-        }
-      }
-      html += row('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
-      html += row('Books', moneyOrDash(termRow && termRow.books));
-      html += row('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
-      html += row('Net Bills', moneyOrDash(netBills));
-      html += row('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
-      html += row('Blood Group / Genotype', d.blood_group || '—');
-      html += row('Allergy', d.allergy || '—');
-      html += row('2nd Phone (' + ph2.label + ')', ph2.value);
-    }
-    if (wantC) {
-      html += '<h2>Section C — History & Origin</h2>';
-      html += row('Class Before Admission', d.class_before_admission || '—');
-      html += row('Date of Admission', d.date_of_admission || '—');
-      html += row('Class Admitted Into', d.class_admitted_into || '—');
-      html += row('LIN', d.lin || '—');
-      html += row('Exit Class', d.class_at_withdrawal || '—');
-      html += row('Exit Reason', d.exit_reason || '—');
-      html += row('Religion', d.religion || '—');
-      html += row('Date of Birth', d.date_of_birth || '—');
-      html += row('Parents Name', d.parents_name || '—');
-      html += row('Address', d.address || '—');
-      html += row('State of Origin', d.state_of_origin || '—');
-      html += row('LGA of Origin', d.lga_of_origin || '—');
-      html += row('State of Birth', d.state_of_birth || '—');
-      html += row('LGA of Birth', d.lga_of_birth || '—');
-      html += row('3rd Phone (' + ph3.label + ')', ph3.value);
-    }
-
-    html += '</body></html>';
-    w.document.write(html); w.document.close();
-    setTimeout(function () { w.print(); }, 250);
-    closeModal();
-  }
-
-  // ---------------- Live search ----------------
-  let learnerSearchTimer = null;
-  function learnerLiveSearch() {
-    if (learnerSearchTimer) clearTimeout(learnerSearchTimer);
-    learnerSearchTimer = setTimeout(async function () {
-      const el = document.getElementById('learnerSearchInput');
-      const q = el ? el.value.trim() : '';
-      if (!q) { renderLearners(State.cachedLearners); return; }
-      if (q.length < 1) return;
-      // Fast client-side filter first
-      const lower = q.toLowerCase();
-      const filtered = State.cachedLearners.filter(function (r) {
-        return (r.name || '').toLowerCase().indexOf(lower) !== -1 ||
-               (r.pin || '').toLowerCase().indexOf(lower) !== -1 ||
-               (r.father_phone || '').indexOf(q) !== -1 ||
-               (r.mother_phone || '').indexOf(q) !== -1 ||
-               (r.guardian_phone || '').indexOf(q) !== -1 ||
-               (r.account_number || '').indexOf(q) !== -1;
-      });
-      renderLearners(filtered);
-    }, 200);
-  }
-
-  // ---------------- Keyboard shortcuts ----------------
-  document.addEventListener('keydown', function (e) {
-    const modalBody = document.getElementById('lbModalBody');
-    if (!modalBody) return;
-    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
-    const k = e.key.toLowerCase();
-    if (k === 'escape') { closeLearnerModal(); e.preventDefault(); return; }
-    if (k === 'e') {
-      document.querySelectorAll('.lbSec').forEach(function (s) { s.classList.add('open'); });
-      e.preventDefault();
-    } else if (k === 'c') {
-      document.querySelectorAll('.lbSec').forEach(function (s) { s.classList.remove('open'); });
-      e.preventDefault();
-    } else if (k === 'p') {
-      if (hasPermission('print_learners')) {
-        const btn = modalBody.parentElement.querySelector('.btn-gold');
-        if (btn) btn.click();
-      }
-      e.preventDefault();
-    }
-  });
-
-  // ---------------- Wire the search input ----------------
-  document.addEventListener('DOMContentLoaded', function () {
-    const inp = document.getElementById('learnerSearchInput');
-    if (inp) inp.addEventListener('input', learnerLiveSearch);
-  });
-
-  // ---------------- Globals ----------------
-  window.openLearnerViewModal  = openLearnerViewModal;
-  window.openLearnerEditModal  = openLearnerEditModal;
-  window.saveLearnerEdits      = saveLearnerEdits;
-  window.openPartPaymentModal  = openPartPaymentModal;
-  window.submitPartPayment     = submitPartPayment;
-  window.openPrintOptionsModal = openPrintOptionsModal;
-  window.printLearnerCard      = printLearnerCard;
-  window.closeLearnerModal     = closeLearnerModal;
-    // ================================================================
-  // LEARNERS — toolbar wiring + missing actions
-  // ================================================================
-  function initLearnersTab() {
-    const refresh = document.getElementById('btnRefreshLearners');
-    if (refresh && !refresh.__wired) {
-      refresh.addEventListener('click', function (e) { e.preventDefault(); loadLearners(); });
-      refresh.__wired = true;
-    }
-    const printBtn = document.getElementById('btnPrintLearners');
-    if (printBtn && !printBtn.__wired) {
-      printBtn.addEventListener('click', function (e) { e.preventDefault(); printLearnerList(); });
-      printBtn.__wired = true;
-    }
-    const dl = document.getElementById('btnDownloadTemplate');
-    if (dl && !dl.__wired) {
-      dl.addEventListener('click', function (e) { e.preventDefault(); downloadLearnerTemplate(); });
-      dl.__wired = true;
-    }
-    const upBtn = document.getElementById('btnUploadUpdates');
-    const upFile = document.getElementById('learnerUploadFile');
-    if (upBtn && upFile && !upBtn.__wired) {
-      upBtn.addEventListener('click', function (e) { e.preventDefault(); upFile.click(); });
-      upFile.addEventListener('change', function (ev) {
-        const f = ev.target.files[0];
-        if (f) uploadLearnerUpdates(f);
-        upFile.value = '';
-      });
-      upBtn.__wired = true;
-    }
-    const add = document.getElementById('btnAddLearner');
-    if (add && !add.__wired) {
-      add.addEventListener('click', function (e) { e.preventDefault(); openAddLearnerModal(); });
-      add.__wired = true;
-    }
-  }
-
-  // ---------- Download Template (Excel via SheetJS) ----------
-  function downloadLearnerTemplate() {
-    if (typeof XLSX === 'undefined') {
-      showToast('Excel library not loaded — reload the page', 'error');
-      return;
-    }
-    // Template columns: PIN + the fields you edit most often.
-    // Keeping this small makes uploads fast and prevents accidental
-    // overwrites of the fee or promotion columns.
-    const columns = [
-      'PIN', 'LEARNERS NAME', 'CLASS', 'GENDER', 'DATE OF BIRTH',
-      'FATHERS PHONE NUMBER', 'MOTHERS PHONE NUMBER', 'GUARDIAN PHONE NUMBER',
-      'ACCOUNT NUMBER', 'BLOOD GROUP', 'RELIGION', 'ALLERGY',
-      'PARENTS NAME', 'ADDRESS', 'STATE OF ORIGIN', 'LGA OF ORIGIN',
-      'STATE OF BIRTH', 'LGA OF BIRTH', 'LIN'
-    ];
-    const sample = [{
-      'PIN': 'TIS0001',
-      'LEARNERS NAME': 'SAMPLE LEARNER',
-      'CLASS': 'JSS 1',
-      'GENDER': 'Male',
-      'DATE OF BIRTH': '01/01/2015',
-      'FATHERS PHONE NUMBER': '08000000000',
-      'MOTHERS PHONE NUMBER': '',
-      'GUARDIAN PHONE NUMBER': '',
-      'ACCOUNT NUMBER': '',
-      'BLOOD GROUP': '',
-      'RELIGION': 'Islam',
-      'ALLERGY': '',
-      'PARENTS NAME': 'Mr & Mrs Sample',
-      'ADDRESS': '',
-      'STATE OF ORIGIN': 'Ogun',
-      'LGA OF ORIGIN': 'Abeokuta South',
-      'STATE OF BIRTH': 'Ogun',
-      'LGA OF BIRTH': 'Abeokuta South',
-      'LIN': ''
-    }];
-    const ws = XLSX.utils.json_to_sheet(sample, { header: columns });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Learners');
-    XLSX.writeFile(wb, 'TIS_Learners_Template_' + new Date().toISOString().slice(0, 10) + '.xlsx');
-    showToast('Template downloaded', 'success');
-  }
-
-  // ---------- Upload Updates (Excel via SheetJS) ----------
-  async function uploadLearnerUpdates(file) {
-    if (typeof XLSX === 'undefined') {
-      showToast('Excel library not loaded — reload the page', 'error');
-      return;
-    }
-    if (!confirm('Upload "' + file.name + '"?\n\nRows matching an existing PIN will be updated. New PINs will be created.')) return;
-
-    startLoader();
-    let wb;
-    try {
-      const buf = await file.arrayBuffer();
-      wb = XLSX.read(buf, { type: 'array' });
-    } catch (e) {
-      stopLoader();
-      showToast('Could not read the file', 'error');
-      return;
-    }
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-    if (!rows.length) { stopLoader(); showToast('No rows in that sheet', 'warning'); return; }
-
-    // Map spreadsheet columns to learner fields.
-    const FIELD_MAP = {
-      'PIN': 'pin',
-      'LEARNERS NAME': 'name',
-      'CLASS': 'class_name',
-      'GENDER': 'gender',
-      'DATE OF BIRTH': 'date_of_birth',
-      'FATHERS PHONE NUMBER': 'father_phone',
-      'MOTHERS PHONE NUMBER': 'mother_phone',
-      'GUARDIAN PHONE NUMBER': 'guardian_phone',
-      'ACCOUNT NUMBER': 'account_number',
-      'BLOOD GROUP': 'blood_group',
-      'RELIGION': 'religion',
-      'ALLERGY': 'allergy',
-      'PARENTS NAME': 'parents_name',
-      'ADDRESS': 'address',
-      'STATE OF ORIGIN': 'state_of_origin',
-      'LGA OF ORIGIN': 'lga_of_origin',
-      'STATE OF BIRTH': 'state_of_birth',
-      'LGA OF BIRTH': 'lga_of_birth',
-      'LIN': 'lin'
-    };
-
-    let updated = 0, created = 0, failed = 0;
-    const errors = [];
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const pin = String(row['PIN'] || '').trim();
-      if (!pin) { failed++; errors.push('Row ' + (i + 2) + ': no PIN'); continue; }
-
-      const patch = {};
-      Object.keys(FIELD_MAP).forEach(function (col) {
-        if (row[col] !== undefined && row[col] !== '') {
-          patch[FIELD_MAP[col]] = String(row[col]).trim();
-        }
-      });
-      if (Object.keys(patch).length === 0) { failed++; errors.push(pin + ': no data'); continue; }
-
-      // Try update first.
-      const existing = await window.TIS.getLearnerByPin(pin);
-      if (existing && existing.ok && existing.data) {
-        const r = await window.TIS.updateLearner(existing.data.id, patch);
-        if (r && r.ok) updated++;
-        else { failed++; errors.push(pin + ': ' + ((r && r.error) || 'update failed')); }
-      } else {
-        // Create new.
-        const r = await window.TIS.createLearner(patch);
-        if (r && r.ok) created++;
-        else { failed++; errors.push(pin + ': ' + ((r && r.error) || 'create failed')); }
-      }
-    }
-    stopLoader();
-
-    const msg = 'Updated ' + updated + ' · Created ' + created + ' · Failed ' + failed;
-    if (failed === 0) {
-      showToast(msg, 'success');
-    } else {
-      showToast(msg + ' — see console for details', 'warning');
-      console.warn('[Upload errors]', errors);
-    }
-    loadLearners();
-  }
-
-  // ---------- Add New Learner ----------
-  function openAddLearnerModal() {
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Add New Learner</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
-
-    const f = function (id, label, value) {
-      return '<div class="form-group"><label>' + esc(label) + '</label>' +
-             '<input id="' + id + '" value="' + escAttr(value || '') + '"></div>';
-    };
-
-    html += '<div class="form-row">' +
-      f('nl_pin', 'PIN', '') +
-      f('nl_name', 'Learner Name', '') + '</div>';
-    html += '<div class="form-row">' +
-      f('nl_class_name', 'Class', '') +
-      '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' + '</div>';
-    html += '<div class="form-row">' +
-      f('nl_date_of_birth', 'Date of Birth', '') +
-      f('nl_blood_group', 'Blood Group / Genotype', '') + '</div>';
-    html += '<div class="form-row">' +
-      f('nl_father_phone', "Father's Phone", '') +
-      f('nl_mother_phone', "Mother's Phone", '') + '</div>';
-    html += '<div class="form-row">' +
-      f('nl_guardian_phone', "Guardian's Phone", '') +
-      f('nl_account_number', 'Account Number', '') + '</div>';
-    html += '<div class="form-row">' +
-      f('nl_religion', 'Religion', '') +
-      f('nl_allergy', 'Allergy', '') + '</div>';
-    html += f('nl_parents_name', 'Parents Name', '');
-    html += '<div class="form-group"><label>Address</label><textarea id="nl_address" rows="2"></textarea></div>';
-    html += '<div class="form-row">' +
-      f('nl_state_of_origin', 'State of Origin', '') +
-      f('nl_lga_of_origin', 'LGA of Origin', '') + '</div>';
-    html += '<div class="form-row">' +
-      f('nl_state_of_birth', 'State of Birth', '') +
-      f('nl_lga_of_birth', 'LGA of Birth', '') + '</div>';
-    html += f('nl_lin', 'LIN', '');
-
-    html += '<div style="text-align:right;margin-top:14px;">';
-    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="submitNewLearner()">Add learner</button>';
-    html += '</div>';
-    html += '</div></div>';
-    setHTML('modalContainer', html);
-  }
-
-  async function submitNewLearner() {
-    const get = function (id) {
-      const el = document.getElementById(id);
-      return el ? String(el.value || '').trim() : '';
-    };
-    const row = {
-      pin:             get('nl_pin'),
-      name:            get('nl_name'),
-      class_name:      get('nl_class_name'),
-      gender:          get('nl_gender'),
-      date_of_birth:   get('nl_date_of_birth'),
-      blood_group:     get('nl_blood_group'),
-      father_phone:    get('nl_father_phone'),
-      mother_phone:    get('nl_mother_phone'),
-      guardian_phone:  get('nl_guardian_phone'),
-      account_number:  get('nl_account_number'),
-      religion:        get('nl_religion'),
-      allergy:         get('nl_allergy'),
-      parents_name:    get('nl_parents_name'),
-      address:         get('nl_address'),
-      state_of_origin: get('nl_state_of_origin'),
-      lga_of_origin:   get('nl_lga_of_origin'),
-      state_of_birth:  get('nl_state_of_birth'),
-      lga_of_birth:    get('nl_lga_of_birth'),
-      lin:             get('nl_lin')
-    };
-    if (!row.pin || !row.name) { showToast('PIN and Name are required', 'warning'); return; }
-
-    // Duplicate check.
-    startLoader();
-    const existing = await window.TIS.getLearnerByPin(row.pin);
-    if (existing && existing.ok && existing.data) {
-      stopLoader();
-      showToast('PIN ' + row.pin + ' already exists', 'error');
-      return;
-    }
-
-    const r = await window.TIS.createLearner(row);
-    stopLoader();
-    if (r && r.ok) {
-      showToast('Learner added', 'success');
-      closeModal();
-      loadLearners();
-    } else {
-      showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error');
-    }
-  }
-
-  // ---------- Print List (current view) ----------
-  function printLearnerList() {
-    const rows = State.cachedLearners || [];
-    if (!rows.length) { showToast('Load the list first', 'warning'); return; }
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-
-    let html = '<html><head><title>Learners</title><style>' +
-      'body{font-family:Arial;padding:20px;}' +
-      'h1{color:#0b6623;text-align:center;margin:0 0 12px;}' +
-      'table{width:100%;border-collapse:collapse;}' +
-      'th{background:#0b6623;color:#fff;padding:8px;font-size:11px;text-align:left;}' +
-      'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}' +
-      '.m{color:#1a5276;font-weight:600;}.f{color:#c0392b;font-weight:600;}' +
-      '</style></head><body>';
-    html += '<h1>THE IDEAL SCHOOLS — Learners List</h1>';
-    html += '<div style="text-align:center;font-size:11px;color:#666;margin-bottom:10px;">' +
-            'Printed ' + new Date().toLocaleString() + ' · ' + rows.length + ' learners' +
-            '</div>';
-    html += '<table><thead><tr>';
-    html += '<th>Class</th><th>PIN</th><th>Name</th><th>Gender</th><th>Father Phone</th><th>Mother Phone</th>';
-    html += '</tr></thead><tbody>';
-    rows.forEach(function (r) {
-      const g = (r.gender || '').toLowerCase();
-      const cls = g.indexOf('female') === 0 ? 'f' : (g.indexOf('male') === 0 ? 'm' : '');
-      html += '<tr>' +
-        '<td>' + esc(r.class_name || '') + '</td>' +
-        '<td>' + esc(r.pin || '') + '</td>' +
-        '<td class="' + cls + '">' + esc(r.name || '') + '</td>' +
-        '<td>' + esc(r.gender || '') + '</td>' +
-        '<td>' + esc(r.father_phone || '') + '</td>' +
-        '<td>' + esc(r.mother_phone || '') + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table></body></html>';
-    w.document.write(html);
-    w.document.close();
-    setTimeout(function () { w.print(); }, 250);
-  }
-
-  // Expose globals so inline handlers still work
-  window.initLearnersTab        = initLearnersTab;
-  window.downloadLearnerTemplate = downloadLearnerTemplate;
-  window.uploadLearnerUpdates   = uploadLearnerUpdates;
-  window.openAddLearnerModal    = openAddLearnerModal;
-  window.submitNewLearner       = submitNewLearner;
-  window.printLearnerList       = printLearnerList;
-   // ================================================================
-  // [S07] LEARNERS — three-tier record + dropdowns + date pickers
-  // ================================================================
-  const CONTACT_LABELS = { father: 'Father', mother: 'Mother', guardian: 'Guardian' };
-  const RELIGION_OPTIONS = ['Christianity', 'Islam', 'Traditionalist'];
-
-  // Cached class list for dropdowns.
-  let __learnerClassesCache = null;
-  async function getClassNamesForDropdown() {
-    if (__learnerClassesCache) return __learnerClassesCache;
-    const r = await window.TIS.listClasses();
-    if (r && r.ok && r.data) {
-      __learnerClassesCache = r.data
-        .filter(function (c) { return c.is_active !== false; })
-        .map(function (c) { return c.name; })
-        .sort();
-    } else {
-      __learnerClassesCache = [];
-    }
-    return __learnerClassesCache;
-  }
-
-  // Escape helpers used inside templates
+  // ---------- Small helpers (module-scope, used across learners) ----------
   function parseNum(v) {
     if (v === null || v === undefined || v === '') return 0;
     const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
@@ -1407,7 +411,7 @@
     return d.toISOString().slice(0, 10);
   }
 
-  function isAdmin() { return !!(State.profile && (State.profile.role === 'admin' || State.profile.role === 'super_admin')); }
+  function isAdmin()      { return !!(State.profile && (State.profile.role === 'admin' || State.profile.role === 'super_admin')); }
   function isSuperAdmin() { return !!(State.profile && State.profile.role === 'super_admin'); }
 
   function contactOrderOf(learner) {
@@ -1427,8 +431,30 @@
     if (role === 'guardian') value = learner.guardian_phone || '—';
     return { role: role, label: CONTACT_LABELS[role], value: value };
   }
+  function infoRow(label, value) {
+    const v = (value !== undefined && value !== null && value !== '') ? esc(value) : '—';
+    return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + v + '</span></div>';
+  }
 
-  // ---------------- Load & grid ----------------
+  // ---------- Class list cache (for dropdowns) ----------
+  let __learnerClassesCache = null;
+  async function getClassNamesForDropdown() {
+    if (__learnerClassesCache) return __learnerClassesCache;
+    const r = await window.TIS.listClasses();
+    if (r && r.ok && r.data) {
+      __learnerClassesCache = r.data
+        .filter(function (c) { return c.is_active !== false; })
+        .map(function (c) { return c.name; })
+        .sort();
+    } else {
+      __learnerClassesCache = [];
+    }
+    return __learnerClassesCache;
+  }
+
+  // ================================================================
+  // Load & render the grid
+  // ================================================================
   async function loadLearners() {
     setHTML('learnersGrid', pageLoaderHTML('Loading learners…'));
     startLoader();
@@ -1502,12 +528,12 @@
       '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value">' + (total - exited) + '</div></div>');
   }
 
-  function infoRow(label, value) {
-    const v = (value !== undefined && value !== null && value !== '') ? esc(value) : '—';
-    return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + v + '</span></div>';
-  }
-
-  // ---------------- View modal ----------------
+  // ================================================================
+  // View modal — three-tier permission gating
+  //   A: everyone
+  //   B: admin / super_admin
+  //   C: super_admin only
+  // ================================================================
   async function openLearnerViewModal(pin) {
     closeModal();
     startLoader();
@@ -1665,16 +691,23 @@
     if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
   };
 
-  // ---------------- Edit modal (dropdowns + date pickers) ----------------
+  // ================================================================
+  // Edit modal — dropdowns for class / gender / religion,
+  //              native date picker for DOB
+  // ================================================================
   async function openLearnerEditModal(pin) {
     closeModal();
     startLoader();
     const r = await window.TIS.getLearnerByPin(pin);
-    stopLoader();
-    if (!r || !r.ok || !r.data) { showToast('Could not load learner ' + pin, 'error'); return; }
+    if (!r || !r.ok || !r.data) {
+      stopLoader();
+      showToast('Could not load learner ' + pin, 'error');
+      return;
+    }
     const d = r.data;
     const order = contactOrderOf(d);
     const classNames = await getClassNamesForDropdown();
+    stopLoader();
 
     const textField = function (id, label, value, type) {
       const t = type || 'text';
@@ -1686,7 +719,6 @@
       classNames.forEach(function (c) {
         opts += '<option value="' + escAttr(c) + '"' + (c === value ? ' selected' : '') + '>' + esc(c) + '</option>';
       });
-      // Add the current value if it's not in the list so we don't lose it.
       if (value && classNames.indexOf(value) === -1) {
         opts += '<option value="' + escAttr(value) + '" selected>' + esc(value) + '</option>';
       }
@@ -1730,8 +762,8 @@
 
     html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin:8px 0;">';
     html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Contact priority — which number is 1st, 2nd, 3rd</div>';
-    html += phoneField('ed_prio_father', "Father's phone", d.father_phone, 1);
-    html += phoneField('ed_prio_mother', "Mother's phone", d.mother_phone, 2);
+    html += phoneField('ed_prio_father',   "Father's phone",   d.father_phone,   1);
+    html += phoneField('ed_prio_mother',   "Mother's phone",   d.mother_phone,   2);
     html += phoneField('ed_prio_guardian', "Guardian's phone", d.guardian_phone, 3);
     html += '</div>';
 
@@ -1741,22 +773,12 @@
     html += '<div class="form-group"><label>Address</label><textarea id="ed_address" rows="2">' + esc(d.address || '') + '</textarea></div>';
     html += '<div class="form-row">' +
       textField('ed_state_of_origin', 'State of Origin', d.state_of_origin) +
-      textField('ed_lga_of_origin', 'LGA of Origin', d.lga_of_origin) + '</div>';
+      textField('ed_lga_of_origin',   'LGA of Origin',   d.lga_of_origin) + '</div>';
     html += '<div class="form-row">' +
       textField('ed_state_of_birth', 'State of Birth', d.state_of_birth) +
-      textField('ed_lga_of_birth', 'LGA of Birth', d.lga_of_birth) + '</div>';
+      textField('ed_lga_of_birth',   'LGA of Birth',   d.lga_of_birth) + '</div>';
     html += textField('ed_lin', 'LIN', d.lin);
 
-    const EXIT_REASONS = [
-      'Completion of Studies',
-      'Inability to Pay Tuition',
-      'Change of Location',
-      'Parent Differences',
-      'School Vs Parent Ideology',
-      'Discipline / Expulsion',
-      'Health Grounds',
-      'Life'
-    ];
     let exitOpts = '<option value="">— none —</option>';
     EXIT_REASONS.forEach(function (rs) {
       exitOpts += '<option value="' + escAttr(rs) + '"' + (rs === d.exit_reason ? ' selected' : '') + '>' + esc(rs) + '</option>';
@@ -1771,7 +793,7 @@
   }
 
   async function saveLearnerEdits(id) {
-    const get = function (id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const get = function (fid) { const el = document.getElementById(fid); return el ? String(el.value || '').trim() : ''; };
     const fields = {
       name:             get('ed_name'),
       class_name:       get('ed_class_name'),
@@ -1807,60 +829,49 @@
     else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
   }
 
-  // ---------------- Add learner ----------------
-  function openAddLearnerModal() {
-    getClassNamesForDropdown().then(function (classNames) {
-      let classOpts = '<option value="">— Select class —</option>';
-      classNames.forEach(function (c) { classOpts += '<option value="' + escAttr(c) + '">' + esc(c) + '</option>'; });
+  // ================================================================
+  // Add learner
+  // ================================================================
+  async function openAddLearnerModal() {
+    const classNames = await getClassNamesForDropdown();
+    let classOpts = '<option value="">— Select class —</option>';
+    classNames.forEach(function (c) { classOpts += '<option value="' + escAttr(c) + '">' + esc(c) + '</option>'; });
 
-      let relOpts = '<option value="">— Select —</option>';
-      RELIGION_OPTIONS.forEach(function (rel) { relOpts += '<option value="' + escAttr(rel) + '">' + esc(rel) + '</option>'; });
+    let relOpts = '<option value="">— Select —</option>';
+    RELIGION_OPTIONS.forEach(function (rel) { relOpts += '<option value="' + escAttr(rel) + '">' + esc(rel) + '</option>'; });
 
-      const f = function (id, label, value, type) {
-        const t = type || 'text';
-        return '<div class="form-group"><label>' + esc(label) + '</label>' +
-               '<input id="' + id + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
-      };
+    const f = function (id, label, value, type) {
+      const t = type || 'text';
+      return '<div class="form-group"><label>' + esc(label) + '</label>' +
+             '<input id="' + id + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
+    };
 
-      let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
-      html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-      html += '<div class="modal-header"><h2>Add New Learner</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Add New Learner</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
 
-      html += '<div class="form-row">' +
-              f('nl_pin', 'PIN', '') +
-              f('nl_name', 'Learner Name', '') + '</div>';
-      html += '<div class="form-row">' +
-              '<div class="form-group"><label>Class</label><select id="nl_class_name">' + classOpts + '</select></div>' +
-              '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
-              '</div>';
-      html += '<div class="form-row">' +
-              f('nl_date_of_birth', 'Date of Birth', '', 'date') +
-              f('nl_blood_group', 'Blood Group / Genotype', '') + '</div>';
-      html += '<div class="form-row">' +
-              f('nl_father_phone', "Father's Phone", '') +
-              f('nl_mother_phone', "Mother's Phone", '') + '</div>';
-      html += '<div class="form-row">' +
-              f('nl_guardian_phone', "Guardian's Phone", '') +
-              f('nl_account_number', 'Account Number', '') + '</div>';
-      html += '<div class="form-row">' +
-              '<div class="form-group"><label>Religion</label><select id="nl_religion">' + relOpts + '</select></div>' +
-              f('nl_allergy', 'Allergy', '') + '</div>';
-      html += f('nl_parents_name', 'Parents Name', '');
-      html += '<div class="form-group"><label>Address</label><textarea id="nl_address" rows="2"></textarea></div>';
-      html += '<div class="form-row">' +
-              f('nl_state_of_origin', 'State of Origin', '') +
-              f('nl_lga_of_origin', 'LGA of Origin', '') + '</div>';
-      html += '<div class="form-row">' +
-              f('nl_state_of_birth', 'State of Birth', '') +
-              f('nl_lga_of_birth', 'LGA of Birth', '') + '</div>';
-      html += f('nl_lin', 'LIN', '');
+    html += '<div class="form-row">' + f('nl_pin', 'PIN', '') + f('nl_name', 'Learner Name', '') + '</div>';
+    html += '<div class="form-row">' +
+      '<div class="form-group"><label>Class</label><select id="nl_class_name">' + classOpts + '</select></div>' +
+      '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
+      '</div>';
+    html += '<div class="form-row">' + f('nl_date_of_birth', 'Date of Birth', '', 'date') + f('nl_blood_group', 'Blood Group / Genotype', '') + '</div>';
+    html += '<div class="form-row">' + f('nl_father_phone', "Father's Phone", '') + f('nl_mother_phone', "Mother's Phone", '') + '</div>';
+    html += '<div class="form-row">' + f('nl_guardian_phone', "Guardian's Phone", '') + f('nl_account_number', 'Account Number', '') + '</div>';
+    html += '<div class="form-row">' +
+      '<div class="form-group"><label>Religion</label><select id="nl_religion">' + relOpts + '</select></div>' +
+      f('nl_allergy', 'Allergy', '') + '</div>';
+    html += f('nl_parents_name', 'Parents Name', '');
+    html += '<div class="form-group"><label>Address</label><textarea id="nl_address" rows="2"></textarea></div>';
+    html += '<div class="form-row">' + f('nl_state_of_origin', 'State of Origin', '') + f('nl_lga_of_origin', 'LGA of Origin', '') + '</div>';
+    html += '<div class="form-row">' + f('nl_state_of_birth', 'State of Birth', '') + f('nl_lga_of_birth', 'LGA of Birth', '') + '</div>';
+    html += f('nl_lin', 'LIN', '');
 
-      html += '<div style="text-align:right;margin-top:14px;">';
-      html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
-      html += '<button class="btn btn-success" onclick="submitNewLearner()">Add learner</button>';
-      html += '</div></div></div>';
-      setHTML('modalContainer', html);
-    });
+    html += '<div style="text-align:right;margin-top:14px;">';
+    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" onclick="submitNewLearner()">Add learner</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
   }
 
   async function submitNewLearner() {
@@ -1906,7 +917,9 @@
     }
   }
 
-  // ---------------- Part payment (date picker) ----------------
+  // ================================================================
+  // Part payment
+  // ================================================================
   async function openPartPaymentModal(learnerId) {
     closeModal();
     startLoader();
@@ -1957,7 +970,9 @@
     }
   }
 
-  // ---------------- Print chooser + print ----------------
+  // ================================================================
+  // Print — A4 or 80mm, section chooser
+  // ================================================================
   async function openPrintOptionsModal(pin) {
     closeModal();
     startLoader();
@@ -2112,7 +1127,9 @@
     closeModal();
   }
 
-  // ---------------- Live search ----------------
+  // ================================================================
+  // Live search
+  // ================================================================
   let learnerSearchTimer = null;
   function learnerLiveSearch() {
     if (learnerSearchTimer) clearTimeout(learnerSearchTimer);
@@ -2138,7 +1155,7 @@
     if (inp && !inp.__wired) { inp.addEventListener('input', learnerLiveSearch); inp.__wired = true; }
   });
 
-  // Keyboard shortcuts in the modal.
+  // Keyboard shortcuts inside the view modal
   document.addEventListener('keydown', function (e) {
     const modalBody = document.getElementById('lbModalBody');
     if (!modalBody) return;
@@ -2156,14 +1173,19 @@
     }
   });
 
-  // ---------------- Toolbar wiring ----------------
+  // ================================================================
+  // Toolbar wiring
+  // ================================================================
   function initLearnersTab() {
     const refresh = document.getElementById('btnRefreshLearners');
     if (refresh && !refresh.__wired) { refresh.addEventListener('click', function (e) { e.preventDefault(); loadLearners(); }); refresh.__wired = true; }
+
     const printBtn = document.getElementById('btnPrintLearners');
     if (printBtn && !printBtn.__wired) { printBtn.addEventListener('click', function (e) { e.preventDefault(); printLearnerList(); }); printBtn.__wired = true; }
+
     const dl = document.getElementById('btnDownloadTemplate');
     if (dl && !dl.__wired) { dl.addEventListener('click', function (e) { e.preventDefault(); downloadLearnerTemplate(); }); dl.__wired = true; }
+
     const upBtn = document.getElementById('btnUploadUpdates');
     const upFile = document.getElementById('learnerUploadFile');
     if (upBtn && upFile && !upBtn.__wired) {
@@ -2171,10 +1193,14 @@
       upFile.addEventListener('change', function (ev) { const f = ev.target.files[0]; if (f) uploadLearnerUpdates(f); upFile.value = ''; });
       upBtn.__wired = true;
     }
+
     const add = document.getElementById('btnAddLearner');
     if (add && !add.__wired) { add.addEventListener('click', function (e) { e.preventDefault(); openAddLearnerModal(); }); add.__wired = true; }
   }
 
+  // ================================================================
+  // Excel template download + upload
+  // ================================================================
   function downloadLearnerTemplate() {
     if (typeof XLSX === 'undefined') { showToast('Excel library not loaded — reload the page', 'error'); return; }
     const columns = [
@@ -2271,25 +1297,42 @@
     w.document.write(html); w.document.close(); setTimeout(function () { w.print(); }, 250);
   }
 
-  window.loadLearners           = loadLearners;
-  window.openLearnerViewModal   = openLearnerViewModal;
-  window.openLearnerEditModal   = openLearnerEditModal;
-  window.saveLearnerEdits       = saveLearnerEdits;
-  window.openAddLearnerModal    = openAddLearnerModal;
-  window.submitNewLearner       = submitNewLearner;
-  window.openPartPaymentModal   = openPartPaymentModal;
-  window.submitPartPayment      = submitPartPayment;
-  window.openPrintOptionsModal  = openPrintOptionsModal;
-  window.printLearnerCard       = printLearnerCard;
-  window.printLearnerList       = printLearnerList;
-  window.closeLearnerModal      = closeLearnerModal;
-  window.initLearnersTab        = initLearnersTab;
-  window.downloadLearnerTemplate = downloadLearnerTemplate;
-  window.uploadLearnerUpdates   = uploadLearnerUpdates;
-
-    // ================================================================
-  // [S08] STAFF
   // ================================================================
+  // Expose to window (inline handlers)
+  // ================================================================
+  window.loadLearners            = loadLearners;
+  window.initLearnersTab         = initLearnersTab;
+  window.openLearnerViewModal    = openLearnerViewModal;
+  window.openLearnerEditModal    = openLearnerEditModal;
+  window.saveLearnerEdits        = saveLearnerEdits;
+  window.openAddLearnerModal     = openAddLearnerModal;
+  window.submitNewLearner        = submitNewLearner;
+  window.openPartPaymentModal    = openPartPaymentModal;
+  window.submitPartPayment       = submitPartPayment;
+  window.openPrintOptionsModal   = openPrintOptionsModal;
+  window.printLearnerCard        = printLearnerCard;
+  window.printLearnerList        = printLearnerList;
+  window.closeLearnerModal       = closeLearnerModal;
+  window.downloadLearnerTemplate = downloadLearnerTemplate;
+  window.uploadLearnerUpdates    = uploadLearnerUpdates;
+  
+  // ================================================================
+  // [S08] STAFF
+  // Single canonical implementation.
+  //   • grid with live search + stats
+  //   • profile modal
+  //   • edit modal (all real columns, incl. position / school / bvn / DOB)
+  //   • add staff modal
+  //   • photo upload (base64 today; move to Storage later)
+  //   • print single card + whole list
+  // ================================================================
+  const STAFF_SCHOOLS = [
+    'The Ideal Secondary School',
+    'Hope and Faith Nur & Pry School'
+  ];
+  const STAFF_DEPARTMENTS = ['Teaching', 'Admin', 'Support'];
+  const STAFF_STATUSES    = ['Active', 'Inactive'];
+
   async function loadStaff() {
     setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
     startLoader();
@@ -2326,7 +1369,11 @@
       html += '<div class="card-header">';
       html += '<div class="card-avatar">' + (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
       html += '<div class="card-title"><h3>' + esc(name) + '</h3>';
-      html += '<div class="pin">' + esc(s.staff_id || s.id || '') + ' • ' + esc(s.department || '') + '</div></div>';
+      html += '<div class="pin">' + esc(s.staff_id || s.id || '') + ' • ' + esc(s.department || '') + '</div>';
+      if (s.position) {
+        html += '<div class="pin" style="font-size:10px;opacity:.75;">' + esc(s.position) + '</div>';
+      }
+      html += '</div>';
       html += '<span class="card-badge" style="' + badgeColor + '">' + esc(s.status || 'Active') + '</span>';
       html += '</div>';
       html += '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">';
@@ -2367,6 +1414,9 @@
       '<div class="stat-card blue"><div class="stat-label">Teaching</div><div class="stat-value" style="color:#1a5276;">' + teaching + '</div></div>');
   }
 
+  // ----------------------------------------------------------------
+  // Profile modal
+  // ----------------------------------------------------------------
   async function openStaffProfile(id) {
     closeModal();
     startLoader();
@@ -2388,7 +1438,8 @@
     html += '<div style="flex:1;min-width:220px;">';
     html += '<div style="font-weight:800;font-size:15px;color:#0d4d26;">' + esc(name) + '</div>';
     html += '<div style="font-size:12px;color:#666;">' + esc(s.staff_id || '') + ' · ' + esc(s.department || '') + '</div>';
-    html += '<div style="font-size:12px;color:#666;">' + esc(s.qualification || '') + '</div>';
+    if (s.position) html += '<div style="font-size:12px;color:#666;">' + esc(s.position) + '</div>';
+    if (s.school)   html += '<div style="font-size:11px;color:#888;">' + esc(s.school) + '</div>';
     html += '</div>';
     if (hasPermission('write_staff')) {
       html += '<div><button class="btn btn-sm btn-warning" onclick="openStaffPhotoModal(\'' + escAttr(id) + '\')"><i class="fas fa-camera"></i> Change photo</button></div>';
@@ -2401,7 +1452,10 @@
     html += infoRow('Staff ID', s.staff_id);
     html += infoRow('Full Name', name);
     html += infoRow('Gender', s.gender);
+    html += infoRow('Date of Birth', fmtDateOrDash(s.date_of_birth));
+    html += infoRow('School', s.school);
     html += infoRow('Department', s.department);
+    html += infoRow('Position', s.position);
     html += infoRow('Phone', s.phone);
     html += infoRow('Email', s.email);
     html += infoRow('Employment Date', fmtDateOrDash(s.employment_date));
@@ -2411,6 +1465,7 @@
     html += infoRow('Subjects Taught', s.subjects_taught);
     html += infoRow('Bank', s.bank);
     html += infoRow('Account Number', s.account_number);
+    html += infoRow('BVN', s.bvn);
     html += infoRow('Salary', moneyOrDash(s.salary));
     html += infoRow('Status', s.status);
     html += infoRow('Resume Time', s.resume_time);
@@ -2421,6 +1476,9 @@
 
     html += '<div style="text-align:right;margin-top:12px;">';
     html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Close</button> ';
+    if (hasPermission('print_staff')) {
+      html += '<button class="btn btn-gold" onclick="printStaffCard(' + s.id + ')">Print</button> ';
+    }
     if (hasPermission('write_staff')) {
       html += '<button class="btn btn-primary" onclick="openStaffEditModal(\'' + escAttr(id) + '\')">Edit</button>';
     }
@@ -2434,6 +1492,9 @@
     setHTML('modalContainer', '');
   }
 
+  // ----------------------------------------------------------------
+  // Edit modal
+  // ----------------------------------------------------------------
   async function openStaffEditModal(id) {
     closeModal();
     startLoader();
@@ -2446,11 +1507,14 @@
       const t = type || 'text';
       return '<div class="form-group"><label>' + esc(label) + '</label><input id="' + fid + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
     };
-    const sel = function (fid, label, value, options) {
-      let o = '';
+    const sel = function (fid, label, value, options, allowBlank) {
+      let o = allowBlank ? '<option value="">—</option>' : '';
       options.forEach(function (opt) {
         o += '<option value="' + escAttr(opt) + '"' + (opt === value ? ' selected' : '') + '>' + esc(opt) + '</option>';
       });
+      if (value && options.indexOf(value) === -1) {
+        o += '<option value="' + escAttr(value) + '" selected>' + esc(value) + '</option>';
+      }
       return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + fid + '">' + o + '</select></div>';
     };
 
@@ -2460,16 +1524,17 @@
 
     html += '<div class="form-row">' + f('es_staff_id', 'Staff ID', s.staff_id) + f('es_surname', 'Surname', s.surname) + '</div>';
     html += '<div class="form-row">' + f('es_first_name', 'First Name', s.first_name) + f('es_middle_name', 'Middle Name', s.middle_name) + '</div>';
-    html += '<div class="form-row">' + sel('es_gender', 'Gender', s.gender, ['', 'Male', 'Female']) + f('es_phone', 'Phone', s.phone) + '</div>';
-    html += '<div class="form-row">' + f('es_email', 'Email', s.email) + sel('es_department', 'Department', s.department, ['', 'Teaching', 'Admin', 'Support']) + '</div>';
-    html += '<div class="form-row">' + f('es_qualification', 'Qualification', s.qualification) + f('es_employment_date', 'Employment Date', s.employment_date) + '</div>';
-    html += '<div class="form-row">' + f('es_graduation_year', 'Graduation Year', s.graduation_year) + f('es_course_of_study', 'Course of Study', s.course_of_study) + '</div>';
-    html += f('es_subjects_taught', 'Subjects Taught', s.subjects_taught);
+    html += '<div class="form-row">' + sel('es_gender', 'Gender', s.gender, ['Male', 'Female'], true) + f('es_date_of_birth', 'Date of Birth', s.date_of_birth, 'date') + '</div>';
+    html += '<div class="form-row">' + sel('es_school', 'School', s.school, STAFF_SCHOOLS, true) + sel('es_department', 'Department', s.department, STAFF_DEPARTMENTS, true) + '</div>';
+    html += '<div class="form-row">' + f('es_position', 'Position', s.position) + f('es_phone', 'Phone', s.phone) + '</div>';
+    html += '<div class="form-row">' + f('es_email', 'Email', s.email) + f('es_qualification', 'Qualification', s.qualification) + '</div>';
+    html += '<div class="form-row">' + f('es_employment_date', 'Employment Date', s.employment_date, 'date') + f('es_graduation_year', 'Graduation Year', s.graduation_year) + '</div>';
+    html += '<div class="form-row">' + f('es_course_of_study', 'Course of Study', s.course_of_study) + f('es_subjects_taught', 'Subjects Taught', s.subjects_taught) + '</div>';
     html += '<div class="form-row">' + f('es_bank', 'Bank', s.bank) + f('es_account_number', 'Account Number', s.account_number) + '</div>';
-    html += '<div class="form-row">' + f('es_salary', 'Salary (₦)', s.salary) + f('es_position', 'Position', s.position) + '</div>';
+    html += '<div class="form-row">' + f('es_bvn', 'BVN', s.bvn) + f('es_salary', 'Salary (₦)', s.salary) + '</div>';
     html += '<div class="form-row">' + f('es_resume_time', 'Resume Time', s.resume_time) + f('es_close_time', 'Close Time', s.close_time) + '</div>';
     html += '<div class="form-row">' + f('es_late_cutoff', 'Late Cutoff', s.late_cutoff) + f('es_early_cutoff', 'Early Cutoff', s.early_cutoff) + '</div>';
-    html += '<div class="form-row">' + sel('es_status', 'Status', s.status, ['Active', 'Inactive']) + '</div>';
+    html += '<div class="form-row">' + sel('es_status', 'Status', s.status || 'Active', STAFF_STATUSES, false) + '</div>';
 
     html += '<div style="text-align:right;margin-top:14px;">';
     html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button> ';
@@ -2481,15 +1546,23 @@
 
   async function saveStaffEdits(id) {
     const get = function (fid) { const el = $(fid); return el ? String(el.value || '').trim() : ''; };
+    const salaryRaw = get('es_salary');
+    const salaryNum = salaryRaw
+      ? Number(String(salaryRaw).replace(/[^0-9.\-]/g, ''))
+      : null;
+
     const patch = {
       staff_id:        get('es_staff_id'),
       surname:         get('es_surname'),
       first_name:      get('es_first_name'),
       middle_name:     get('es_middle_name'),
       gender:          get('es_gender'),
+      date_of_birth:   get('es_date_of_birth'),
+      school:          get('es_school'),
+      department:      get('es_department'),
+      position:        get('es_position'),
       phone:           get('es_phone'),
       email:           get('es_email'),
-      department:      get('es_department'),
       qualification:   get('es_qualification'),
       employment_date: get('es_employment_date'),
       graduation_year: get('es_graduation_year'),
@@ -2497,8 +1570,8 @@
       subjects_taught: get('es_subjects_taught'),
       bank:            get('es_bank'),
       account_number:  get('es_account_number'),
-      salary:          get('es_salary'),
-      position:        get('es_position'),
+      bvn:             get('es_bvn'),
+      salary:          (salaryNum !== null && !isNaN(salaryNum)) ? salaryNum : null,
       resume_time:     get('es_resume_time'),
       close_time:      get('es_close_time'),
       late_cutoff:     get('es_late_cutoff'),
@@ -2506,30 +1579,55 @@
       status:          get('es_status') || 'Active'
     };
     patch.full_name = [patch.surname, patch.first_name, patch.middle_name].filter(Boolean).join(' ');
+    if (!patch.staff_id || !patch.full_name) {
+      showToast('Staff ID and name are required', 'warning');
+      return;
+    }
 
     startLoader();
     const r = await window.TIS.updateStaff(id, patch);
     stopLoader();
-    if (r && r.ok) { showToast('Staff updated', 'success'); closeStaffModal(); loadStaff(); }
-    else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+    if (r && r.ok) {
+      showToast('Staff updated', 'success');
+      closeStaffModal();
+      loadStaff();
+    } else {
+      showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+      console.error('[saveStaffEdits]', r && r.error, patch);
+    }
   }
 
+  // ----------------------------------------------------------------
+  // Add staff modal
+  // ----------------------------------------------------------------
   function openAddStaffModal() {
+    const f = function (fid, label, value, type) {
+      const t = type || 'text';
+      return '<div class="form-group"><label>' + esc(label) + '</label><input id="' + fid + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
+    };
+    const sel = function (fid, label, options, blank) {
+      let o = blank ? '<option value="">—</option>' : '';
+      options.forEach(function (opt) { o += '<option value="' + escAttr(opt) + '">' + esc(opt) + '</option>'; });
+      return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + fid + '">' + o + '</select></div>';
+    };
+
     let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
     html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
     html += '<div class="modal-header"><h2>Add Staff</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Staff ID</label><input id="ns_staff_id"></div>' +
-            '<div class="form-group"><label>Surname</label><input id="ns_surname"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>First Name</label><input id="ns_first_name"></div>' +
-            '<div class="form-group"><label>Middle Name</label><input id="ns_middle_name"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Gender</label><select id="ns_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
-            '<div class="form-group"><label>Phone</label><input id="ns_phone"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Email</label><input id="ns_email"></div>' +
-            '<div class="form-group"><label>Department</label><select id="ns_department"><option value="">—</option><option>Teaching</option><option>Admin</option><option>Support</option></select></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Qualification</label><input id="ns_qualification"></div>' +
-            '<div class="form-group"><label>Employment Date</label><input id="ns_employment_date" placeholder="01-Jan-2026"></div></div>';
-    html += '<div class="form-row"><div class="form-group"><label>Resume Time</label><input id="ns_resume_time" value="07:00"></div>' +
-            '<div class="form-group"><label>Close Time</label><input id="ns_close_time" value="16:30"></div></div>';
+
+    html += '<div class="form-row">' + f('ns_staff_id', 'Staff ID', '') + f('ns_surname', 'Surname', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_first_name', 'First Name', '') + f('ns_middle_name', 'Middle Name', '') + '</div>';
+    html += '<div class="form-row">' + sel('ns_gender', 'Gender', ['Male', 'Female'], true) + f('ns_date_of_birth', 'Date of Birth', '', 'date') + '</div>';
+    html += '<div class="form-row">' + sel('ns_school', 'School', STAFF_SCHOOLS, true) + sel('ns_department', 'Department', STAFF_DEPARTMENTS, true) + '</div>';
+    html += '<div class="form-row">' + f('ns_position', 'Position', '') + f('ns_phone', 'Phone', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_email', 'Email', '') + f('ns_qualification', 'Qualification', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_employment_date', 'Employment Date', '', 'date') + f('ns_graduation_year', 'Graduation Year', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_course_of_study', 'Course of Study', '') + f('ns_subjects_taught', 'Subjects Taught', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_bank', 'Bank', '') + f('ns_account_number', 'Account Number', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_bvn', 'BVN', '') + f('ns_salary', 'Salary (₦)', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_resume_time', 'Resume Time', '07:00') + f('ns_close_time', 'Close Time', '16:30') + '</div>';
+    html += '<div class="form-row">' + f('ns_late_cutoff', 'Late Cutoff', '') + f('ns_early_cutoff', 'Early Cutoff', '') + '</div>';
+
     html += '<div style="text-align:right;margin-top:14px;">';
     html += '<button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button> ';
     html += '<button class="btn btn-success" onclick="submitNewStaff()">Add staff</button>';
@@ -2542,34 +1640,56 @@
     const surname = get('ns_surname');
     const firstName = get('ns_first_name');
     const middleName = get('ns_middle_name');
+    const salaryRaw = get('ns_salary');
+    const salaryNum = salaryRaw ? Number(String(salaryRaw).replace(/[^0-9.\-]/g, '')) : null;
+
     const row = {
-      staff_id: get('ns_staff_id'),
-      surname: surname,
-      first_name: firstName,
-      middle_name: middleName,
-      full_name: [surname, firstName, middleName].filter(Boolean).join(' '),
-      gender: get('ns_gender'),
-      phone: get('ns_phone'),
-      email: get('ns_email'),
-      department: get('ns_department'),
-      qualification: get('ns_qualification'),
+      staff_id:        get('ns_staff_id'),
+      surname:         surname,
+      first_name:      firstName,
+      middle_name:     middleName,
+      full_name:       [surname, firstName, middleName].filter(Boolean).join(' '),
+      gender:          get('ns_gender'),
+      date_of_birth:   get('ns_date_of_birth'),
+      school:          get('ns_school'),
+      department:      get('ns_department'),
+      position:        get('ns_position'),
+      phone:           get('ns_phone'),
+      email:           get('ns_email'),
+      qualification:   get('ns_qualification'),
       employment_date: get('ns_employment_date'),
-      resume_time: get('ns_resume_time') || '07:00',
-      close_time: get('ns_close_time') || '16:30',
-      status: 'Active'
+      graduation_year: get('ns_graduation_year'),
+      course_of_study: get('ns_course_of_study'),
+      subjects_taught: get('ns_subjects_taught'),
+      bank:            get('ns_bank'),
+      account_number:  get('ns_account_number'),
+      bvn:             get('ns_bvn'),
+      salary:          (salaryNum !== null && !isNaN(salaryNum)) ? salaryNum : null,
+      resume_time:     get('ns_resume_time') || '07:00',
+      close_time:      get('ns_close_time') || '16:30',
+      late_cutoff:     get('ns_late_cutoff'),
+      early_cutoff:    get('ns_early_cutoff'),
+      status:          'Active'
     };
     if (!row.staff_id || !row.full_name) { showToast('Staff ID and name are required', 'warning'); return; }
+
     startLoader();
     const r = await window.TIS.createStaff(row);
     stopLoader();
     if (r && r.ok) { showToast('Staff added', 'success'); closeStaffModal(); loadStaff(); }
-    else showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error');
+    else { showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error'); console.error('[submitNewStaff]', r && r.error, row); }
   }
 
+  // ----------------------------------------------------------------
+  // Photo modal — shows staff_id in the title, not UUID
+  // ----------------------------------------------------------------
   function openStaffPhotoModal(id) {
+    const s = (State.cachedStaff || []).find(function (x) { return String(x.id) === String(id); });
+    const display = s ? (s.staff_id || staffName(s) || id) : id;
+
     let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
     html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Photo — ' + esc(id) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+    html += '<div class="modal-header"><h2>Photo — ' + esc(display) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
     html += '<div style="text-align:center;">';
     html += '<input type="file" id="staffPhotoInput" accept="image/*" style="margin-bottom:14px;">';
     html += '<div id="staffPhotoPreview" style="width:120px;height:120px;margin:10px auto;border-radius:50%;border:3px solid #d4a017;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f5f5f5;color:#666;font-size:12px;">preview</div>';
@@ -2608,6 +1728,9 @@
     }
   }
 
+  // ----------------------------------------------------------------
+  // Print
+  // ----------------------------------------------------------------
   function printStaffCard(id) {
     const s = (State.cachedStaff || []).find(function (x) { return String(x.id) === String(id); });
     if (!s) { showToast('Staff not found', 'warning'); return; }
@@ -2629,8 +1752,11 @@
     html += '<h2 style="margin-top:16px;color:#0b6623;">' + esc(name) + ' — ' + esc(s.staff_id || '') + '</h2>';
     html += '<table>';
     const rows = [
+      ['School', s.school],
       ['Department', s.department],
+      ['Position', s.position],
       ['Gender', s.gender],
+      ['Date of Birth', s.date_of_birth],
       ['Phone', s.phone],
       ['Email', s.email],
       ['Employment Date', s.employment_date],
@@ -2640,11 +1766,13 @@
       ['Subjects Taught', s.subjects_taught],
       ['Bank', s.bank],
       ['Account Number', s.account_number],
+      ['BVN', s.bvn],
       ['Salary', s.salary],
       ['Status', s.status]
     ];
     rows.forEach(function (r) {
-      html += '<tr><td class="k">' + esc(r[0]) + '</td><td>' + esc(r[1] || '') + '</td></tr>';
+      if (r[1] === undefined || r[1] === null || r[1] === '') return;
+      html += '<tr><td class="k">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>';
     });
     html += '</table></body></html>';
     w.document.write(html); w.document.close(); w.print();
@@ -2659,16 +1787,20 @@
       'table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:white;padding:8px;font-size:11px;}' +
       'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}</style></head><body>';
     html += '<h1>THE IDEAL SCHOOLS — Staff List</h1>';
-    html += '<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Phone</th><th>Status</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Position</th><th>Phone</th><th>Status</th></tr></thead><tbody>';
     State.cachedStaff.forEach(function (s) {
       html += '<tr><td>' + esc(s.staff_id || '') + '</td><td>' + esc(staffName(s)) + '</td>' +
-              '<td>' + esc(s.department || '') + '</td><td>' + esc(s.phone || '') + '</td>' +
+              '<td>' + esc(s.department || '') + '</td><td>' + esc(s.position || '') + '</td>' +
+              '<td>' + esc(s.phone || '') + '</td>' +
               '<td>' + esc(s.status || 'Active') + '</td></tr>';
     });
     html += '</tbody></table></body></html>';
     w.document.write(html); w.document.close(); w.print();
   }
 
+  // ----------------------------------------------------------------
+  // Toolbar wiring
+  // ----------------------------------------------------------------
   function initStaffTab() {
     const input = $('staffSearchInput');
     if (input && !input.__wired) {
@@ -2678,6 +1810,7 @@
         const filtered = (State.cachedStaff || []).filter(function (s) {
           return (staffName(s) || '').toLowerCase().indexOf(q) !== -1 ||
                  (s.staff_id || '').toLowerCase().indexOf(q) !== -1 ||
+                 (s.position || '').toLowerCase().indexOf(q) !== -1 ||
                  (s.phone || '').indexOf(q) !== -1 ||
                  (s.email || '').toLowerCase().indexOf(q) !== -1;
         });
@@ -2685,12 +1818,23 @@
       }, 250));
       input.__wired = true;
     }
-    const add = $('btnAddStaff');     if (add && !add.__wired) { add.addEventListener('click', openAddStaffModal); add.__wired = true; }
-    const rf  = $('btnRefreshStaff'); if (rf  && !rf.__wired)  { rf.addEventListener('click', loadStaff); rf.__wired = true; }
-    const pr  = $('btnPrintStaff');   if (pr  && !pr.__wired)  { pr.addEventListener('click', function () { if (State.cachedStaff && State.cachedStaff.length) printStaffList(); else showToast('Load the list first', 'warning'); }); pr.__wired = true; }
+    const add = $('btnAddStaff');
+    if (add && !add.__wired) { add.addEventListener('click', openAddStaffModal); add.__wired = true; }
+    const rf  = $('btnRefreshStaff');
+    if (rf  && !rf.__wired)  { rf.addEventListener('click', loadStaff); rf.__wired = true; }
+    const pr  = $('btnPrintStaff');
+    if (pr  && !pr.__wired)  {
+      pr.addEventListener('click', function () {
+        if (State.cachedStaff && State.cachedStaff.length) printStaffList();
+        else showToast('Load the list first', 'warning');
+      });
+      pr.__wired = true;
+    }
   }
 
-  // ---------------- Globals ----------------
+  // ----------------------------------------------------------------
+  // Globals
+  // ----------------------------------------------------------------
   window.loadStaff            = loadStaff;
   window.openStaffProfile     = openStaffProfile;
   window.openStaffEditModal   = openStaffEditModal;
