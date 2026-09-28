@@ -572,7 +572,48 @@
       return ok({ oldDate: oldDate, newDate: newDate });
     } catch (err) { return fail(err); }
   };
+  TIS.moveHoliday = async function (fromDate, toDate, holidayName) {
+    try {
+      const sb = await loadSdk();
 
+      // 1. Look up the holiday row currently on `fromDate`.
+      const { data: existing, error: lookErr } = await sb
+        .from('academic_calendar')
+        .select('*')
+        .eq('event_date', fromDate)
+        .maybeSingle();
+      if (lookErr) return fail(lookErr.message);
+
+      // 2. If we found one, move it (delete the old, insert the new).
+      //    This is simpler and safer than trying to update in place,
+      //    because the table may have a unique constraint on event_date.
+      if (existing) {
+        const { error: delErr } = await sb
+          .from('academic_calendar')
+          .delete()
+          .eq('id', existing.id);
+        if (delErr) return fail(delErr.message);
+      }
+
+      // 3. Insert the moved holiday on the new date.
+      const { data: inserted, error: insErr } = await sb
+        .from('academic_calendar')
+        .insert({
+          event_date:    toDate,
+          event_type:    'Holiday',
+          is_holiday:    true,
+          holiday_name:  holidayName || (existing && existing.holiday_name) || 'Holiday',
+          description:   'MOVED from ' + fromDate,
+          term_type:     existing ? existing.term_type : null,
+          academic_year: existing ? existing.academic_year : null
+        })
+        .select()
+        .single();
+      if (insErr) return fail(insErr.message);
+
+      return ok({ from: fromDate, to: toDate, holiday: inserted });
+    } catch (err) { return fail(err); }
+  };
   TIS.markWeekForLearners = async function (termType, year, learnerIds, dates, mark, markedBy) {
     const marks = [];
     learnerIds.forEach(function (id) {
