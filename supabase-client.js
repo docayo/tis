@@ -2,6 +2,29 @@
 // TIS EMIS — SUPABASE CLIENT
 // File: supabase-client.js
 // ================================================================
+// Contents:
+//   [SDK]      loadSdk, ok, fail, toAuthEmail
+//   [AUTH]     signIn, signOut, getCurrentProfile, changePassword
+//   [LEARNERS] listLearners, searchLearners, get/create/update,
+//              setLearnerContactPriority
+//   [LEARNER_TERMS] getLearnerTerms, getLearnerTermForActive,
+//                   getLearnerTermFor, recordPartPayment
+//   [ATTENDANCE_LEARNER] getAttendanceRegister, saveAttendanceMarks,
+//                        shiftHoliday, markWeekForLearners
+//   [STAFF]    listStaff, getStaff, createStaff, updateStaff, deleteStaff
+//   [STAFF_ATTENDANCE] listStaffAttendanceToday, upsertStaffAttendance,
+//                      listStaffAttendanceRange, listStaffMovementsToday,
+//                      createStaffMovement, updateStaffMovement
+//   [QR]       getActiveQRToken, generateQRToken, getQRTokenByValue
+//   [TERMS]    listTerms, getTerms, getActiveTerm, setActiveTerm
+//   [PROMOTION] getPromotionStatus, termPromote, yearPromote,
+//               getLearnersForClasses, promoteLearners
+//   [CLASSES]  listClasses, createClass, updateClass, deleteClass, getNextClass
+//   [CALENDAR] getCalendar, listCalendar
+//   [USERS]    getPermissionMatrix, setUserAuthorities, getAllUsers,
+//              getUserById, updateUser, deactivateUser, reactivateUser,
+//              createUser, adminResetPassword, roleDefaults
+// ================================================================
 
 (function () {
   'use strict';
@@ -96,7 +119,9 @@
 
   const TIS = {};
 
-  // ---------------- AUTH ----------------
+  // ================================================================
+  // [AUTH]
+  // ================================================================
   TIS.signIn = async function (operatorId, password) {
     try {
       const sb = await loadSdk();
@@ -121,27 +146,241 @@
     } catch (err) { return fail(err); }
   };
 
-  // ---------------- ATTENDANCE ----------------
-  // Load the full register grid for one class in one term.
-  // Returns:
-  //   {
-  //     className, termType, year,
-  //     learners: [ { id, pin, name, gender, age, photo_url } ],
-  //     weeks: [
-  //       {
-  //         weekNumber, weekEnding (Friday ISO),
-  //         days: [
-  //           { date, dayName, isHoliday, holidayName,
-  //             marksByLearner: { learnerId: mark } }
-  //         ]
-  //       }
-  //     ]
-  //   }
+  TIS.signOut = async function () {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.auth.signOut();
+      if (error) return fail(error.message);
+      return ok({});
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getCurrentProfile = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return fail('Not signed in');
+      const { data, error } = await sb
+        .from('users')
+        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities')
+        .eq('id', user.id)
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.changePassword = async function (newPassword) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.auth.updateUser({ password: newPassword });
+      if (error) return fail(error.message);
+      const { data: { user } } = await sb.auth.getUser();
+      if (user) {
+        await sb.from('users').update({
+          must_change_password: false,
+          password_last_changed: new Date().toISOString()
+        }).eq('id', user.id);
+      }
+      return ok({});
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [LEARNERS]
+  // ================================================================
+  TIS.listLearners = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learners')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.searchLearners = async function (term) {
+    try {
+      const q = String(term || '').trim();
+      if (!q) return ok([]);
+      const sb = await loadSdk();
+      const pattern = '%' + q + '%';
+      const { data, error } = await sb
+        .from('learners').select('*')
+        .or('pin.ilike.' + pattern +
+            ',name.ilike.' + pattern +
+            ',father_phone.ilike.' + pattern +
+            ',mother_phone.ilike.' + pattern +
+            ',guardian_phone.ilike.' + pattern +
+            ',account_number.ilike.' + pattern)
+        .order('name', { ascending: true }).limit(100);
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearner = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('learners').select('*').eq('id', id).maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearnerByPin = async function (pin) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('learners').select('*').eq('pin', pin).maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createLearner = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('learners').insert(row).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.updateLearner = async function (id, patch) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learners')
+        .update(Object.assign({}, patch, { updated_at: new Date().toISOString() }))
+        .eq('id', id)
+        .select();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.setLearnerContactPriority = async function (learnerId, order) {
+    try {
+      const sb = await loadSdk();
+      const patch = {
+        contact_priority_1: order.p1 || null,
+        contact_priority_2: order.p2 || null,
+        contact_priority_3: order.p3 || null,
+        updated_at: new Date().toISOString()
+      };
+      const { error } = await sb.from('learners').update(patch).eq('id', learnerId);
+      if (error) return fail(error.message);
+      return ok({ id: learnerId });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [LEARNER_TERMS]
+  // ================================================================
+  TIS.getLearnerTerms = async function (learnerId) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .order('year', { ascending: false });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearnerTermForActive = async function (learnerId) {
+    try {
+      const active = await TIS.getActiveTerm();
+      if (!active.ok || !active.data) return fail('No active term set.');
+      const t = active.data;
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', t.term_type)
+        .eq('year', t.year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok({ row: data || null, term: t });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearnerTermFor = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.recordPartPayment = async function (learnerId, termType, year, amount, dateISO, mode) {
+    try {
+      const sb = await loadSdk();
+      const { data: row, error: rowErr } = await sb
+        .from('learner_terms').select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (rowErr) return fail(rowErr.message);
+      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
+
+      const slots = [1, 2, 3, 4, 5];
+      let slot = null;
+      for (var i = 0; i < slots.length; i++) {
+        if (!row['part_payment_' + slots[i] + '_amount']) { slot = slots[i]; break; }
+      }
+      if (slot === null) return fail('All 5 part-payment slots are full. See Accounts.');
+
+      const patch = {};
+      patch['part_payment_' + slot + '_amount'] = String(amount);
+      patch['part_payment_' + slot + '_date']   = dateISO || new Date().toISOString().slice(0, 10);
+
+      const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
+      let newTotal = 0;
+      for (var j = 0; j < slots.length; j++) {
+        const m = slots[j];
+        const v = (m === slot) ? Number(amount) : num(row['part_payment_' + m + '_amount']);
+        newTotal += v;
+      }
+      patch.total_part_payment = String(newTotal);
+
+      const newBalance = num(row.balance_bf) + num(row.bill) + num(row.other_bill) - newTotal;
+      patch.balance_cf = String(newBalance);
+
+      if (newBalance <= 0) {
+        patch.cleared   = 'Yes';
+        patch.clearance = dateISO || new Date().toISOString().slice(0, 10);
+      }
+      patch.updated_at = new Date().toISOString();
+
+      const { error: updErr } = await sb.from('learner_terms')
+        .update(patch)
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (updErr) return fail(updErr.message);
+
+      return ok({ slot: slot, patch: patch });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [ATTENDANCE_LEARNER]
+  // ================================================================
   TIS.getAttendanceRegister = async function (className, termType, year) {
     try {
       const sb = await loadSdk();
 
-      // 1. Learners in this class
       const learnerQ = await sb
         .from('learners')
         .select('id, pin, name, gender, date_of_birth, photo_url, class_name, date_of_withdrawal')
@@ -153,7 +392,6 @@
         return !(w && w !== '' && w !== 'N/A');
       });
 
-      // 2. Attendance rows for this class / term / year
       const attQ = await sb
         .from('attendance_learner')
         .select('learner_id, attendance_date, mark')
@@ -161,7 +399,6 @@
         .eq('year', year);
       if (attQ.error) return fail(attQ.error.message);
 
-      // 3. Calendar events: find the term, get holidays + term start/end
       const termQ = await sb
         .from('terms')
         .select('*')
@@ -171,14 +408,12 @@
       if (termQ.error) return fail(termQ.error.message);
       const term = termQ.data;
 
-      // 4. Holidays for this term from academic_calendar
       const holQ = await sb
         .from('academic_calendar')
         .select('event_date, event_type, is_holiday, holiday_name, description')
         .eq('term_type', termType)
         .eq('academic_year', term ? (term.year + '/' + (term.year + 1)) : '')
         .order('event_date', { ascending: true });
-      // Non-fatal if this fails; just empty holidays.
       const holidayMap = {};
       if (!holQ.error && holQ.data) {
         holQ.data.forEach(function (h) {
@@ -188,23 +423,19 @@
         });
       }
 
-      // 5. Build marks map: date → { learnerId → mark }
       const marksByDate = {};
       (attQ.data || []).forEach(function (r) {
         if (!marksByDate[r.attendance_date]) marksByDate[r.attendance_date] = {};
         marksByDate[r.attendance_date][r.learner_id] = r.mark;
       });
 
-      // 6. Group dates into weeks (Mon → Fri) between term.start_date
-      //    and term.end_date, excluding any date past today.
       const today = new Date().toISOString().slice(0, 10);
       const startISO = term ? term.start_date : null;
       const endISO   = term ? term.end_date   : null;
       const weeks = [];
       if (startISO && endISO) {
         let cursor = new Date(startISO + 'T00:00:00');
-        // Align cursor to the Monday of that week.
-        const dow = cursor.getDay(); // 0 Sun, 1 Mon, ...
+        const dow = cursor.getDay();
         const offsetToMonday = (dow === 0 ? -6 : 1 - dow);
         cursor.setDate(cursor.getDate() + offsetToMonday);
 
@@ -212,7 +443,7 @@
         let weekNumber = 1;
         while (cursor <= end && weekNumber <= 20) {
           const days = [];
-          for (let d = 0; d < 5; d++) {           // Mon – Fri
+          for (let d = 0; d < 5; d++) {
             const day = new Date(cursor.getTime());
             day.setDate(day.getDate() + d);
             const iso = day.toISOString().slice(0, 10);
@@ -229,15 +460,13 @@
               marksByLearner: marksForLearner
             });
           }
-          const weekEnding = days[4].date;   // Friday
+          const weekEnding = days[4].date;
           weeks.push({ weekNumber: weekNumber, weekEnding: weekEnding, days: days });
-          // Advance to next Monday
           cursor.setDate(cursor.getDate() + 7);
           weekNumber++;
         }
       }
 
-      // 7. Compute age from date_of_birth if present.
       learners.forEach(function (l) {
         l.age = computeAge_(l.date_of_birth);
       });
@@ -257,7 +486,6 @@
     if (!dobStr) return '';
     const s = String(dobStr).trim();
     let d = null;
-    // Try DD/MM/YYYY first
     let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (m) d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
     else d = new Date(s);
@@ -269,8 +497,6 @@
     return age;
   }
 
-  // Bulk upsert: marks is [ { learnerId, date, mark } ].
-  // Marks with mark === '' delete that cell's row.
   TIS.saveAttendanceMarks = async function (termType, year, marks, markedBy) {
     try {
       if (!marks || marks.length === 0) return ok({ applied: 0, deleted: 0 });
@@ -286,7 +512,6 @@
       let applied = 0, deleted = 0;
       const CHUNK = 200;
 
-      // Deletes first (so upsert on (learner_id, date) doesn't collide)
       for (let i = 0; i < toDelete.length; i += CHUNK) {
         const slice = toDelete.slice(i, i + CHUNK);
         for (const d of slice) {
@@ -298,7 +523,6 @@
         deleted += slice.length;
       }
 
-      // Upserts
       for (let i = 0; i < toUpsert.length; i += CHUNK) {
         const slice = toUpsert.slice(i, i + CHUNK);
         const rows = slice.map(function (m) {
@@ -321,11 +545,9 @@
     } catch (err) { return fail(err); }
   };
 
-  // Move a holiday in the calendar (from academic_calendar).
   TIS.shiftHoliday = async function (oldDate, newDate, holidayName) {
     try {
       const sb = await loadSdk();
-      // Update the academic_calendar row. If it doesn't exist, insert one.
       const { data: existing } = await sb
         .from('academic_calendar')
         .select('id')
@@ -351,8 +573,6 @@
     } catch (err) { return fail(err); }
   };
 
-  // Set the full-week marks for one learner (or everyone) — bulk helper.
-  // Convenience for the UI: not a new table, just calls saveAttendanceMarks.
   TIS.markWeekForLearners = async function (termType, year, learnerIds, dates, mark, markedBy) {
     const marks = [];
     learnerIds.forEach(function (id) {
@@ -360,78 +580,73 @@
     });
     return TIS.saveAttendanceMarks(termType, year, marks, markedBy);
   };
-  // ---------------- PROMOTION STATUS ----------------
-  // Figures out whether a term promotion is due.
-  // Returns:
-  //   {
-  //     needsTermPromotion: bool,
-  //     activeTerm: { term_type, year, label, end_date },
-  //     nextTerm:   { term_type, year, label },
-  //     pendingLearners: N
-  //   }
-  TIS.getPromotionStatus = async function () {
+  
+  // ================================================================
+  // [STAFF]
+  // ================================================================
+  TIS.listStaff = async function () {
     try {
-      const active = await TIS.getActiveTerm();
-      if (!active.ok || !active.data) return ok({ needsTermPromotion: false });
-      const t = active.data;
-
-      // Compute the next term in academic order.
-      let nextType, nextYear;
-      if (t.term_type === '1st') { nextType = '2nd'; nextYear = t.year; }
-      else if (t.term_type === '2nd') { nextType = '3rd'; nextYear = t.year; }
-      else { nextType = '1st'; nextYear = Number(t.year) + 1; }
-
-      // If today's date is before the active term's end_date, no
-      // promotion is due yet.
-      const today = new Date().toISOString().slice(0, 10);
-      const endDate = t.end_date || '';
-      if (!endDate || today <= endDate) {
-        return ok({
-          needsTermPromotion: false,
-          activeTerm: t,
-          nextTerm: { term_type: nextType, year: nextYear }
-        });
-      }
-
-      // Count how many active learners are missing a learner_terms row
-      // for the next term.
       const sb = await loadSdk();
-      const learnersR = await sb.from('learners').select('id, date_of_withdrawal');
-      if (learnersR.error) return fail(learnersR.error.message);
-      const activeLearnerIds = (learnersR.data || [])
-        .filter(function (l) {
-          const w = (l.date_of_withdrawal || '').toString().trim();
-          return !(w && w !== '' && w !== 'N/A');
-        })
-        .map(function (l) { return l.id; });
-
-      if (activeLearnerIds.length === 0) {
-        return ok({ needsTermPromotion: false, activeTerm: t });
-      }
-
-      const termsR = await sb
-        .from('learner_terms')
-        .select('learner_id')
-        .eq('term_type', nextType)
-        .eq('year', nextYear)
-        .in('learner_id', activeLearnerIds);
-      if (termsR.error) return fail(termsR.error.message);
-
-      const haveIds = {};
-      (termsR.data || []).forEach(function (r) { haveIds[r.learner_id] = true; });
-      const pending = activeLearnerIds.filter(function (id) { return !haveIds[id]; });
-
-      return ok({
-        needsTermPromotion: pending.length > 0,
-        activeTerm: t,
-        nextTerm: { term_type: nextType, year: nextYear },
-        pendingLearners: pending.length,
-        totalActive: activeLearnerIds.length
-      });
+      const { data, error } = await sb
+        .from('staff')
+        .select('*')
+        .order('full_name', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
     } catch (err) { return fail(err); }
   };
 
-    // ---------------- STAFF ATTENDANCE ----------------
+  TIS.getStaff = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createStaff = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff')
+        .insert(row)
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.updateStaff = async function (id, patch) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff')
+        .update(Object.assign({}, patch, { updated_at: new Date().toISOString() }))
+        .eq('id', id)
+        .select();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteStaff = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('staff').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({});
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [STAFF_ATTENDANCE]
+  // ================================================================
   TIS.listStaffAttendanceToday = async function (dateISO) {
     try {
       const sb = await loadSdk();
@@ -511,9 +726,10 @@
       return ok(data);
     } catch (err) { return fail(err); }
   };
-   // ---------------- QR TOKENS ----------------
-  // Column names are snake_case: is_active, generated_at, expires_at,
-  // generated_by, regenerated_at, regenerated_by.
+
+  // ================================================================
+  // [QR] — snake_case columns
+  // ================================================================
   TIS.getActiveQRToken = async function () {
     try {
       const sb = await loadSdk();
@@ -533,14 +749,12 @@
     try {
       const sb = await loadSdk();
 
-      // 1. Deactivate every currently active token.
       const deact = await sb
         .from('qr_tokens')
         .update({ is_active: false })
         .eq('is_active', true);
       if (deact.error) return fail(deact.error.message);
 
-      // 2. Generate a fresh token.
       const token = 'QR' + Date.now() + Math.random().toString(36).substring(2, 12).toUpperCase();
       const now = new Date().toISOString();
       const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
@@ -576,15 +790,118 @@
       return ok(data || null);
     } catch (err) { return fail(err); }
   };
-  // ---------------- TERM PROMOTION (bulk, no class change) ----------------
-  // Creates learner_terms rows for the next term, carrying forward each
-  // learner's balance_cf as the next term's balance_bf.
+
+  // ================================================================
+  // [TERMS]
+  // ================================================================
+  TIS.listTerms = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('terms')
+        .select('*')
+        .order('year', { ascending: false });
+      if (error) return fail(error.message);
+      const rows = data || [];
+      rows.sort(function (a, b) {
+        if (a.year !== b.year) return b.year - a.year;
+        const order = { '3rd': 3, '2nd': 2, '1st': 1 };
+        return (order[b.term_type] || 0) - (order[a.term_type] || 0);
+      });
+      return ok(rows);
+    } catch (err) { return fail(err); }
+  };
+  TIS.getTerms = TIS.listTerms;
+
+  TIS.getActiveTerm = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('terms')
+        .select('*')
+        .eq('is_active', true)
+        .limit(1);
+      if (error) return fail(error.message);
+      return ok((data && data[0]) || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.setActiveTerm = async function (termId) {
+    try {
+      const sb = await loadSdk();
+      const { error: clrErr } = await sb.from('terms').update({ is_active: false }).neq('id', -1);
+      if (clrErr) return fail(clrErr.message);
+      const { error: setErr } = await sb.from('terms').update({ is_active: true }).eq('id', termId);
+      if (setErr) return fail(setErr.message);
+      return ok({ id: termId });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [PROMOTION]
+  // ================================================================
+  TIS.getPromotionStatus = async function () {
+    try {
+      const active = await TIS.getActiveTerm();
+      if (!active.ok || !active.data) return ok({ needsTermPromotion: false });
+      const t = active.data;
+
+      let nextType, nextYear;
+      if (t.term_type === '1st') { nextType = '2nd'; nextYear = t.year; }
+      else if (t.term_type === '2nd') { nextType = '3rd'; nextYear = t.year; }
+      else { nextType = '1st'; nextYear = Number(t.year) + 1; }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const endDate = t.end_date || '';
+      if (!endDate || today <= endDate) {
+        return ok({
+          needsTermPromotion: false,
+          activeTerm: t,
+          nextTerm: { term_type: nextType, year: nextYear }
+        });
+      }
+
+      const sb = await loadSdk();
+      const learnersR = await sb.from('learners').select('id, date_of_withdrawal');
+      if (learnersR.error) return fail(learnersR.error.message);
+      const activeLearnerIds = (learnersR.data || [])
+        .filter(function (l) {
+          const w = (l.date_of_withdrawal || '').toString().trim();
+          return !(w && w !== '' && w !== 'N/A');
+        })
+        .map(function (l) { return l.id; });
+
+      if (activeLearnerIds.length === 0) {
+        return ok({ needsTermPromotion: false, activeTerm: t });
+      }
+
+      const termsR = await sb
+        .from('learner_terms')
+        .select('learner_id')
+        .eq('term_type', nextType)
+        .eq('year', nextYear)
+        .in('learner_id', activeLearnerIds);
+      if (termsR.error) return fail(termsR.error.message);
+
+      const haveIds = {};
+      (termsR.data || []).forEach(function (r) { haveIds[r.learner_id] = true; });
+      const pending = activeLearnerIds.filter(function (id) { return !haveIds[id]; });
+
+      return ok({
+        needsTermPromotion: pending.length > 0,
+        activeTerm: t,
+        nextTerm: { term_type: nextType, year: nextYear },
+        pendingLearners: pending.length,
+        totalActive: activeLearnerIds.length
+      });
+    } catch (err) { return fail(err); }
+  };
+
   TIS.termPromote = async function (fromTermType, fromYear, toTermType, toYear, learnerIds) {
     try {
       if (!learnerIds || learnerIds.length === 0) return ok({ created: 0 });
       const sb = await loadSdk();
 
-      // Fetch the from-term rows for all selected learners in one query.
       const fromR = await sb
         .from('learner_terms')
         .select('learner_id, balance_cf, class_name')
@@ -595,8 +912,6 @@
       const fromMap = {};
       (fromR.data || []).forEach(function (r) { fromMap[r.learner_id] = r; });
 
-      // Fetch which learners already have a next-term row so we don't
-      // duplicate.
       const existingR = await sb
         .from('learner_terms')
         .select('learner_id')
@@ -637,15 +952,11 @@
     } catch (err) { return fail(err); }
   };
 
-  // ---------------- YEAR PROMOTION (class change) ----------------
-  // promotions: array of { learnerId, newClassName }.
-  // Warns about non-standard moves but does not block them.
   TIS.yearPromote = async function (promotions) {
     if (!promotions || promotions.length === 0) return ok({ applied: 0 });
     return TIS.promoteLearners(promotions);
   };
 
-  // ---------------- CLASS-BASED LEARNER LOOKUP ----------------
   TIS.getLearnersForClasses = async function (classNames) {
     try {
       const sb = await loadSdk();
@@ -662,16 +973,29 @@
       return ok(filtered);
     } catch (err) { return fail(err); }
   };
-  TIS.signOut = async function () {
+
+  TIS.promoteLearners = async function (promotions) {
     try {
+      if (!promotions || promotions.length === 0) return ok({ applied: 0 });
       const sb = await loadSdk();
-      const { error } = await sb.auth.signOut();
-      if (error) return fail(error.message);
-      return ok({});
+      const CHUNK = 50;
+      let applied = 0;
+      for (let i = 0; i < promotions.length; i += CHUNK) {
+        const slice = promotions.slice(i, i + CHUNK);
+        await Promise.all(slice.map(function (p) {
+          return sb.from('learners')
+            .update({ class_name: p.newClassName, updated_at: new Date().toISOString() })
+            .eq('id', p.learnerId);
+        }));
+        applied += slice.length;
+      }
+      return ok({ applied: applied });
     } catch (err) { return fail(err); }
   };
 
-  // ---------------- CLASSES ----------------
+  // ================================================================
+  // [CLASSES]
+  // ================================================================
   TIS.listClasses = async function () {
     try {
       const sb = await loadSdk();
@@ -733,86 +1057,25 @@
     } catch (err) { return fail(err); }
   };
 
-  // ---------------- PROMOTION ----------------
-  // promotions: array of { learnerId, newClassName }
-  TIS.promoteLearners = async function (promotions) {
-    try {
-      if (!promotions || promotions.length === 0) return ok({ applied: 0 });
-      const sb = await loadSdk();
-      const CHUNK = 50;
-      let applied = 0;
-      for (let i = 0; i < promotions.length; i += CHUNK) {
-        const slice = promotions.slice(i, i + CHUNK);
-        await Promise.all(slice.map(function (p) {
-          return sb.from('learners')
-            .update({ class_name: p.newClassName, updated_at: new Date().toISOString() })
-            .eq('id', p.learnerId);
-        }));
-        applied += slice.length;
-      }
-      return ok({ applied: applied });
-    } catch (err) { return fail(err); }
-  };
-  TIS.getCurrentProfile = async function () {
+  // ================================================================
+  // [CALENDAR]
+  // ================================================================
+  TIS.getCalendar = async function () {
     try {
       const sb = await loadSdk();
-      const { data: { user } } = await sb.auth.getUser();
-      if (!user) return fail('Not signed in');
       const { data, error } = await sb
-        .from('users')
-        .select('id, operator_id, name, role, position, avatar_url, is_active, must_change_password, authorities')
-        .eq('id', user.id)
-        .single();
+        .from('academic_calendar')
+        .select('*')
+        .order('event_date', { ascending: true });
       if (error) return fail(error.message);
-      return ok(data);
+      return ok(data || []);
     } catch (err) { return fail(err); }
   };
+  TIS.listCalendar = TIS.getCalendar;
 
-  TIS.changePassword = async function (newPassword) {
-    try {
-      const sb = await loadSdk();
-      const { error } = await sb.auth.updateUser({ password: newPassword });
-      if (error) return fail(error.message);
-      const { data: { user } } = await sb.auth.getUser();
-      if (user) {
-        await sb.from('users').update({
-          must_change_password: false,
-          password_last_changed: new Date().toISOString()
-        }).eq('id', user.id);
-      }
-      return ok({});
-    } catch (err) { return fail(err); }
-  };
-
-  // ---------------- Generic helpers ----------------
-  async function tableSelect(table, opts) {
-    const sb = await loadSdk();
-    let q = sb.from(table).select(opts && opts.select ? opts.select : '*');
-    if (opts && opts.eq)    Object.keys(opts.eq).forEach(k => { q = q.eq(k, opts.eq[k]); });
-    if (opts && opts.neq)   Object.keys(opts.neq).forEach(k => { q = q.neq(k, opts.neq[k]); });
-    if (opts && opts.ilike) Object.keys(opts.ilike).forEach(k => { q = q.ilike(k, opts.ilike[k]); });
-    if (opts && opts.order) q = q.order(opts.order.column, { ascending: !!opts.order.ascending });
-    if (opts && opts.limit) q = q.limit(opts.limit);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data || [];
-  }
-  async function tableInsert(table, row) {
-    const sb = await loadSdk();
-    const { data, error } = await sb.from(table).insert(row).select().single();
-    if (error) throw error;
-    return data;
-  }
-  async function tableUpdate(table, patch, eq) {
-    const sb = await loadSdk();
-    let q = sb.from(table).update(patch);
-    Object.keys(eq).forEach(k => { q = q.eq(k, eq[k]); });
-    const { data, error } = await q.select();
-    if (error) throw error;
-    return data;
-  }
-
-  // ---------------- USERS ----------------
+  // ================================================================
+  // [USERS]
+  // ================================================================
   TIS.getPermissionMatrix = async function () {
     try {
       const sb = await loadSdk();
@@ -925,7 +1188,7 @@
                 '" tried to reset ' + operatorId + '.');
   };
 
-   function roleDefaults(role) {
+  function roleDefaults(role) {
     const superAdmin = {
       learners: { read: true, write: true, print: true },
       staff: { read: true, write: true, print: true },
@@ -988,216 +1251,16 @@
   }
   TIS.roleDefaults = roleDefaults;
 
-  // ---------------- TERMS ----------------
-  TIS.listTerms = async function () {
-    try {
-      const rows = await tableSelect('terms', { order: { column: 'year', ascending: false } });
-      rows.sort(function (a, b) {
-        if (a.year !== b.year) return b.year - a.year;
-        const order = { '3rd': 3, '2nd': 2, '1st': 1 };
-        return (order[b.term_type] || 0) - (order[a.term_type] || 0);
-      });
-      return ok(rows);
-    } catch (err) { return fail(err); }
-  };
-  TIS.getTerms = TIS.listTerms;
-
-  TIS.getActiveTerm = async function () {
-    try {
-      const rows = await tableSelect('terms', { eq: { is_active: true }, limit: 1 });
-      return ok(rows[0] || null);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.setActiveTerm = async function (termId) {
-    try {
-      const sb = await loadSdk();
-      const { error: clrErr } = await sb.from('terms').update({ is_active: false }).neq('id', -1);
-      if (clrErr) return fail(clrErr.message);
-      const { error: setErr } = await sb.from('terms').update({ is_active: true }).eq('id', termId);
-      if (setErr) return fail(setErr.message);
-      return ok({ id: termId });
-    } catch (err) { return fail(err); }
-  };
-
-  // ---------------- CALENDAR ----------------
-  TIS.getCalendar = async function () {
-    try {
-      const rows = await tableSelect('academic_calendar', { order: { column: 'event_date', ascending: true } });
-      return ok(rows);
-    } catch (err) { return fail(err); }
-  };
-  TIS.listCalendar = TIS.getCalendar;
-
-  // ---------------- LEARNERS ----------------
-  TIS.listLearners = async function () {
-    try {
-      const rows = await tableSelect('learners', { order: { column: 'name', ascending: true } });
-      return ok(rows);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.searchLearners = async function (term) {
-    try {
-      const q = String(term || '').trim();
-      if (!q) return ok([]);
-      const sb = await loadSdk();
-      const pattern = '%' + q + '%';
-      const { data, error } = await sb
-        .from('learners').select('*')
-        .or('pin.ilike.' + pattern +
-            ',name.ilike.' + pattern +
-            ',father_phone.ilike.' + pattern +
-            ',mother_phone.ilike.' + pattern +
-            ',guardian_phone.ilike.' + pattern +
-            ',account_number.ilike.' + pattern)
-        .order('name', { ascending: true }).limit(100);
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.getLearner = async function (id) {
-    try {
-      const rows = await tableSelect('learners', { eq: { id }, limit: 1 });
-      return ok(rows[0] || null);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.getLearnerByPin = async function (pin) {
-    try {
-      const rows = await tableSelect('learners', { eq: { pin }, limit: 1 });
-      return ok(rows[0] || null);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.createLearner = async function (row) {
-    try { return ok(await tableInsert('learners', row)); }
-    catch (err) { return fail(err); }
-  };
-
-  TIS.updateLearner = async function (id, patch) {
-    try { return ok(await tableUpdate('learners', patch, { id })); }
-    catch (err) { return fail(err); }
-  };
-
-  TIS.setLearnerContactPriority = async function (learnerId, order) {
-    // order = { p1: 'father'|'mother'|'guardian', p2: ..., p3: ... }
-    try {
-      const patch = {
-        contact_priority_1: order.p1 || null,
-        contact_priority_2: order.p2 || null,
-        contact_priority_3: order.p3 || null,
-        updated_at: new Date().toISOString()
-      };
-      return TIS.updateLearner(learnerId, patch);
-    } catch (err) { return fail(err); }
-  };
-
-  // ---------------- LEARNER TERMS ----------------
-  TIS.getLearnerTerms = async function (learnerId) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('learner_terms').select('*')
-        .eq('learner_id', learnerId)
-        .order('year', { ascending: false });
-      if (error) return fail(error.message);
-      return ok(data || []);
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.getLearnerTermForActive = async function (learnerId) {
-    try {
-      const active = await TIS.getActiveTerm();
-      if (!active.ok || !active.data) return fail('No active term set.');
-      const t = active.data;
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('learner_terms').select('*')
-        .eq('learner_id', learnerId)
-        .eq('term_type', t.term_type)
-        .eq('year', t.year)
-        .maybeSingle();
-      if (error) return fail(error.message);
-      return ok({ row: data || null, term: t });
-    } catch (err) { return fail(err); }
-  };
-
-  TIS.getLearnerTermFor = async function (learnerId, termType, year) {
-    try {
-      const sb = await loadSdk();
-      const { data, error } = await sb
-        .from('learner_terms').select('*')
-        .eq('learner_id', learnerId)
-        .eq('term_type', termType)
-        .eq('year', year)
-        .maybeSingle();
-      if (error) return fail(error.message);
-      return ok(data || null);
-    } catch (err) { return fail(err); }
-  };
-
-  // ---------------- PART PAYMENTS ----------------
-  TIS.recordPartPayment = async function (learnerId, termType, year, amount, dateISO, mode) {
-    try {
-      const sb = await loadSdk();
-      const { data: row, error: rowErr } = await sb
-        .from('learner_terms').select('*')
-        .eq('learner_id', learnerId)
-        .eq('term_type', termType)
-        .eq('year', year)
-        .maybeSingle();
-      if (rowErr) return fail(rowErr.message);
-      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
-
-      const slots = [1, 2, 3, 4, 5];
-      let slot = null;
-      for (var i = 0; i < slots.length; i++) {
-        if (!row['part_payment_' + slots[i] + '_amount']) { slot = slots[i]; break; }
-      }
-      if (slot === null) return fail('All 5 part-payment slots are full. See Accounts.');
-
-      const patch = {};
-      patch['part_payment_' + slot + '_amount'] = String(amount);
-      patch['part_payment_' + slot + '_date']   = dateISO || new Date().toISOString().slice(0, 10);
-
-      const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
-      let newTotal = 0;
-      for (var j = 0; j < slots.length; j++) {
-        const m = slots[j];
-        const v = (m === slot) ? Number(amount) : num(row['part_payment_' + m + '_amount']);
-        newTotal += v;
-      }
-      patch.total_part_payment = String(newTotal);
-
-      const newBalance = num(row.balance_bf) + num(row.bill) + num(row.other_bill) - newTotal;
-      patch.balance_cf = String(newBalance);
-
-      if (newBalance <= 0) {
-        patch.cleared   = 'Yes';
-        patch.clearance = dateISO || new Date().toISOString().slice(0, 10);
-      }
-      patch.updated_at = new Date().toISOString();
-
-      const { error: updErr } = await sb.from('learner_terms')
-        .update(patch)
-        .eq('learner_id', learnerId)
-        .eq('term_type', termType)
-        .eq('year', year);
-      if (updErr) return fail(updErr.message);
-
-      return ok({ slot: slot, patch: patch });
-    } catch (err) { return fail(err); }
-  };
-
+  // ================================================================
+  // Expose + boot
+  // ================================================================
   loadSdk().catch(function (e) {
     console.warn('[TIS] Supabase SDK preload failed:', e.message);
   });
 
   window.TIS = window.TIS || {};
   Object.assign(window.TIS, TIS);
-  console.log('[TIS] Supabase client ready.');
+  console.log('[TIS] Supabase client ready with', Object.keys(TIS).length, 'methods.');
 
 })();
 // ================================================================
