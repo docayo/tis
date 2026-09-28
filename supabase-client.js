@@ -431,37 +431,65 @@
     } catch (err) { return fail(err); }
   };
 
-  // ---------------- STAFF ----------------
-  TIS.listStaff = async function () {
+    // ---------------- STAFF ATTENDANCE ----------------
+  TIS.listStaffAttendanceToday = async function (dateISO) {
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
-        .from('staff')
+        .from('attendance_staff')
         .select('*')
-        .order('full_name', { ascending: true });
+        .eq('attendance_date', dateISO);
       if (error) return fail(error.message);
       return ok(data || []);
     } catch (err) { return fail(err); }
   };
 
-  TIS.getStaff = async function (id) {
+  TIS.upsertStaffAttendance = async function (row) {
     try {
       const sb = await loadSdk();
+      const payload = Object.assign({}, row, { updated_at: new Date().toISOString() });
       const { data, error } = await sb
-        .from('staff')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
+        .from('attendance_staff')
+        .upsert(payload, { onConflict: 'staff_id,attendance_date' })
+        .select()
+        .single();
       if (error) return fail(error.message);
-      return ok(data || null);
+      return ok(data);
     } catch (err) { return fail(err); }
   };
 
-  TIS.createStaff = async function (row) {
+  TIS.listStaffAttendanceRange = async function (fromISO, toISO) {
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
-        .from('staff')
+        .from('attendance_staff')
+        .select('*')
+        .gte('attendance_date', fromISO)
+        .lte('attendance_date', toISO)
+        .order('attendance_date', { ascending: false });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listStaffMovementsToday = async function (dateISO) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff_movements')
+        .select('*')
+        .eq('movement_date', dateISO)
+        .order('time_out', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createStaffMovement = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff_movements')
         .insert(row)
         .select()
         .single();
@@ -470,30 +498,23 @@
     } catch (err) { return fail(err); }
   };
 
-  TIS.updateStaff = async function (id, patch) {
+  TIS.updateStaffMovement = async function (id, patch) {
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
-        .from('staff')
+        .from('staff_movements')
         .update(Object.assign({}, patch, { updated_at: new Date().toISOString() }))
         .eq('id', id)
-        .select();
+        .select()
+        .single();
       if (error) return fail(error.message);
       return ok(data);
     } catch (err) { return fail(err); }
   };
-
-  TIS.deleteStaff = async function (id) {
-    try {
-      const sb = await loadSdk();
-      const { error } = await sb.from('staff').delete().eq('id', id);
-      if (error) return fail(error.message);
-      return ok({});
-    } catch (err) { return fail(err); }
-  };
-  
-  // ---------------- QR TOKENS ----------------
-   TIS.getActiveQRToken = async function () {
+   // ---------------- QR TOKENS ----------------
+  // Column names are snake_case: is_active, generated_at, expires_at,
+  // generated_by, regenerated_at, regenerated_by.
+  TIS.getActiveQRToken = async function () {
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
@@ -508,7 +529,7 @@
     } catch (err) { return fail(err); }
   };
 
-    TIS.generateQRToken = async function (operatorName) {
+  TIS.generateQRToken = async function (operatorName) {
     try {
       const sb = await loadSdk();
 
@@ -522,7 +543,7 @@
       // 2. Generate a fresh token.
       const token = 'QR' + Date.now() + Math.random().toString(36).substring(2, 12).toUpperCase();
       const now = new Date().toISOString();
-      const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(); // 90 days
+      const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
       const insert = await sb
         .from('qr_tokens')
@@ -543,7 +564,6 @@
     } catch (err) { return fail(err); }
   };
 
-  // Used by the QR scan-to-clock-in flow.
   TIS.getQRTokenByValue = async function (token) {
     try {
       const sb = await loadSdk();
