@@ -321,7 +321,56 @@
       return ok(data || null);
     } catch (err) { return fail(err); }
   };
+  // Returns { [learnerId]: totalAttendanceCount } for the given learner IDs,
+  // summed across every term in the SAME academic year that comes BEFORE
+  // the given exclude term. Used to compute "Brought Forward" for the
+  // Learner Attendance register.
+  //
+  //   term_type ordering:  1st → 2nd → 3rd
+  //   mark values:         'O O' = 0  |  '\' = 1  |  '/' = 1  |  '\ /' = 2
+  //
+  // Params:
+  //   learnerIds        — array of learner UUIDs (or numeric ids) present in
+  //                       the register you are viewing.
+  //   academicYearStart — the integer year of the CURRENT term
+  //                       (e.g. 2026 for 1ST TERM 2026/2027).
+  //   excludeTermType   — '1st' | '2nd' | '3rd' — the current term. Terms
+  //                       before this one (within the same year) are summed.
+  TIS.getAttendanceTotalsInAcademicYear = async function (learnerIds, academicYearStart, excludeTermType) {
+    try {
+      if (!learnerIds || learnerIds.length === 0) return ok({});
+      const sb = await loadSdk();
 
+      // Determine which term_types count as "before" the current term.
+      const ORDER = { '1st': 1, '2nd': 2, '3rd': 3 };
+      const curRank = ORDER[excludeTermType] || 0;
+      const priorTermTypes = Object.keys(ORDER).filter(function (t) {
+        return ORDER[t] < curRank;
+      });
+      if (priorTermTypes.length === 0) return ok({});   // 1st term → no B/F
+
+      // Fetch attendance rows for this academic year's prior terms.
+      const { data, error } = await sb
+        .from('attendance_learner')
+        .select('learner_id, mark')
+        .eq('year', academicYearStart)
+        .in('term_type', priorTermTypes)
+        .in('learner_id', learnerIds);
+      if (error) return fail(error.message);
+
+      const totals = {};
+      (data || []).forEach(function (row) {
+        const id = row.learner_id;
+        if (totals[id] === undefined) totals[id] = 0;
+        const m = row.mark;
+        if (m === '\\')        totals[id] += 1;
+        else if (m === '/')    totals[id] += 1;
+        else if (m === '\\ /') totals[id] += 2;
+        // 'O O' → 0
+      });
+      return ok(totals);
+    } catch (err) { return fail(err); }
+  };
   TIS.recordPartPayment = async function (learnerId, termType, year, amount, dateISO, mode) {
     try {
       const sb = await loadSdk();
