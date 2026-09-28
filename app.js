@@ -4703,10 +4703,20 @@
       if (b) b.addEventListener('click', () => showToast(map[id], 'info'));
     });
   }
-
-   // ================================================================
-  // [S14] QR — staff clock-in token
   // ================================================================
+  // [S14] QR — staff clock-in token + smart-scan handler
+  //   • QR tab: generate / show / copy token (unchanged behaviour)
+  //   • QR URL is /g/<token> — never exposes the portal URL
+  //   • Scan flow (every scan asks for Staff ID):
+  //       1st scan → Clock IN
+  //       2nd scan → prompt: "Log a movement" or "Clock OUT"
+  //          - Log movement → records movement OUT
+  //       3rd scan → smart-detects open movement → records movement IN
+  //       4th scan → Clock OUT
+  //   • Every outcome fires a toast on the scanning page
+  // ================================================================
+
+  // ---------- QR tab (unchanged) ----------
   async function loadActiveQR() {
     setHTML('qrContent', pageLoaderHTML('Loading QR code…'));
     const r = await window.TIS.getActiveQRToken();
@@ -4724,11 +4734,12 @@
 
   function renderQR(row) {
     const token = row.token || '';
-    const base = window.location.origin + window.location.pathname;
-    const payload = base + '?qrtoken=' + encodeURIComponent(token);
+    // Use /g/<token> so the portal URL is never in the QR. This works
+    // because vercel.json rewrites /g/:token → /index.html.
+    const payload = window.location.origin + '/g/' + encodeURIComponent(token);
     const imgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=10&data=' +
                    encodeURIComponent(payload);
-        const generated = row.generated_at ? new Date(row.generated_at).toLocaleString() : '—';
+    const generated = row.generated_at ? new Date(row.generated_at).toLocaleString() : '—';
     const expires   = row.expires_at   ? new Date(row.expires_at).toLocaleDateString()  : '—';
 
     let html = '<div class="card-bg qr-box" style="text-align:center;padding:24px;">';
@@ -4742,9 +4753,10 @@
     html += '<a href="' + esc(imgUrl) + '" target="_blank" class="btn btn-primary"><i class="fas fa-download"></i> Open Full Size</a> ';
     html += '<button class="btn btn-secondary" onclick="copyQRToken(\'' + escAttr(token) + '\')"><i class="fas fa-copy"></i> Copy Token</button>';
     html += '</div>';
-    html += '<div style="margin-top:14px;font-size:11px;color:#666;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.5;">';
-    html += 'Print this QR code and post it at the school gate. Staff scan it with their phone camera to clock in. ';
-    html += 'The camera opens the URL encoded in the code, which records their clock-in automatically.';
+    html += '<div style="margin-top:14px;font-size:11px;color:#666;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6;">';
+    html += 'Print this QR code and post it at the school gate. Staff scan it with their phone camera. ' +
+            'The camera opens the clock-in page. Every scan asks for the Staff ID so that when one phone ' +
+            'is shared, the right person is recorded. The portal URL is never shown in the QR.';
     html += '</div></div>';
     setHTML('qrContent', html);
   }
@@ -4789,93 +4801,405 @@
       s.addEventListener('click', function (e) { e.preventDefault(); loadActiveQR(); });
       s.__wired = true;
     }
-    // Load once on tab entry.
     loadActiveQR();
   }
 
-  // ---------- QR SCAN HANDLER (runs at boot if the URL contains ?qrtoken=) ----------
+  // ================================================================
+  // QR SCAN HANDLER — runs at boot when the URL is /g/<token>
+  // (or ?qrtoken=<token> for backwards compatibility)
+  // ================================================================
   async function handleQRScanIfPresent() {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('qrtoken');
+    // Path-style token: /g/<token>
+    let token = '';
+    const m = window.location.pathname.match(/^\/g\/([^\/?#]+)/);
+    if (m && m[1]) token = decodeURIComponent(m[1]);
+
+    // Query-style fallback: ?qrtoken=<token> (kept for old QR codes)
+    if (!token) {
+      const params = new URLSearchParams(window.location.search);
+      token = params.get('qrtoken') || '';
+    }
     if (!token) return false;
 
-    // Confirm the token is still active.
+    // Blank the page — from this moment, the portal UI is gone.
+    document.body.innerHTML = qrScanSkeleton();
+
+    // Verify the token.
+    qrScanSetStage('Checking the QR code…');
     startLoader();
     const r = await window.TIS.getQRTokenByValue(token);
     stopLoader();
-
-if (!r || !r.ok || !r.data || r.data.is_active !== true) {
-      document.body.innerHTML =
-        '<div style="font-family:Arial;padding:40px;text-align:center;color:#c0392b;">' +
-        '<h1>Invalid or expired QR code</h1>' +
-        '<p>The code you scanned is no longer active. Ask the school office for the current one.</p>' +
-        '</div>';
+    if (!r || !r.ok || !r.data || r.data.is_active !== true) {
+      qrScanShowFatal(
+        'QR code not active',
+        'The code you scanned is no longer in use. Ask the school office for the current one.'
+      );
       return true;
     }
 
-    // Ask the user for their staff ID, then record a clock-in.
-    const staffId = prompt('Enter your Staff ID to clock in:');
-    if (!staffId) {
-      document.body.innerHTML =
-        '<div style="font-family:Arial;padding:40px;text-align:center;">' +
-        '<h1>Clock-in cancelled</h1><p>Reload the page or scan the QR code again to try.</p></div>';
+    // Ask for Staff ID.
+    qrScanSetStage('Ask for Staff ID');
+    const staffNo = await qrScanPromptStaffId();
+    if (!staffNo) {
+      qrScanShowFatal('Cancelled', 'Reload the page or scan the QR code again.');
       return true;
     }
 
-    // Look up the staff.
+    // Look up the staff by their Staff No.
+    qrScanSetStage('Looking up staff…');
     startLoader();
     const staffR = await window.TIS.listStaff();
     stopLoader();
-
     const staff = (staffR && staffR.ok ? staffR.data : []).find(function (s) {
-      return String(s.staff_id || '').toUpperCase() === String(staffId).trim().toUpperCase();
+      return String(s.staff_id || '').trim().toUpperCase() === staffNo.trim().toUpperCase();
     });
-
     if (!staff) {
-      document.body.innerHTML =
-        '<div style="font-family:Arial;padding:40px;text-align:center;color:#c0392b;">' +
-        '<h1>Staff ID not found</h1><p>Check the ID and try again, or contact the office.</p>' +
-        '<p style="font-size:13px;color:#666;">You entered: ' + esc(staffId) + '</p></div>';
+      qrScanShowFatal(
+        'Staff ID not found',
+        'Check the ID and try again. You entered: ' + staffNo
+      );
       return true;
     }
 
-    // Record clock-in for today.
+    // Figure out what this scan means for this staff today.
+    const today = new Date().toISOString().slice(0, 10);
+    startLoader();
+    const attR = await window.TIS.listStaffAttendanceToday(today);
+    const mvR  = await window.TIS.listStaffMovementsToday(today);
+    stopLoader();
+    const attRow = (attR && attR.ok ? attR.data : []).find(function (a) { return a.staff_id === staff.id; });
+    const movements = (mvR && mvR.ok ? mvR.data : []).filter(function (mm) { return mm.staff_id === staff.id; });
+    const openMovement = movements.find(function (mm) { return !mm.time_in; });
+
+    // Decide scan type.
+    if (!attRow || !attRow.clock_in) {
+      // No clock-in yet today → clock IN.
+      await qrScanRecordClockIn(token, staff);
+      return true;
+    }
+    if (attRow.clock_out) {
+      // Already clocked out — the day is closed for this staff.
+      qrScanShowFatal(
+        'Already clocked out',
+        staff.full_name + ' has already clocked out today. See an admin if this is wrong.'
+      );
+      return true;
+    }
+    if (openMovement) {
+      // There's a movement still open → this scan is the movement IN.
+      await qrScanRecordMovementIn(token, staff, openMovement);
+      return true;
+    }
+    // Clocked in, not clocked out, no open movement → ask what this scan is.
+    await qrScanAskMovementOrClockOut(token, staff);
+    return true;
+  }
+
+  // ----------------------------------------------------------------
+  // Scan page skeleton + helpers
+  // ----------------------------------------------------------------
+  function qrScanSkeleton() {
+    return '' +
+      '<div id="qrScanWrap" style="min-height:100vh;background:linear-gradient(135deg,#0d4d26,#1a8a3a);display:flex;align-items:center;justify-content:center;padding:20px;">' +
+        '<div style="background:#fff;max-width:520px;width:100%;border-radius:16px;padding:28px 24px;box-shadow:0 10px 40px rgba(0,0,0,0.25);text-align:center;">' +
+          '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" style="height:60px;margin-bottom:12px;" alt="School">' +
+          '<div style="font-weight:900;font-size:16px;color:#0d4d26;letter-spacing:1px;">THE IDEAL SCHOOLS</div>' +
+          '<div style="font-size:11px;color:#666;font-style:italic;margin-bottom:20px;">Scientia est potentia</div>' +
+          '<div id="qrScanStage" style="font-size:12px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;"></div>' +
+          '<div id="qrScanBody"></div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function qrScanSetStage(text) {
+    const el = document.getElementById('qrScanStage');
+    if (el) el.textContent = text || '';
+  }
+  function qrScanSetBody(html) {
+    const el = document.getElementById('qrScanBody');
+    if (el) el.innerHTML = html;
+  }
+
+  function qrScanShowFatal(title, body) {
+    qrScanSetStage('');
+    qrScanSetBody(
+      '<h2 style="color:#c0392b;margin:0 0 10px;font-size:20px;">' + esc(title) + '</h2>' +
+      '<p style="font-size:14px;color:#333;line-height:1.6;">' + esc(body) + '</p>' +
+      '<button onclick="location.href=\'/\'" ' +
+        'style="margin-top:20px;padding:12px 28px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">' +
+        'Close</button>'
+    );
+  }
+
+  function qrScanShowSuccess(title, lines) {
+    qrScanSetStage('');
+    let html = '<h2 style="color:#0d4d26;margin:0 0 10px;font-size:20px;">' + esc(title) + '</h2>';
+    if (lines && lines.length) {
+      html += '<div style="font-size:14px;color:#333;line-height:1.7;">';
+      lines.forEach(function (l) { html += '<div>' + l + '</div>'; });
+      html += '</div>';
+    }
+    html += '<button onclick="location.href=\'/\'" ' +
+      'style="margin-top:20px;padding:12px 28px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">' +
+      'Done</button>';
+    qrScanSetBody(html);
+  }
+
+  // ----------------------------------------------------------------
+  // Stage: ask for Staff ID
+  // ----------------------------------------------------------------
+  function qrScanPromptStaffId() {
+    return new Promise(function (resolve) {
+      qrScanSetBody(
+        '<p style="font-size:14px;color:#333;margin:0 0 16px;line-height:1.6;">' +
+          'Enter your <b>Staff ID</b> (e.g. TIS0001). If one phone is shared, ' +
+          'each person enters their own ID.' +
+        '</p>' +
+        '<input id="qrScanStaffNo" type="text" inputmode="text" autocomplete="off" ' +
+          'placeholder="TIS0001" ' +
+          'style="width:100%;padding:14px;font-size:18px;text-align:center;letter-spacing:2px;' +
+                 'border:2px solid #0d4d26;border-radius:8px;box-sizing:border-box;font-weight:700;">' +
+        '<div style="display:flex;gap:10px;margin-top:18px;">' +
+          '<button id="qrScanCancel" type="button" ' +
+            'style="flex:1;padding:12px;font-size:14px;background:#eee;color:#333;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Cancel</button>' +
+          '<button id="qrScanGo" type="button" ' +
+            'style="flex:2;padding:12px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Continue</button>' +
+        '</div>'
+      );
+      const inp = document.getElementById('qrScanStaffNo');
+      const goBtn = document.getElementById('qrScanGo');
+      const cancelBtn = document.getElementById('qrScanCancel');
+      if (inp) { inp.value = ''; setTimeout(function () { inp.focus(); }, 80); }
+      if (goBtn) goBtn.addEventListener('click', submit);
+      if (cancelBtn) cancelBtn.addEventListener('click', function () { resolve(''); });
+      if (inp) inp.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') submit();
+      });
+      function submit() {
+        const v = inp ? String(inp.value || '').trim() : '';
+        if (!v) { if (inp) { inp.focus(); inp.style.borderColor = '#c0392b'; } return; }
+        resolve(v.toUpperCase());
+      }
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // Scan actions
+  // ----------------------------------------------------------------
+  async function qrScanRecordClockIn(token, staff) {
     const now = new Date();
     const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const dateISO = now.toISOString().slice(0, 10);
 
+    qrScanSetStage('Clocking in…');
     startLoader();
-    const upR = await window.TIS.upsertStaffAttendance({
+    const r = await window.TIS.upsertStaffAttendance({
       staff_id:        staff.id,
       attendance_date: dateISO,
       clock_in:        t,
       status:          'Present',
-      logged_by:       'QR scan'
+      logged_by:       'QR scan',
+      source:          'QR'
     });
     stopLoader();
 
-    if (upR && upR.ok) {
-      document.body.innerHTML =
-        '<div style="font-family:Arial;padding:40px;text-align:center;">' +
-        '<h1 style="color:#0d4d26;">✓ Clocked in</h1>' +
-        '<p style="font-size:16px;">' + esc(staff.full_name || staffId) + '</p>' +
-        '<p style="font-size:14px;color:#666;">at <strong>' + t + '</strong> on ' + dateISO + '</p>' +
-        '<p style="margin-top:20px;"><a href="' + window.location.pathname + '" style="color:#0d4d26;">Back to portal</a></p>' +
-        '</div>';
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Clocked IN', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'Time: <b>' + t + '</b>',
+        'Date: ' + dateISO
+      ]);
+      qrShowToast('Clock-in recorded for ' + (staff.full_name || staff.staff_id));
     } else {
-      document.body.innerHTML =
-        '<div style="font-family:Arial;padding:40px;text-align:center;color:#c0392b;">' +
-        '<h1>Clock-in failed</h1>' +
-        '<p>' + esc((upR && upR.error) || 'unknown error') + '</p></div>';
+      qrScanShowFatal('Clock-in failed', (r && r.error) || 'Unknown error.');
     }
-    return true;
   }
 
-  window.loadActiveQR    = loadActiveQR;
-  window.generateQR      = generateQR;
-  window.copyQRToken     = copyQRToken;
+  async function qrScanRecordMovementOut(token, staff) {
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dateISO = now.toISOString().slice(0, 10);
+
+    // Prompt for destination and purpose.
+    const info = await qrScanPromptMovementInfo();
+    if (!info) return;
+
+    qrScanSetStage('Recording movement…');
+    startLoader();
+    const r = await window.TIS.createStaffMovement({
+      staff_id:      staff.id,
+      movement_date: dateISO,
+      time_out:      t,
+      time_in:       null,
+      destination:   info.destination,
+      purpose:       info.purpose,
+      logged_by:     'QR scan'
+    });
+    stopLoader();
+
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Movement OUT recorded', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'Time out: <b>' + t + '</b>',
+        'Destination: ' + esc(info.destination || '—'),
+        'Purpose: ' + esc(info.purpose || '—'),
+        '<div style="margin-top:14px;font-size:13px;color:#666;">' +
+          'When you return, scan the same QR again and enter your Staff ID. ' +
+          'The system will record your return.' +
+        '</div>'
+      ]);
+      qrShowToast('Movement-out recorded for ' + (staff.full_name || staff.staff_id));
+    } else {
+      qrScanShowFatal('Movement could not be recorded', (r && r.error) || 'Unknown error.');
+    }
+  }
+
+  function qrScanPromptMovementInfo() {
+    return new Promise(function (resolve) {
+      qrScanSetBody(
+        '<p style="font-size:14px;color:#333;margin:0 0 12px;">Where are you going and why?</p>' +
+        '<input id="qrMvDest" type="text" placeholder="Destination (e.g. Bank, Ministry)" ' +
+          'style="width:100%;padding:12px;font-size:14px;border:2px solid #0d4d26;border-radius:8px;margin-bottom:10px;box-sizing:border-box;">' +
+        '<input id="qrMvPurpose" type="text" placeholder="Purpose (e.g. Official errand)" ' +
+          'style="width:100%;padding:12px;font-size:14px;border:2px solid #0d4d26;border-radius:8px;margin-bottom:16px;box-sizing:border-box;">' +
+        '<div style="display:flex;gap:10px;">' +
+          '<button id="qrMvCancel" type="button" ' +
+            'style="flex:1;padding:12px;font-size:14px;background:#eee;color:#333;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Cancel</button>' +
+          '<button id="qrMvGo" type="button" ' +
+            'style="flex:2;padding:12px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Save movement</button>' +
+        '</div>'
+      );
+      const destEl = document.getElementById('qrMvDest');
+      const purpEl = document.getElementById('qrMvPurpose');
+      const go = document.getElementById('qrMvGo');
+      const cancel = document.getElementById('qrMvCancel');
+      if (destEl) setTimeout(function () { destEl.focus(); }, 80);
+      if (go) go.addEventListener('click', function () {
+        resolve({
+          destination: destEl ? String(destEl.value || '').trim() : '',
+          purpose: purpEl ? String(purpEl.value || '').trim() : ''
+        });
+      });
+      if (cancel) cancel.addEventListener('click', function () { resolve(null); });
+    });
+  }
+
+  async function qrScanRecordMovementIn(token, staff, openMovement) {
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+    qrScanSetStage('Recording return…');
+    startLoader();
+    const r = await window.TIS.closeStaffMovement(openMovement.id, t);
+    stopLoader();
+
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Movement IN recorded', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'You went out at: <b>' + esc(openMovement.time_out || '—') + '</b>',
+        'You returned at: <b>' + t + '</b>'
+      ]);
+      qrShowToast('Movement-in recorded for ' + (staff.full_name || staff.staff_id));
+    } else {
+      qrScanShowFatal('Return could not be recorded', (r && r.error) || 'Unknown error.');
+    }
+  }
+
+  function qrScanAskMovementOrClockOut(token, staff) {
+    return new Promise(function (resolve) {
+      qrScanSetBody(
+        '<p style="font-size:14px;color:#333;margin:0 0 4px;">' +
+          'Welcome back, <b>' + esc(staff.full_name || '') + '</b>.' +
+        '</p>' +
+        '<p style="font-size:13px;color:#666;margin:0 0 18px;">' +
+          'What do you want to do with this scan?' +
+        '</p>' +
+        '<button id="qrChoiceMove" type="button" ' +
+          'style="width:100%;padding:16px;font-size:15px;background:#d4a017;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;margin-bottom:10px;">' +
+          '<i class="fas fa-route"></i> Log a movement</button>' +
+        '<button id="qrChoiceOut" type="button" ' +
+          'style="width:100%;padding:16px;font-size:15px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;margin-bottom:10px;">' +
+          '<i class="fas fa-sign-out-alt"></i> Clock OUT for the day</button>' +
+        '<button id="qrChoiceCancel" type="button" ' +
+          'style="width:100%;padding:12px;font-size:13px;background:#eee;color:#333;border:none;border-radius:8px;cursor:pointer;">' +
+          'Cancel</button>'
+      );
+      const mBtn = document.getElementById('qrChoiceMove');
+      const oBtn = document.getElementById('qrChoiceOut');
+      const cBtn = document.getElementById('qrChoiceCancel');
+      if (mBtn) mBtn.addEventListener('click', function () {
+        resolve('movement');
+        qrScanRecordMovementOut(token, staff);
+      });
+      if (oBtn) oBtn.addEventListener('click', function () {
+        resolve('clockout');
+        qrScanRecordClockOut(token, staff);
+      });
+      if (cBtn) cBtn.addEventListener('click', function () {
+        resolve('cancel');
+        qrScanShowFatal('Cancelled', 'Reload the page or scan the QR code again.');
+      });
+    });
+  }
+
+  async function qrScanRecordClockOut(token, staff) {
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dateISO = now.toISOString().slice(0, 10);
+
+    qrScanSetStage('Clocking out…');
+    startLoader();
+    const r = await window.TIS.upsertStaffAttendance({
+      staff_id:        staff.id,
+      attendance_date: dateISO,
+      clock_out:       t,
+      status:          'Present',
+      logged_by:       'QR scan',
+      source:          'QR'
+    });
+    stopLoader();
+
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Clocked OUT', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'Time: <b>' + t + '</b>',
+        'Have a good evening.'
+      ]);
+      qrShowToast('Clock-out recorded for ' + (staff.full_name || staff.staff_id));
+    } else {
+      qrScanShowFatal('Clock-out failed', (r && r.error) || 'Unknown error.');
+    }
+  }
+
+  // A tiny toast that works even after the portal UI is gone.
+  function qrShowToast(msg) {
+    let t = document.getElementById('qrScanToast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'qrScanToast';
+      t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
+        'background:#0d4d26;color:#fff;padding:12px 22px;border-radius:8px;font-size:13px;' +
+        'font-family:Arial,sans-serif;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.25);' +
+        'transition:opacity .3s;opacity:0;';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = '1';
+    setTimeout(function () { t.style.opacity = '0'; }, 3200);
+  }
+
+  // ----------------------------------------------------------------
+  // Public API
+  // ----------------------------------------------------------------
+  window.loadActiveQR          = loadActiveQR;
+  window.generateQR            = generateQR;
+  window.copyQRToken           = copyQRToken;
+  window.initQRTab             = initQRTab;
   window.handleQRScanIfPresent = handleQRScanIfPresent;
-  window.initQRTab       = initQRTab;
   // ================================================================
   // [S15] REPORTS
   // ================================================================
