@@ -2626,13 +2626,16 @@
     if (modeSel) modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
   }
 
-  function renderWeekGrid(wk, weekLock) {
+   function renderWeekGrid(wk, weekLock) {
     const st = attState;
     const days = wk.days;
     const role = State.profile ? State.profile.role : 'operator';
     const numLearners = st.learners.length;
     const vis = window.__attColVisibility;
 
+    // Name column width — reduced to 90px so weekly grid fits better on mobile.
+    // Long names scroll horizontally inside their own cell instead of stretching the table.
+    const NAME_W = 90;
     const nameLeft = vis.pin ? 70 : 0;
 
     // Column-visibility toggle bar
@@ -2649,17 +2652,17 @@
 
     let h = bar;
     h += '<div style="overflow-x:auto;background:#fff;">';
-    h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">';
+    h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;table-layout:fixed;">';
 
     // Header
     h += '<thead><tr style="background:#e8f5e9;">';
     if (vis.pin) {
-      h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;">PIN</th>';
+      h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;width:70px;min-width:70px;">PIN</th>';
     }
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:' +
-         nameLeft + 'px;z-index:2;min-width:140px;">Name</th>';
-    if (vis.sex) h += '<th style="padding:6px;">Sex</th>';
-    if (vis.age) h += '<th style="padding:6px;">Age</th>';
+         nameLeft + 'px;z-index:2;width:' + NAME_W + 'px;min-width:' + NAME_W + 'px;max-width:' + NAME_W + 'px;">Name</th>';
+    if (vis.sex) h += '<th style="padding:6px;width:50px;min-width:50px;">Sex</th>';
+    if (vis.age) h += '<th style="padding:6px;width:40px;min-width:40px;">Age</th>';
     days.forEach(function (d, i) {
       const isHol = d.isHoliday;
       const shortDay = ['Mon','Tue','Wed','Thu','Fri'][i];
@@ -2672,8 +2675,8 @@
              '<br><span style="font-size:10px;font-weight:400;">' + fmtDateShort_(d.date) + '</span></th>';
       }
     });
-    h += '<th style="padding:6px;background:#c8e6c9;">Wkly</th>';
-    h += '<th style="padding:6px;background:#a5d6a7;">Term</th></tr>';
+    h += '<th style="padding:6px;background:#c8e6c9;width:40px;min-width:40px;">Wkly</th>';
+    h += '<th style="padding:6px;background:#a5d6a7;width:40px;min-width:40px;">Term</th></tr>';
 
     // Sub-header M / A row
     h += '<tr style="background:#f1f8e9;">';
@@ -2692,13 +2695,16 @@
     st.learners.forEach(function (l, rowIndex) {
       h += '<tr id="attRow_' + l.id + '">';
       if (vis.pin) {
-        h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;">' + esc(l.pin || '') + '</td>';
+        h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;width:70px;min-width:70px;">' + esc(l.pin || '') + '</td>';
       }
       const g = (l.gender || '').toLowerCase();
       const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:' + nameLeft + 'px;background:#fff;z-index:1;min-width:140px;">' + esc(l.name || '') + '</td>';
-      if (vis.sex) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.gender || '—') + '</td>';
-      if (vis.age) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.age || '—') + '</td>';
+      // Name cell is fixed-width; long names scroll horizontally inside the cell.
+      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:' + nameLeft + 'px;background:#fff;z-index:1;' +
+           'width:' + NAME_W + 'px;min-width:' + NAME_W + 'px;max-width:' + NAME_W + 'px;' +
+           'overflow-x:auto;white-space:nowrap;">' + esc(l.name || '') + '</td>';
+      if (vis.sex) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:50px;min-width:50px;">' + esc(l.gender || '—') + '</td>';
+      if (vis.age) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:40px;min-width:40px;">' + esc(l.age || '—') + '</td>';
 
       let weeklyPresent = 0;
       days.forEach(function (d) {
@@ -2748,15 +2754,14 @@
       });
 
       const termPresent = attLearnerTermTotal(l.id);
-      h += '<td id="attWk_' + l.id + '" style="padding:4px;text-align:center;font-weight:700;background:#e8f5e9;">' + weeklyPresent + '</td>';
-      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#a5d6a7;">' + termPresent + '</td>';
+      h += '<td id="attWk_' + l.id + '" style="padding:4px;text-align:center;font-weight:700;background:#e8f5e9;width:40px;min-width:40px;">' + weeklyPresent + '</td>';
+      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#a5d6a7;width:40px;min-width:40px;">' + termPresent + '</td>';
       h += '</tr>';
     });
 
     h += '</tbody></table></div>';
     return h;
   }
-
   function attCycleCell(learnerId, dateISO, session) {
     if (!attState) return;
     const st = attState;
