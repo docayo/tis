@@ -3362,7 +3362,7 @@
       setHTML('modalContainer', html);
     });
   }
-
+  function attClosePrintDialog() { setHTML('modalContainer', ''); }
   async function attRunPrint() {
     const cls   = document.getElementById('attPrintClass').value;
     const term  = document.getElementById('attPrintTerm').value;
