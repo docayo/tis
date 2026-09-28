@@ -3362,7 +3362,6 @@
       setHTML('modalContainer', html);
     });
   }
-  function attClosePrintDialog() { setHTML('modalContainer', ''); }
 
   async function attRunPrint() {
     const cls   = document.getElementById('attPrintClass').value;
@@ -3373,9 +3372,22 @@
 
     startLoader();
     const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10));
+
+    // Also fetch the B/F map so we can print it in the analysis block.
+    let bfMap = {};
+    try {
+      if (r && r.ok && r.data && (r.data.learners || []).length > 0 &&
+          typeof window.TIS.getAttendanceTotalsInAcademicYear === 'function') {
+        const ids = r.data.learners.map(function (l) { return l.id; });
+        const bfR = await window.TIS.getAttendanceTotalsInAcademicYear(ids, parseInt(year, 10), term);
+        if (bfR && bfR.ok && bfR.data) bfMap = bfR.data;
+      }
+    } catch (e) { /* non-fatal */ }
+
     stopLoader();
     if (!r || !r.ok) { showToast('Could not load register', 'error'); return; }
     const data = r.data;
+
     let weeksToShow = data.weeks;
     if (scope !== 'ALL') {
       const wn = parseInt(scope.substring(1), 10);
@@ -3390,14 +3402,77 @@
       '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:8px;}' +
       '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0;font-size:18px;}' +
       'h2{font-size:13px;color:#0b6623;margin:12px 0 4px;border-bottom:1px solid #c8e6c9;padding-bottom:3px;}' +
+      'h3{font-size:14px;color:#0b6623;margin:18px 0 4px;border-top:2px solid #0b6623;padding-top:8px;}' +
       'table{width:100%;border-collapse:collapse;font-size:9px;margin-top:6px;}' +
       'th{background:#0b6623;color:#fff;padding:3px;border:1px solid #333;}' +
       'td{padding:3px;border:1px solid #999;text-align:center;}' +
       'td.name{text-align:left;font-weight:600;}' +
       'td.m-hol{background:#ffcdd2;color:#721c24;}' +
       'td.m-ok{background:#d4edda;}' +
+      'tr.term-row td{background:#e8f5e9;font-weight:700;}' +
+      'tr.hol-row td{background:#ffe6e6;color:#721c24;font-weight:700;}' +
+      '.summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px;}' +
+      '.summary-card{border:1px solid #c8e6c9;border-radius:4px;padding:6px 8px;background:#f1f8e9;}' +
+      '.summary-card .lbl{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;}' +
+      '.summary-card .val{font-size:14px;font-weight:900;color:#0b6623;}' +
+      '.sig-block{margin-top:16px;border-top:1px dashed #999;padding-top:10px;}' +
+      '.sig-row{display:flex;justify-content:space-between;font-size:10px;margin-top:14px;}' +
+      '.sig-line{flex:1;border-bottom:1px solid #000;margin:0 10px;}' +
+      '@media print { h2, h3 { page-break-after: avoid; } table { page-break-inside: auto; } tr { page-break-inside: avoid; } }' +
       '</style>';
 
+    // ----------------------------------------------------------------
+    // Local helpers (do not depend on DOM state)
+    // ----------------------------------------------------------------
+    function summariseWeek(wk) {
+      let openSlots = 0;
+      wk.days.forEach(function (d) { if (!d.isHoliday) openSlots += 2; });
+      let mP = 0, aP = 0, boys = 0, girls = 0, genderKnown = false;
+      data.learners.forEach(function (l) {
+        const g = (l.gender || '').toLowerCase();
+        const isBoy  = g.indexOf('male') === 0 && g.indexOf('female') === -1;
+        const isGirl = g.indexOf('female') === 0;
+        wk.days.forEach(function (d) {
+          if (d.isHoliday) return;
+          const ma = attMA((d.marksByLearner || {})[l.id] || 'O O');
+          if (ma.M === '\\') { mP++; if (isBoy) { boys++; genderKnown = true; } else if (isGirl) { girls++; genderKnown = true; } }
+          if (ma.A === '/')  { aP++; if (isBoy) { boys++; genderKnown = true; } else if (isGirl) { girls++; genderKnown = true; } }
+        });
+      });
+      const mExpected = openSlots * data.learners.length;
+      const aExpected = openSlots * data.learners.length;
+      const combExpected = mExpected + aExpected;
+      const combPresent  = mP + aP;
+      return {
+        openSlots: openSlots,
+        mPresent: mP, mExpected: mExpected,
+        aPresent: aP, aExpected: aExpected,
+        boys: genderKnown ? boys : null,
+        girls: genderKnown ? girls : null,
+        pct: combExpected > 0 ? (combPresent / combExpected * 100).toFixed(1) : '0.0'
+      };
+    }
+
+    function learnerWeekTotal(l, wk) {
+      let n = 0;
+      wk.days.forEach(function (d) {
+        if (d.isHoliday) return;
+        const ma = attMA((d.marksByLearner || {})[l.id] || 'O O');
+        if (ma.M === '\\') n++;
+        if (ma.A === '/')  n++;
+      });
+      return n;
+    }
+
+    function learnerTermTotal(l) {
+      let n = 0;
+      data.weeks.forEach(function (wk) { n += learnerWeekTotal(l, wk); });
+      return n;
+    }
+
+    // ----------------------------------------------------------------
+    // HTML build
+    // ----------------------------------------------------------------
     let html = '<html><head><title>Attendance — ' + esc(cls) + '</title>' + css + '</head><body>';
     html += '<div class="hdr">';
     html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:52px;">';
@@ -3407,6 +3482,9 @@
     html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:52px;">';
     html += '</div>';
 
+    // ----------------------------------------------------------------
+    // Part 1 — weekly grids (unchanged behavior)
+    // ----------------------------------------------------------------
     weeksToShow.forEach(function (wk) {
       html += '<h2>Week ' + wk.weekNumber + ' — Ending ' + fmtDateShort_(wk.weekEnding) + '</h2>';
       html += '<table><thead><tr><th>PIN</th><th>Name</th><th>Sex</th><th>Age</th>';
@@ -3414,12 +3492,12 @@
         html += '<th colspan="2">' + ['Mon','Tue','Wed','Thu','Fri'][i] + '<br>' + fmtDateShort_(d.date) +
                 (d.isHoliday ? '<br>' + esc(d.holidayName || 'Holiday') : '') + '</th>';
       });
-      html += '<th>Wkly</th></tr><tr><th colspan="4"></th>';
+      html += '<th>Wkly</th><th>Term</th><th>B/F</th><th>AY</th></tr><tr><th colspan="4"></th>';
       wk.days.forEach(function (d) {
         if (d.isHoliday) html += '<th colspan="2" class="m-hol">Holiday</th>';
         else html += '<th>M</th><th>A</th>';
       });
-      html += '<th></th></tr></thead><tbody>';
+      html += '<th></th><th></th><th></th><th></th></tr></thead><tbody>';
 
       data.learners.forEach(function (l) {
         html += '<tr>';
@@ -3439,17 +3517,170 @@
           if (ma.M === '\\') wkPresent++;
           if (ma.A === '/')  wkPresent++;
         });
-        html += '<td><b>' + wkPresent + '</b></td></tr>';
+        const termTot = learnerTermTotal(l);
+        const bf      = bfMap[l.id] || 0;
+        const ay      = bf + termTot;
+        html += '<td><b>' + wkPresent + '</b></td>';
+        html += '<td>' + termTot + '</td>';
+        html += '<td>' + bf + '</td>';
+        html += '<td>' + ay + '</td>';
+        html += '</tr>';
       });
       html += '</tbody></table>';
     });
+
+    // ----------------------------------------------------------------
+    // Part 2 — Class Analysis (weekly + term)
+    // ----------------------------------------------------------------
+    html += '<h3>Class Analysis — ' + esc(cls) + ' (' + esc(data.termLabel) + ')</h3>';
+    html += '<table><thead><tr>';
+    html += '<th>Week</th><th>Ending</th><th>Open (M+A)</th>';
+    html += '<th>M present</th><th>A present</th>';
+    html += '<th>Boys</th><th>Girls</th>';
+    html += '<th>Expected</th><th>Confirmed</th><th>%</th>';
+    html += '</tr></thead><tbody>';
+
+    let tOpen = 0, tM = 0, tA = 0, tBoys = 0, tGirls = 0, tExpected = 0, tConfirmed = 0, tGenderKnown = false;
+    data.weeks.forEach(function (wk) {
+      const s = summariseWeek(wk);
+      const expected  = s.mExpected + s.aExpected;
+      const confirmed = s.mPresent + s.aPresent;
+      tOpen += s.openSlots; tM += s.mPresent; tA += s.aPresent;
+      tExpected += expected; tConfirmed += confirmed;
+      if (s.boys !== null)  { tBoys  += s.boys;  tGenderKnown = true; }
+      if (s.girls !== null) { tGirls += s.girls; tGenderKnown = true; }
+      html += '<tr>' +
+              '<td>Week ' + wk.weekNumber + '</td>' +
+              '<td>' + fmtDateShort_(wk.weekEnding) + '</td>' +
+              '<td>' + s.openSlots + '</td>' +
+              '<td>' + s.mPresent + '</td>' +
+              '<td>' + s.aPresent + '</td>' +
+              '<td>' + (s.boys === null ? '—' : s.boys) + '</td>' +
+              '<td>' + (s.girls === null ? '—' : s.girls) + '</td>' +
+              '<td>' + expected + '</td>' +
+              '<td>' + confirmed + '</td>' +
+              '<td>' + s.pct + '%</td>' +
+              '</tr>';
+    });
+    const tPct = tExpected > 0 ? (tConfirmed / tExpected * 100).toFixed(1) : '0.0';
+    html += '<tr class="term-row">' +
+            '<td>TERM</td><td></td>' +
+            '<td>' + tOpen + '</td>' +
+            '<td>' + tM + '</td>' +
+            '<td>' + tA + '</td>' +
+            '<td>' + (tGenderKnown ? tBoys : '—') + '</td>' +
+            '<td>' + (tGenderKnown ? tGirls : '—') + '</td>' +
+            '<td>' + tExpected + '</td>' +
+            '<td>' + tConfirmed + '</td>' +
+            '<td>' + tPct + '%</td>' +
+            '</tr>';
+    html += '</tbody></table>';
+
+    // ----------------------------------------------------------------
+    // Part 3 — Per-Day Breakdown
+    // ----------------------------------------------------------------
+    html += '<h3>Per-Day Breakdown — ' + esc(cls) + '</h3>';
+    html += '<table><thead><tr>';
+    html += '<th>Week</th><th>Date</th><th>Day</th>';
+    html += '<th>M</th><th>A</th><th>Boys</th><th>Girls</th>';
+    html += '<th>Expected</th><th>Confirmed</th><th>%</th>';
+    html += '</tr></thead><tbody>';
+
+    let dM = 0, dA = 0, dBoys = 0, dGirls = 0, dExpected = 0, dConfirmed = 0, dGenderKnown = false;
+    data.weeks.forEach(function (wk) {
+      wk.days.forEach(function (d) {
+        if (d.isHoliday) {
+          html += '<tr class="hol-row">' +
+                  '<td>Wk ' + wk.weekNumber + '</td>' +
+                  '<td>' + fmtDateShort_(d.date) + '</td>' +
+                  '<td>' + esc(d.dayName || '') + '</td>' +
+                  '<td colspan="7">HOLIDAY — ' + esc(d.holidayName || 'Holiday') + '</td>' +
+                  '</tr>';
+          return;
+        }
+        let mP = 0, aP = 0, boys = 0, girls = 0, genderKnown = false;
+        data.learners.forEach(function (l) {
+          const g = (l.gender || '').toLowerCase();
+          const isBoy  = g.indexOf('male') === 0 && g.indexOf('female') === -1;
+          const isGirl = g.indexOf('female') === 0;
+          const ma = attMA((d.marksByLearner || {})[l.id] || 'O O');
+          if (ma.M === '\\') { mP++; if (isBoy) { boys++; genderKnown = true; } else if (isGirl) { girls++; genderKnown = true; } }
+          if (ma.A === '/')  { aP++; if (isBoy) { boys++; genderKnown = true; } else if (isGirl) { girls++; genderKnown = true; } }
+        });
+        const expected  = data.learners.length * 2;
+        const confirmed = mP + aP;
+        const pct = expected > 0 ? (confirmed / expected * 100).toFixed(1) : '0.0';
+        dM += mP; dA += aP; dExpected += expected; dConfirmed += confirmed;
+        if (genderKnown) { dBoys += boys; dGirls += girls; dGenderKnown = true; }
+        html += '<tr>' +
+                '<td>Wk ' + wk.weekNumber + '</td>' +
+                '<td>' + fmtDateShort_(d.date) + '</td>' +
+                '<td>' + esc(d.dayName || '') + '</td>' +
+                '<td>' + mP + '</td>' +
+                '<td>' + aP + '</td>' +
+                '<td>' + (genderKnown ? boys : '—') + '</td>' +
+                '<td>' + (genderKnown ? girls : '—') + '</td>' +
+                '<td>' + expected + '</td>' +
+                '<td>' + confirmed + '</td>' +
+                '<td>' + pct + '%</td>' +
+                '</tr>';
+      });
+    });
+    const dPct = dExpected > 0 ? (dConfirmed / dExpected * 100).toFixed(1) : '0.0';
+    html += '<tr class="term-row">' +
+            '<td colspan="3">TERM</td>' +
+            '<td>' + dM + '</td>' +
+            '<td>' + dA + '</td>' +
+            '<td>' + (dGenderKnown ? dBoys : '—') + '</td>' +
+            '<td>' + (dGenderKnown ? dGirls : '—') + '</td>' +
+            '<td>' + dExpected + '</td>' +
+            '<td>' + dConfirmed + '</td>' +
+            '<td>' + dPct + '%</td>' +
+            '</tr>';
+    html += '</tbody></table>';
+
+    // ----------------------------------------------------------------
+    // Part 4 — Class totals summary block
+    // ----------------------------------------------------------------
+    let classBf = 0, classAy = 0;
+    data.learners.forEach(function (l) {
+      const bf = bfMap[l.id] || 0;
+      classBf += bf;
+      classAy += bf + learnerTermTotal(l);
+    });
+
+    html += '<h3>Class Totals</h3>';
+    html += '<div class="summary-grid">';
+    html += '<div class="summary-card"><div class="lbl">Sum total school-open (term)</div><div class="val">' + tOpen + '</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Sum total attendance (term)</div><div class="val">' + tConfirmed + '</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Boys present (term)</div><div class="val">' + (tGenderKnown ? tBoys : '—') + '</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Girls present (term)</div><div class="val">' + (tGenderKnown ? tGirls : '—') + '</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Average attendance</div><div class="val">' + tPct + '%</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Class B/F (prior terms this year)</div><div class="val">' + classBf + '</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Class AY Total (B/F + this term)</div><div class="val">' + classAy + '</div></div>';
+    html += '</div>';
+
+    // ----------------------------------------------------------------
+    // Part 5 — Signature block
+    // ----------------------------------------------------------------
+    html += '<div class="sig-block">';
+    html += '<div style="font-size:11px;color:#555;">Prepared and confirmed by:</div>';
+    html += '<div class="sig-row">';
+    html += '<span>Logged By</span><span class="sig-line"></span><span style="min-width:100px;">Date</span><span class="sig-line" style="max-width:140px;"></span>';
+    html += '</div>';
+    html += '<div class="sig-row">';
+    html += '<span>Confirmed By</span><span class="sig-line"></span><span style="min-width:100px;">Date</span><span class="sig-line" style="max-width:140px;"></span>';
+    html += '</div>';
+    html += '<div class="sig-row">';
+    html += '<span>Audited By</span><span class="sig-line"></span><span style="min-width:100px;">Date</span><span class="sig-line" style="max-width:140px;"></span>';
+    html += '</div>';
+    html += '</div>';
 
     html += '</body></html>';
     w.document.write(html);
     w.document.close();
     setTimeout(function () { w.print(); }, 250);
   }
-
   // ----------------------------------------------------------------
   // Public API
   // ----------------------------------------------------------------
