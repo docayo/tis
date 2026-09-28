@@ -2383,12 +2383,13 @@
   window.pwApplySpecial = pwApplySpecial;
   window.checkPromotionBanner = checkPromotionBanner;
 
-    // ================================================================
+  // ================================================================
   // [S10] LEARNER ATTENDANCE
   //   Master mark: 'O O' | '\' | '/' | '\ /'
   //   Holiday columns: one shared vertical write-up via rowspan.
   //   Columns (PIN, Sex, Age) hideable via checkbox bar.
-  //   Class Analysis + Week Signatures load on click.
+  //   Holiday Adjuster moves a holiday; grid + analysis refresh.
+  //   Class Analysis / Per-Day Breakdown / Week Signatures on click.
   //   Week Signatures header shows week-ending date.
   // ================================================================
   const ATT_MARKS = ['O O', '\\', '/', '\\ /'];
@@ -2451,6 +2452,7 @@
           if (attState) {
             renderClassAnalysisPanel();
             renderSignaturePanel();
+            renderDayBreakdownPanel();
             openAttendanceExpandables();
           }
         });
@@ -2464,14 +2466,23 @@
       printBtn.__wired = true;
     }
 
-    // Wire both expandables so their headers toggle open/close.
-    wireAttendanceExpandable('analysisFrame', 'analysisBody', 'renderClassAnalysisPanel');
-    wireAttendanceExpandable('signatureFrame', 'signatureBody', 'renderSignaturePanel');
+    // Holiday Adjuster wiring
+    const applyBtn = document.getElementById('btnApplyHolidayMove');
+    if (applyBtn && !applyBtn.__wired) {
+      applyBtn.addEventListener('click', attApplyHolidayMove);
+      applyBtn.__wired = true;
+    }
+
+    // Wire all three expandables so their headers toggle open/close.
+    wireAttendanceExpandable('analysisFrame',    'analysisBody',    'renderClassAnalysisPanel');
+    wireAttendanceExpandable('dayBreakdownFrame','dayBreakdownBody','renderDayBreakdownPanel');
+    wireAttendanceExpandable('signatureFrame',   'signatureBody',   'renderSignaturePanel');
 
     // If a register is already in state, refresh panels and open the frames.
     if (attState) {
       renderClassAnalysisPanel();
       renderSignaturePanel();
+      renderDayBreakdownPanel();
       openAttendanceExpandables();
     }
   }
@@ -2496,6 +2507,7 @@
         const body = document.getElementById(bodyId);
         if (body && (body.innerHTML.trim() === '' || body.querySelector('.page-loader'))) {
           if (renderFnName === 'renderClassAnalysisPanel') renderClassAnalysisPanel();
+          if (renderFnName === 'renderDayBreakdownPanel')  renderDayBreakdownPanel();
           if (renderFnName === 'renderSignaturePanel')     renderSignaturePanel();
         }
       }
@@ -2504,7 +2516,7 @@
   }
 
   function openAttendanceExpandables() {
-    ['analysisFrame', 'signatureFrame'].forEach(function (id) {
+    ['analysisFrame', 'dayBreakdownFrame', 'signatureFrame'].forEach(function (id) {
       const el = document.getElementById(id);
       if (el) el.classList.add('open');
     });
@@ -2552,6 +2564,8 @@
     renderAttendanceRegister();
     renderClassAnalysisPanel();
     renderSignaturePanel();
+    renderDayBreakdownPanel();
+    attRenderHolidayList();
   }
 
   function attMA(mark) {
@@ -2573,6 +2587,107 @@
     }
     return 'O O';
   }
+
+  // ----------------------------------------------------------------
+  // Holiday Adjuster
+  // ----------------------------------------------------------------
+  async function attApplyHolidayMove() {
+    const fromEl = document.getElementById('holidayFromDate');
+    const toEl   = document.getElementById('holidayToDate');
+    const nameEl = document.getElementById('holidayName');
+    const fb     = document.getElementById('holidayFeedback');
+
+    const fromDate = fromEl ? fromEl.value : '';
+    const toDate   = toEl   ? toEl.value   : '';
+    const name     = nameEl ? nameEl.value.trim() : '';
+
+    if (fb) fb.textContent = '';
+    if (!fromDate) { showToast('Pick the date the holiday is currently on', 'warning'); return; }
+    if (!toDate)   { showToast('Pick the date you want to move it to', 'warning'); return; }
+    if (fromDate === toDate) { showToast('The two dates are the same', 'warning'); return; }
+
+    if (!confirm('Move holiday from ' + fromDate + ' to ' + toDate + '?')) return;
+
+    startLoader();
+    try {
+      if (typeof window.TIS.moveHoliday !== 'function') {
+        showToast('moveHoliday not available. Add it to supabase-client.js.', 'error');
+        return;
+      }
+      const r = await window.TIS.moveHoliday(fromDate, toDate, name);
+      if (!r || !r.ok) {
+        showToast('Could not move holiday: ' + ((r && r.error) || 'unknown'), 'error');
+        if (fb) fb.textContent = (r && r.error) || 'Move failed.';
+        return;
+      }
+      showToast('Holiday moved to ' + toDate, 'success');
+      if (fb) fb.textContent = '✓ Holiday moved to ' + toDate + '. Reloading register…';
+      // Reload the register so the veil moves and the analysis recomputes.
+      await loadAttendanceRegister();
+      if (fb) fb.textContent = '✓ Holiday moved to ' + toDate + '.';
+    } finally {
+      stopLoader();
+    }
+  }
+
+  function attRenderHolidayList() {
+    const listEl = document.getElementById('holidayList');
+    if (!listEl) return;
+    if (!attState) {
+      listEl.innerHTML = '<div style="color:#666;">Load a class to see holidays.</div>';
+      return;
+    }
+    // Collect every holiday across the loaded term.
+    const holidays = [];
+    attState.weeks.forEach(function (wk) {
+      wk.days.forEach(function (d) {
+        if (d.isHoliday) {
+          holidays.push({
+            weekNumber: wk.weekNumber,
+            date: d.date,
+            dayName: d.dayName,
+            name: d.holidayName || 'Holiday'
+          });
+        }
+      });
+    });
+
+    if (holidays.length === 0) {
+      listEl.innerHTML = '<div style="color:#666;">No holidays in this term.</div>';
+      return;
+    }
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#f1f8e9;">';
+    html += '<th style="text-align:left;padding:4px 6px;">Week</th>';
+    html += '<th style="text-align:left;padding:4px 6px;">Date</th>';
+    html += '<th style="text-align:left;padding:4px 6px;">Day</th>';
+    html += '<th style="text-align:left;padding:4px 6px;">Name</th>';
+    html += '<th style="text-align:center;padding:4px 6px;">Action</th>';
+    html += '</tr></thead><tbody>';
+    holidays.forEach(function (h) {
+      html += '<tr>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Wk ' + h.weekNumber + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(h.date) + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(h.dayName || '') + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(h.name) + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' +
+          '<button type="button" class="btn btn-sm btn-secondary" onclick="attPrefillHolidayMove(\'' + h.date + '\',\'' + escAttr(h.name) + '\')">Prefill</button>' +
+        '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table>';
+    listEl.innerHTML = html;
+  }
+
+  function attPrefillHolidayMove(dateISO, holidayName) {
+    const fromEl = document.getElementById('holidayFromDate');
+    const nameEl = document.getElementById('holidayName');
+    if (fromEl) fromEl.value = dateISO;
+    if (nameEl) nameEl.value = holidayName || '';
+    showToast('Holiday date and name prefilled. Pick the new date and click Move Holiday.', 'info');
+  }
+  window.attPrefillHolidayMove = attPrefillHolidayMove;
 
   // ----------------------------------------------------------------
   // Register grid
@@ -2612,6 +2727,7 @@
       html += '<span>Open: <b>' + a.openSlots + '</b></span>';
       html += '<span>🌅 M: <b>' + a.mPresent + '/' + a.mExpected + '</b> (' + a.mPct + '%)</span>';
       html += '<span>🌇 A: <b>' + a.aPresent + '/' + a.aExpected + '</b> (' + a.aPct + '%)</span>';
+      html += '<span>Σ: <b>' + a.combinedPct + '%</b></span>';
       html += '<span>♂ ' + (a.boysPresent === null ? '—' : a.boysPresent) + ' · ♀ ' + (a.girlsPresent === null ? '—' : a.girlsPresent) + '</span>';
       html += '</div></div>';
 
@@ -2626,15 +2742,13 @@
     if (modeSel) modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
   }
 
-   function renderWeekGrid(wk, weekLock) {
+  function renderWeekGrid(wk, weekLock) {
     const st = attState;
     const days = wk.days;
     const role = State.profile ? State.profile.role : 'operator';
     const numLearners = st.learners.length;
     const vis = window.__attColVisibility;
 
-    // Name column width — reduced to 90px so weekly grid fits better on mobile.
-    // Long names scroll horizontally inside their own cell instead of stretching the table.
     const NAME_W = 90;
     const nameLeft = vis.pin ? 70 : 0;
 
@@ -2654,7 +2768,6 @@
     h += '<div style="overflow-x:auto;background:#fff;">';
     h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;table-layout:fixed;">';
 
-    // Header
     h += '<thead><tr style="background:#e8f5e9;">';
     if (vis.pin) {
       h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;width:70px;min-width:70px;">PIN</th>';
@@ -2678,7 +2791,6 @@
     h += '<th style="padding:6px;background:#c8e6c9;width:40px;min-width:40px;">Wkly</th>';
     h += '<th style="padding:6px;background:#a5d6a7;width:40px;min-width:40px;">Term</th></tr>';
 
-    // Sub-header M / A row
     h += '<tr style="background:#f1f8e9;">';
     const subColspan = 1 + (vis.pin ? 1 : 0) + (vis.sex ? 1 : 0) + (vis.age ? 1 : 0);
     h += '<th colspan="' + subColspan + '" style="padding:2px;"></th>';
@@ -2691,7 +2803,6 @@
     });
     h += '<th style="padding:2px;"></th><th style="padding:2px;"></th></tr></thead><tbody>';
 
-    // Body
     st.learners.forEach(function (l, rowIndex) {
       h += '<tr id="attRow_' + l.id + '">';
       if (vis.pin) {
@@ -2699,7 +2810,6 @@
       }
       const g = (l.gender || '').toLowerCase();
       const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
-      // Name cell is fixed-width; long names scroll horizontally inside the cell.
       h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:' + nameLeft + 'px;background:#fff;z-index:1;' +
            'width:' + NAME_W + 'px;min-width:' + NAME_W + 'px;max-width:' + NAME_W + 'px;' +
            'overflow-x:auto;white-space:nowrap;">' + esc(l.name || '') + '</td>';
@@ -2762,6 +2872,7 @@
     h += '</tbody></table></div>';
     return h;
   }
+
   function attCycleCell(learnerId, dateISO, session) {
     if (!attState) return;
     const st = attState;
@@ -2909,6 +3020,7 @@
       st.editing = {};
       renderAttendanceRegister();
       renderClassAnalysisPanel();
+      renderDayBreakdownPanel();
     } else {
       showToast('Save failed: ' + ((r && r.error) || ''), 'error');
     }
@@ -2923,6 +3035,9 @@
     renderAttendanceRegister();
   }
 
+  // ----------------------------------------------------------------
+  // Weekly summary — correct "Open" count, combined %
+  // ----------------------------------------------------------------
   function attWeekSummary(wk) {
     const st = attState;
     let openSlots = 0;
@@ -2944,17 +3059,23 @@
     });
     const mExpected = openSlots * st.learners.length;
     const aExpected = openSlots * st.learners.length;
+    const combinedPresent = mPresent + aPresent;
+    const combinedExpected = mExpected + aExpected;
     return {
       openSlots: openSlots,
       mPresent: mPresent, mExpected: mExpected,
       mPct: mExpected > 0 ? (mPresent / mExpected * 100).toFixed(1) : '0.0',
       aPresent: aPresent, aExpected: aExpected,
       aPct: aExpected > 0 ? (aPresent / aExpected * 100).toFixed(1) : '0.0',
+      combinedPct: combinedExpected > 0 ? (combinedPresent / combinedExpected * 100).toFixed(1) : '0.0',
       boysPresent:  genderKnown ? boysPresent  : null,
       girlsPresent: genderKnown ? girlsPresent : null
     };
   }
 
+  // ----------------------------------------------------------------
+  // Class Analysis panel (weekly + term)
+  // ----------------------------------------------------------------
   function renderClassAnalysisPanel() {
     if (!attState) return;
     const st = attState;
@@ -3021,6 +3142,94 @@
     setHTML('analysisBody', html);
   }
 
+  // ----------------------------------------------------------------
+  // Per-Day Breakdown panel
+  // ----------------------------------------------------------------
+  function renderDayBreakdownPanel() {
+    if (!attState) return;
+    const st = attState;
+
+    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</h4>';
+    html += '<p style="font-size:11px;color:#666;margin:0 0 8px;">One row per school day. Holidays marked in red.</p>';
+    html += '<div style="overflow-x:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:820px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+    html += '<th style="text-align:left;padding:6px;">Week</th>';
+    html += '<th style="text-align:left;padding:6px;">Date</th>';
+    html += '<th style="text-align:left;padding:6px;">Day</th>';
+    html += '<th style="padding:6px;">🌅 M</th>';
+    html += '<th style="padding:6px;">🌇 A</th>';
+    html += '<th style="padding:6px;">♂</th>';
+    html += '<th style="padding:6px;">♀</th>';
+    html += '<th style="padding:6px;">Expected</th>';
+    html += '<th style="padding:6px;">Confirmed</th>';
+    html += '<th style="padding:6px;">%</th>';
+    html += '</tr></thead><tbody>';
+
+    let tM = 0, tA = 0, tBoys = 0, tGirls = 0, tExpected = 0, tConfirmed = 0, tGenderKnown = false;
+
+    st.weeks.forEach(function (wk) {
+      wk.days.forEach(function (d) {
+        if (d.isHoliday) {
+          html += '<tr style="background:#ffe6e6;">' +
+                  '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Wk ' + wk.weekNumber + '</td>' +
+                  '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(d.date) + '</td>' +
+                  '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(d.dayName || '') + '</td>' +
+                  '<td colspan="7" style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;color:#721c24;font-weight:700;">HOLIDAY — ' + esc(d.holidayName || 'Holiday') + '</td>' +
+                  '</tr>';
+          return;
+        }
+        let mP = 0, aP = 0, boys = 0, girls = 0, genderKnown = false;
+        st.learners.forEach(function (l) {
+          const g = (l.gender || '').toLowerCase();
+          const isBoy  = g.indexOf('male') === 0 && g.indexOf('female') === -1;
+          const isGirl = g.indexOf('female') === 0;
+          const mark = attEffectiveMark(l.id, d.date);
+          const ma = attMA(mark);
+          if (ma.M === '\\') { mP++; if (isBoy) { boys++; genderKnown = true; } else if (isGirl) { girls++; genderKnown = true; } }
+          if (ma.A === '/')  { aP++; if (isBoy) { boys++; genderKnown = true; } else if (isGirl) { girls++; genderKnown = true; } }
+        });
+        const expected = st.learners.length * 2;
+        const confirmed = mP + aP;
+        const pct = expected > 0 ? (confirmed / expected * 100).toFixed(1) : '0.0';
+
+        tM += mP; tA += aP; tExpected += expected; tConfirmed += confirmed;
+        if (genderKnown) { tBoys += boys; tGirls += girls; tGenderKnown = true; }
+
+        html += '<tr>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Wk ' + wk.weekNumber + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(d.date) + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(d.dayName || '') + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + mP + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + aP + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (genderKnown ? boys : '—') + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (genderKnown ? girls : '—') + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + expected + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + confirmed + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + pct + '%</td>' +
+                '</tr>';
+      });
+    });
+
+    const tPct = tExpected > 0 ? (tConfirmed / tExpected * 100).toFixed(1) : '0.0';
+    html += '<tr style="background:#e8f5e9;font-weight:700;">' +
+            '<td colspan="3" style="padding:6px;">TERM</td>' +
+            '<td style="padding:6px;text-align:center;">' + tM + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tA + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tBoys : '—') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tGirls : '—') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tExpected + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tConfirmed + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + tPct + '%</td>' +
+            '</tr>';
+    html += '</tbody></table></div>';
+
+    setHTML('dayBreakdownBody', html);
+  }
+
+  // ----------------------------------------------------------------
+  // Week Signatures panel
+  // ----------------------------------------------------------------
   async function renderSignaturePanel() {
     if (!attState) return;
     setHTML('signatureBody', pageLoaderHTML('Loading staff…'));
@@ -3072,6 +3281,9 @@
     showToast('Signatures captured for ' + filled + ' week(s). (Persistence coming.)', 'info');
   }
 
+  // ----------------------------------------------------------------
+  // Helpers
+  // ----------------------------------------------------------------
   function fmtDateShort_(iso) {
     if (!iso) return '—';
     const d = new Date(iso + 'T00:00:00');
@@ -3080,6 +3292,9 @@
     return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
   }
 
+  // ----------------------------------------------------------------
+  // Print dialog + print output
+  // ----------------------------------------------------------------
   function attOpenPrintDialog() {
     window.TIS.listLearners().then(function (r) {
       const classes = {};
@@ -3205,20 +3420,23 @@
   // ----------------------------------------------------------------
   // Public API
   // ----------------------------------------------------------------
-  window.initLearnerAttendanceTab  = initLearnerAttendanceTab;
-  window.loadAttendanceRegister    = loadAttendanceRegister;
-  window.attToggleWeek             = attToggleWeek;
-  window.attCycleCell              = attCycleCell;
-  window.attMarkClassPresent       = attMarkClassPresent;
-  window.attSaveAllChanges         = attSaveAllChanges;
-  window.attDiscardChanges         = attDiscardChanges;
-  window.attOpenPrintDialog        = attOpenPrintDialog;
-  window.attClosePrintDialog       = attClosePrintDialog;
-  window.attRunPrint               = attRunPrint;
-  window.renderClassAnalysisPanel  = renderClassAnalysisPanel;
-  window.renderSignaturePanel      = renderSignaturePanel;
-  window.attSaveSignatures         = attSaveSignatures;
-
+  window.initLearnerAttendanceTab    = initLearnerAttendanceTab;
+  window.loadAttendanceRegister      = loadAttendanceRegister;
+  window.attToggleWeek               = attToggleWeek;
+  window.attCycleCell                = attCycleCell;
+  window.attMarkClassPresent         = attMarkClassPresent;
+  window.attSaveAllChanges           = attSaveAllChanges;
+  window.attDiscardChanges           = attDiscardChanges;
+  window.attOpenPrintDialog          = attOpenPrintDialog;
+  window.attClosePrintDialog         = attClosePrintDialog;
+  window.attRunPrint                 = attRunPrint;
+  window.renderClassAnalysisPanel    = renderClassAnalysisPanel;
+  window.renderDayBreakdownPanel     = renderDayBreakdownPanel;
+  window.renderSignaturePanel        = renderSignaturePanel;
+  window.attSaveSignatures           = attSaveSignatures;
+  window.attApplyHolidayMove         = attApplyHolidayMove;
+  window.attRenderHolidayList        = attRenderHolidayList;
+  
     // ================================================================
   // [S11] STAFF ATTENDANCE
   //   • Today's list — every active staff member, marked or not
