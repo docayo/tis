@@ -2390,7 +2390,8 @@
   //   Columns (PIN, Sex, Age) hideable via checkbox bar.
   //   Holiday Adjuster moves a holiday; grid + analysis refresh.
   //   Class Analysis / Per-Day Breakdown / Week Signatures on click.
-  //   Week Signatures header shows week-ending date.
+  //   B/F column = sum of prior terms in same academic year.
+  //   AY Total   = B/F + current-term total.
   // ================================================================
   const ATT_MARKS = ['O O', '\\', '/', '\\ /'];
   let attSessionMode = 'AM';
@@ -2546,17 +2547,32 @@
 
     setHTML('attendanceTermView', pageLoaderHTML('Loading register…'));
     startLoader();
+
     const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10));
-    stopLoader();
     if (!r || !r.ok) {
+      stopLoader();
       setHTML('attendanceTermView', errorHTML('Could not load register', r && r.error));
       return;
     }
+
+    // Compute the B/F map (sum of prior terms in the same academic year).
+    let bfMap = {};
+    const learnerIds = (r.data.learners || []).map(function (l) { return l.id; });
+    if (learnerIds.length > 0 && typeof window.TIS.getAttendanceTotalsInAcademicYear === 'function') {
+      const bfR = await window.TIS.getAttendanceTotalsInAcademicYear(
+        learnerIds, parseInt(year, 10), term
+      );
+      if (bfR && bfR.ok && bfR.data) bfMap = bfR.data;
+    }
+
+    stopLoader();
+
     attState = {
       cls: cls, term: term, year: parseInt(year, 10),
       termLabel: r.data.termLabel || (term.toUpperCase() + ' TERM ' + year),
       learners: r.data.learners || [],
       weeks: r.data.weeks || [],
+      bfMap: bfMap,
       openWeeks: {},
       editing: {}
     };
@@ -2622,7 +2638,6 @@
       }
       showToast('Holiday moved to ' + toDate, 'success');
       if (fb) fb.textContent = '✓ Holiday moved to ' + toDate + '. Reloading register…';
-      // Reload the register so the veil moves and the analysis recomputes.
       await loadAttendanceRegister();
       if (fb) fb.textContent = '✓ Holiday moved to ' + toDate + '.';
     } finally {
@@ -2637,7 +2652,6 @@
       listEl.innerHTML = '<div style="color:#666;">Load a class to see holidays.</div>';
       return;
     }
-    // Collect every holiday across the loaded term.
     const holidays = [];
     attState.weeks.forEach(function (wk) {
       wk.days.forEach(function (d) {
@@ -2789,7 +2803,10 @@
       }
     });
     h += '<th style="padding:6px;background:#c8e6c9;width:40px;min-width:40px;">Wkly</th>';
-    h += '<th style="padding:6px;background:#a5d6a7;width:40px;min-width:40px;">Term</th></tr>';
+    h += '<th style="padding:6px;background:#a5d6a7;width:44px;min-width:44px;">Term</th>';
+    h += '<th style="padding:6px;background:#cfe8ff;width:44px;min-width:44px;" title="Brought Forward: total from earlier terms in this academic year">B/F</th>';
+    h += '<th style="padding:6px;background:#b3d9ff;width:52px;min-width:52px;" title="Academic Year total: B/F + this term">AY Total</th>';
+    h += '</tr>';
 
     h += '<tr style="background:#f1f8e9;">';
     const subColspan = 1 + (vis.pin ? 1 : 0) + (vis.sex ? 1 : 0) + (vis.age ? 1 : 0);
@@ -2801,7 +2818,7 @@
         h += '<th style="padding:2px 4px;font-size:10px;">M</th><th style="padding:2px 4px;font-size:10px;">A</th>';
       }
     });
-    h += '<th style="padding:2px;"></th><th style="padding:2px;"></th></tr></thead><tbody>';
+    h += '<th style="padding:2px;"></th><th style="padding:2px;"></th><th style="padding:2px;"></th><th style="padding:2px;"></th></tr></thead><tbody>';
 
     st.learners.forEach(function (l, rowIndex) {
       h += '<tr id="attRow_' + l.id + '">';
@@ -2864,8 +2881,13 @@
       });
 
       const termPresent = attLearnerTermTotal(l.id);
+      const bf          = (st.bfMap && st.bfMap[l.id]) ? st.bfMap[l.id] : 0;
+      const ayTotal     = bf + termPresent;
+
       h += '<td id="attWk_' + l.id + '" style="padding:4px;text-align:center;font-weight:700;background:#e8f5e9;width:40px;min-width:40px;">' + weeklyPresent + '</td>';
-      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#a5d6a7;width:40px;min-width:40px;">' + termPresent + '</td>';
+      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#a5d6a7;width:44px;min-width:44px;">' + termPresent + '</td>';
+      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#cfe8ff;width:44px;min-width:44px;">' + bf + '</td>';
+      h += '<td style="padding:4px;text-align:center;font-weight:700;background:#b3d9ff;width:52px;min-width:52px;">' + ayTotal + '</td>';
       h += '</tr>';
     });
 
@@ -3074,7 +3096,7 @@
   }
 
   // ----------------------------------------------------------------
-  // Class Analysis panel (weekly + term)
+  // Class Analysis panel (weekly + term) + B/F + AY Total row
   // ----------------------------------------------------------------
   function renderClassAnalysisPanel() {
     if (!attState) return;
@@ -3091,6 +3113,7 @@
     html += '</tr></thead><tbody>';
 
     let tM = 0, tA = 0, tExpected = 0, tOpen = 0, tBoys = 0, tGirls = 0, tGenderKnown = false;
+    let tBf = 0, tAy = 0;
 
     st.weeks.forEach(function (wk) {
       const a = attWeekSummary(wk);
@@ -3116,6 +3139,14 @@
               '</tr>';
     });
 
+    // Compute class-level B/F and AY totals.
+    st.learners.forEach(function (l) {
+      const bf       = (st.bfMap && st.bfMap[l.id]) ? st.bfMap[l.id] : 0;
+      const termTot  = attLearnerTermTotal(l.id);
+      tBf += bf;
+      tAy += bf + termTot;
+    });
+
     const tConfirmed = tM + tA;
     const tPct = tExpected > 0 ? (tConfirmed / tExpected * 100).toFixed(1) : '0.0';
     html += '<tr style="background:#e8f5e9;font-weight:700;">' +
@@ -3137,6 +3168,8 @@
     html += '<div class="stat-card red"><div class="stat-label">♂ Boys present (term)</div><div class="stat-value red">' + (tGenderKnown ? tBoys : '—') + '</div></div>';
     html += '<div class="stat-card blue"><div class="stat-label">♀ Girls present (term)</div><div class="stat-value" style="color:#1a5276;">' + (tGenderKnown ? tGirls : '—') + '</div></div>';
     html += '<div class="stat-card"><div class="stat-label">Average attendance</div><div class="stat-value green">' + tPct + '%</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">Class B/F (prior terms this year)</div><div class="stat-value">' + tBf + '</div></div>';
+    html += '<div class="stat-card gold"><div class="stat-label">Class AY Total (B/F + this term)</div><div class="stat-value gold">' + tAy + '</div></div>';
     html += '</div>';
 
     setHTML('analysisBody', html);
