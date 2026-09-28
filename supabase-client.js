@@ -818,6 +818,372 @@
   };
 
   // ================================================================
+  // [STAFF_ATTENDANCE_DAILY] — new module for the redesigned
+  // Staff Attendance tab. One method per action.
+  // ================================================================
+
+  TIS.listStaffAttendanceForDay = async function (dateISO) {
+    try {
+      const sb = await loadSdk();
+
+      const [staffR, attR] = await Promise.all([
+        sb.from('staff')
+          .select('id, staff_id, full_name, surname, first_name, middle_name, department, resume_time, late_cutoff, status')
+          .order('full_name', { ascending: true }),
+        sb.from('attendance_staff')
+          .select('*')
+          .eq('attendance_date', dateISO)
+      ]);
+
+      if (staffR.error) return fail(staffR.error.message);
+      if (attR.error)   return fail(attR.error.message);
+
+      const attMap = {};
+      (attR.data || []).forEach(function (r) { attMap[r.staff_id] = r; });
+
+      const active = (staffR.data || []).filter(function (s) {
+        return (s.status || 'Active') === 'Active';
+      });
+
+      const rows = active.map(function (s) {
+        const a = attMap[s.id] || {};
+        const fullName = s.full_name
+          || [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ');
+        return {
+          staff_id:    s.id,
+          staff_no:    s.staff_id || '',
+          name:        fullName,
+          department:  s.department || '',
+          resume_time: s.resume_time || '',
+          late_cutoff: s.late_cutoff || '',
+          clock_in:    a.clock_in  || null,
+          clock_out:   a.clock_out || null,
+          status:      a.status    || null,
+          note:        a.note      || null,
+          row_id:      a.id        || null
+        };
+      });
+
+      return ok({ date: dateISO, staff: rows });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listStaffAttendanceForMonth = async function (year, month) {
+    try {
+      const sb = await loadSdk();
+
+      const firstISO = year + '-' + String(month).padStart(2, '0') + '-01';
+      const lastDate = new Date(year, month, 0);
+      const lastISO  = year + '-' + String(month).padStart(2, '0') + '-' + String(lastDate.getDate()).padStart(2, '0');
+
+      const [staffR, attR] = await Promise.all([
+        sb.from('staff')
+          .select('id, staff_id, full_name, surname, first_name, middle_name, department, resume_time, late_cutoff, status')
+          .order('full_name', { ascending: true }),
+        sb.from('attendance_staff')
+          .select('*')
+          .gte('attendance_date', firstISO)
+          .lte('attendance_date', lastISO)
+      ]);
+
+      if (staffR.error) return fail(staffR.error.message);
+      if (attR.error)   return fail(attR.error.message);
+
+      const activeStaff = (staffR.data || []).filter(function (s) {
+        return (s.status || 'Active') === 'Active';
+      });
+
+      const byDate = {};
+      (attR.data || []).forEach(function (r) {
+        if (!byDate[r.attendance_date]) byDate[r.attendance_date] = [];
+        byDate[r.attendance_date].push(r);
+      });
+
+      const todayISO_ = new Date().toISOString().slice(0, 10);
+      const days = [];
+      for (let d = 1; d <= lastDate.getDate(); d++) {
+        const iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        const atts = byDate[iso] || [];
+        const attMap = {};
+        atts.forEach(function (a) { attMap[a.staff_id] = a; });
+
+        const rows = activeStaff.map(function (s) {
+          const a = attMap[s.id] || {};
+          const fullName = s.full_name
+            || [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ');
+          return {
+            staff_id:    s.id,
+            staff_no:    s.staff_id || '',
+            name:        fullName,
+            department:  s.department || '',
+            resume_time: s.resume_time || '',
+            late_cutoff: s.late_cutoff || '',
+            clock_in:    a.clock_in  || null,
+            clock_out:   a.clock_out || null,
+            status:      a.status    || null,
+            note:        a.note      || null,
+            row_id:      a.id        || null
+          };
+        });
+
+        rows.sort(function (a, b) {
+          const ai = a.clock_in || '99:99';
+          const bi = b.clock_in || '99:99';
+          if (ai !== bi) return ai < bi ? -1 : 1;
+          return (a.name || '').localeCompare(b.name || '');
+        });
+
+        days.push({
+          date:        iso,
+          arrived:     iso <= todayISO_,
+          hasAnyMarks: atts.length > 0,
+          staff:       rows
+        });
+      }
+
+      return ok({ year: year, month: month, days: days });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listStaffMovementsForMonth = async function (year, month) {
+    try {
+      const sb = await loadSdk();
+
+      const firstISO = year + '-' + String(month).padStart(2, '0') + '-01';
+      const lastDate = new Date(year, month, 0);
+      const lastISO  = year + '-' + String(month).padStart(2, '0') + '-' + String(lastDate.getDate()).padStart(2, '0');
+
+      const [staffR, mvR] = await Promise.all([
+        sb.from('staff').select('id, staff_id, full_name, surname, first_name, middle_name, department'),
+        sb.from('staff_movements').select('*')
+          .gte('movement_date', firstISO)
+          .lte('movement_date', lastISO)
+      ]);
+
+      if (staffR.error) return fail(staffR.error.message);
+      if (mvR.error)    return fail(mvR.error.message);
+
+      const staffMap = {};
+      (staffR.data || []).forEach(function (s) {
+        const fullName = s.full_name
+          || [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ');
+        staffMap[s.id] = {
+          staff_id: s.id,
+          staff_no: s.staff_id || '',
+          name:     fullName,
+          department: s.department || ''
+        };
+      });
+
+      const byDate = {};
+      (mvR.data || []).forEach(function (m) {
+        if (!byDate[m.movement_date]) byDate[m.movement_date] = [];
+        byDate[m.movement_date].push(m);
+      });
+
+      const days = [];
+      for (let d = 1; d <= lastDate.getDate(); d++) {
+        const iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        const movements = (byDate[iso] || []).map(function (m) {
+          const s = staffMap[m.staff_id] || {};
+          return {
+            id:          m.id,
+            staff_id:    m.staff_id,
+            staff_no:    s.staff_no || '',
+            name:        s.name || '',
+            department:  s.department || '',
+            time_out:    m.time_out || null,
+            time_in:     m.time_in  || null,
+            reason:      m.reason      || null,
+            destination: m.destination || null,
+            purpose:     m.purpose     || null
+          };
+        }).sort(function (a, b) {
+          const at = a.time_out || '99:99';
+          const bt = b.time_out || '99:99';
+          if (at !== bt) return at < bt ? -1 : 1;
+          return (a.name || '').localeCompare(b.name || '');
+        });
+
+        days.push({ date: iso, movements: movements });
+      }
+
+      return ok({ year: year, month: month, days: days });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertStaffAttendance = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = Object.assign({}, row, { updated_at: new Date().toISOString() });
+      const { data, error } = await sb
+        .from('attendance_staff')
+        .upsert(payload, { onConflict: 'staff_id,attendance_date' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.closeStaffMovement = async function (id, timeIn) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff_movements')
+        .update({ time_in: timeIn, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createStaffMovement = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff_movements')
+        .insert(row)
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.archiveStaffMonth = async function (year, month) {
+    try {
+      const sb = await loadSdk();
+      const firstISO = year + '-' + String(month).padStart(2, '0') + '-01';
+      const lastDate = new Date(year, month, 0);
+      const lastISO  = year + '-' + String(month).padStart(2, '0') + '-' + String(lastDate.getDate()).padStart(2, '0');
+
+      const staffR = await sb.from('staff').select('id, staff_id, full_name, surname, first_name, middle_name');
+      if (staffR.error) return fail(staffR.error.message);
+      const staffMap = {};
+      (staffR.data || []).forEach(function (s) {
+        const fullName = s.full_name
+          || [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ');
+        staffMap[s.id] = { staff_no: s.staff_id || '', staff_name: fullName };
+      });
+
+      const attR = await sb.from('attendance_staff').select('*')
+        .gte('attendance_date', firstISO)
+        .lte('attendance_date', lastISO);
+      if (attR.error) return fail(attR.error.message);
+
+      const attRows = (attR.data || []).map(function (a) {
+        const s = staffMap[a.staff_id] || {};
+        return {
+          staff_id:        a.staff_id,
+          staff_no:        s.staff_no,
+          staff_name:      s.staff_name,
+          attendance_date: a.attendance_date,
+          clock_in:        a.clock_in,
+          clock_out:       a.clock_out,
+          status:          a.status,
+          remark:          a.note,
+          archive_year:    year,
+          archive_month:   month
+        };
+      });
+      if (attRows.length > 0) {
+        const insA = await sb.from('staff_attendance_archive').insert(attRows);
+        if (insA.error) return fail(insA.error.message);
+      }
+
+      const mvR = await sb.from('staff_movements').select('*')
+        .gte('movement_date', firstISO)
+        .lte('movement_date', lastISO);
+      if (mvR.error) return fail(mvR.error.message);
+
+      const mvRows = (mvR.data || []).map(function (m) {
+        const s = staffMap[m.staff_id] || {};
+        return {
+          staff_id:      m.staff_id,
+          staff_no:      s.staff_no,
+          staff_name:    s.staff_name,
+          movement_date: m.movement_date,
+          time_out:      m.time_out,
+          time_in:       m.time_in,
+          reason:        m.reason,
+          destination:   m.destination,
+          purpose:       m.purpose,
+          archive_year:  year,
+          archive_month: month
+        };
+      });
+      if (mvRows.length > 0) {
+        const insM = await sb.from('staff_movements_archive').insert(mvRows);
+        if (insM.error) return fail(insM.error.message);
+      }
+
+      const stampA = await sb.from('attendance_staff')
+        .update({ month_archived: true })
+        .gte('attendance_date', firstISO)
+        .lte('attendance_date', lastISO);
+      if (stampA.error) return fail(stampA.error.message);
+
+      const stampM = await sb.from('staff_movements')
+        .update({ month_archived: true })
+        .gte('movement_date', firstISO)
+        .lte('movement_date', lastISO);
+      if (stampM.error) return fail(stampM.error.message);
+
+      return ok({
+        year: year, month: month,
+        attendance_rows: attRows.length,
+        movement_rows:   mvRows.length
+      });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listArchivedStaffMonths = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('staff_attendance_archive')
+        .select('archive_year, archive_month');
+      if (error) return fail(error.message);
+
+      const buckets = {};
+      (data || []).forEach(function (r) {
+        const key = r.archive_year + '-' + String(r.archive_month).padStart(2, '0');
+        if (!buckets[key]) buckets[key] = { year: r.archive_year, month: r.archive_month, attendance_count: 0 };
+        buckets[key].attendance_count++;
+      });
+      const list = Object.values(buckets).sort(function (a, b) {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+      });
+      return ok(list);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getArchivedStaffMonth = async function (year, month) {
+    try {
+      const sb = await loadSdk();
+      const [attR, mvR] = await Promise.all([
+        sb.from('staff_attendance_archive').select('*')
+          .eq('archive_year', year).eq('archive_month', month)
+          .order('attendance_date', { ascending: true }),
+        sb.from('staff_movements_archive').select('*')
+          .eq('archive_year', year).eq('archive_month', month)
+          .order('movement_date', { ascending: true })
+      ]);
+      if (attR.error) return fail(attR.error.message);
+      if (mvR.error)  return fail(mvR.error.message);
+      return ok({
+        year: year,
+        month: month,
+        attendance: attR.data || [],
+        movements:  mvR.data || []
+      });
+    } catch (err) { return fail(err); }
+  };
+  // ================================================================
   // [QR] — snake_case columns
   // ================================================================
   TIS.getActiveQRToken = async function () {
