@@ -2382,14 +2382,30 @@
   window.pwPickSpecial = pwPickSpecial;
   window.pwApplySpecial = pwApplySpecial;
   window.checkPromotionBanner = checkPromotionBanner;
-   // ================================================================
+
+    // ================================================================
   // [S10] LEARNER ATTENDANCE
-  //   Master mark: 'O O' | '\\' | '/' | '\\ /'
+  //   Master mark: 'O O' | '\' | '/' | '\ /'
   //   Holiday columns: one shared vertical write-up via rowspan.
+  //   Columns (PIN, Sex, Age) hideable via checkbox bar.
+  //   Class Analysis + Week Signatures load on click.
+  //   Week Signatures header shows week-ending date.
   // ================================================================
   const ATT_MARKS = ['O O', '\\', '/', '\\ /'];
   let attSessionMode = 'AM';
   let attState = null;
+
+  // Column visibility for the register (persists across re-renders).
+  if (!window.__attColVisibility) {
+    window.__attColVisibility = { pin: true, sex: false, age: false };
+  }
+
+  function attToggleCol(col) {
+    if (!window.__attColVisibility) return;
+    window.__attColVisibility[col] = !window.__attColVisibility[col];
+    if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
+  }
+  window.attToggleCol = attToggleCol;
 
   function attIsAdmin() {
     return !!(State.profile && (State.profile.role === 'admin' || State.profile.role === 'super_admin'));
@@ -2422,6 +2438,9 @@
     return '⏳ Future';
   }
 
+  // ----------------------------------------------------------------
+  // Tab init + expandable wiring
+  // ----------------------------------------------------------------
   async function initLearnerAttendanceTab() {
     await populateAttendanceClassList();
 
@@ -2429,10 +2448,10 @@
     if (loadBtn && !loadBtn.__wired) {
       loadBtn.addEventListener('click', function () {
         loadAttendanceRegister().then(function () {
-          // After a successful load, refresh the analysis panel too.
           if (attState) {
             renderClassAnalysisPanel();
             renderSignaturePanel();
+            openAttendanceExpandables();
           }
         });
       });
@@ -2445,27 +2464,52 @@
       printBtn.__wired = true;
     }
 
-    // Wire the Class Analysis expandable so clicking its header
-    // always renders a fresh panel (once a register is loaded).
-    const analysisFrame = document.getElementById('analysisFrame');
-    if (analysisFrame && !analysisFrame.__wired) {
-      const header = analysisFrame.querySelector('.expandable-header');
-      if (header) {
-        header.addEventListener('click', function () {
-          if (!attState) {
-            setHTML('analysisBody', emptyHTML(
-              'fa-chart-bar',
-              'Load a class first',
-              'Pick a class, term and year, then click Load Term View.'
-            ));
-            return;
-          }
-          renderClassAnalysisPanel();
-        });
-      }
-      analysisFrame.__wired = true;
+    // Wire both expandables so their headers toggle open/close.
+    wireAttendanceExpandable('analysisFrame', 'analysisBody', 'renderClassAnalysisPanel');
+    wireAttendanceExpandable('signatureFrame', 'signatureBody', 'renderSignaturePanel');
+
+    // If a register is already in state, refresh panels and open the frames.
+    if (attState) {
+      renderClassAnalysisPanel();
+      renderSignaturePanel();
+      openAttendanceExpandables();
     }
   }
+
+  function wireAttendanceExpandable(frameId, bodyId, renderFnName) {
+    const frame = document.getElementById(frameId);
+    if (!frame) return;
+    if (frame.__wired) return;
+    const header = frame.querySelector('.expandable-header');
+    if (!header) return;
+    header.addEventListener('click', function () {
+      frame.classList.toggle('open');
+      if (frame.classList.contains('open')) {
+        if (!attState) {
+          setHTML(bodyId, emptyHTML(
+            'fa-chart-bar',
+            'Load a class first',
+            'Pick a class, term and year, then click Load Term View.'
+          ));
+          return;
+        }
+        const body = document.getElementById(bodyId);
+        if (body && (body.innerHTML.trim() === '' || body.querySelector('.page-loader'))) {
+          if (renderFnName === 'renderClassAnalysisPanel') renderClassAnalysisPanel();
+          if (renderFnName === 'renderSignaturePanel')     renderSignaturePanel();
+        }
+      }
+    });
+    frame.__wired = true;
+  }
+
+  function openAttendanceExpandables() {
+    ['analysisFrame', 'signatureFrame'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('open');
+    });
+  }
+
   async function populateAttendanceClassList() {
     const sel = document.getElementById('attendanceClass');
     if (!sel) return;
@@ -2530,6 +2574,9 @@
     return 'O O';
   }
 
+  // ----------------------------------------------------------------
+  // Register grid
+  // ----------------------------------------------------------------
   function renderAttendanceRegister() {
     if (!attState) return;
     const st = attState;
@@ -2579,25 +2626,6 @@
     if (modeSel) modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
   }
 
-  // ----------------------------------------------------------------
-  // THE KEY CHANGE: holiday column uses a rowspan<td> in the first
-  // learner row. Its height = all learner rows. Text is written
-  // vertically, bottom-to-top, blue bold on 3 red lines.
-  // ----------------------------------------------------------------
-  // Column visibility state for the attendance register.
-  // PIN, Sex, Age can each be toggled. Name is always shown.
-  if (!window.__attColVisibility) {
-    window.__attColVisibility = { pin: true, sex: false, age: false };
-  }
-
-  function attToggleCol(col) {
-    if (!window.__attColVisibility) return;
-    window.__attColVisibility[col] = !window.__attColVisibility[col];
-    // Re-render current register if it exists.
-    if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
-  }
-  window.attToggleCol = attToggleCol;
-
   function renderWeekGrid(wk, weekLock) {
     const st = attState;
     const days = wk.days;
@@ -2605,11 +2633,9 @@
     const numLearners = st.learners.length;
     const vis = window.__attColVisibility;
 
-    // Width of the Name column depends on which other columns are visible.
     const nameLeft = vis.pin ? 70 : 0;
-    const nameWidth = vis.pin ? 'calc(100% - 70px)' : '100%';
 
-    // Column-visibility toggle bar (rendered once per grid)
+    // Column-visibility toggle bar
     let bar = '<div style="display:flex;gap:12px;align-items:center;padding:6px 10px;background:#f1f8e9;border-bottom:1px solid #c8e6c9;font-size:11px;">';
     bar += '<span style="font-weight:700;color:#0d4d26;">Columns:</span>';
     bar += '<label style="cursor:pointer;"><input type="checkbox" ' + (vis.pin ? 'checked' : '') +
@@ -2625,7 +2651,7 @@
     h += '<div style="overflow-x:auto;background:#fff;">';
     h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">';
 
-    // ---- Header ----
+    // Header
     h += '<thead><tr style="background:#e8f5e9;">';
     if (vis.pin) {
       h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;">PIN</th>';
@@ -2662,7 +2688,7 @@
     });
     h += '<th style="padding:2px;"></th><th style="padding:2px;"></th></tr></thead><tbody>';
 
-    // ---- Body ----
+    // Body
     st.learners.forEach(function (l, rowIndex) {
       h += '<tr id="attRow_' + l.id + '">';
       if (vis.pin) {
@@ -2730,6 +2756,7 @@
     h += '</tbody></table></div>';
     return h;
   }
+
   function attCycleCell(learnerId, dateISO, session) {
     if (!attState) return;
     const st = attState;
@@ -3001,10 +3028,10 @@
       }
     } catch (e) {}
 
-    let html = '<p style="font-size:11px;color:#666;margin:0 0 10px;">Sign each week as it is completed.</p>';
+    let html = '<p style="font-size:11px;color:#666;margin:0 0 10px;">Sign each week as it is completed. Week column shows the week-ending date.</p>';
     html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;">';
     html += '<thead><tr style="background:#0d4d26;color:#fff;">';
-    html += '<th style="text-align:left;padding:6px;">Week</th><th style="padding:6px;">Ending</th>';
+    html += '<th style="text-align:left;padding:6px;">Week (Ending)</th>';
     html += '<th style="padding:6px;">Logged By</th><th style="padding:6px;">Confirmed By</th><th style="padding:6px;">Audited By</th><th style="padding:6px;">Date</th>';
     html += '</tr></thead><tbody>';
 
@@ -3016,8 +3043,7 @@
       };
       const today = attTodayISO();
       html += '<tr>' +
-        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Week ' + wk.weekNumber + '</td>' +
-        '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(wk.weekEnding) + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;">Week ' + wk.weekNumber + ' — ' + fmtDateShort_(wk.weekEnding) + '</td>' +
         '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
         '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
         '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
@@ -3171,18 +3197,22 @@
     setTimeout(function () { w.print(); }, 250);
   }
 
-  window.loadAttendanceRegister = loadAttendanceRegister;
-  window.attToggleWeek          = attToggleWeek;
-  window.attCycleCell           = attCycleCell;
-  window.attMarkClassPresent    = attMarkClassPresent;
-  window.attSaveAllChanges      = attSaveAllChanges;
-  window.attDiscardChanges      = attDiscardChanges;
-  window.attOpenPrintDialog     = attOpenPrintDialog;
-  window.attClosePrintDialog    = attClosePrintDialog;
-  window.attRunPrint            = attRunPrint;
-  window.renderClassAnalysisPanel = renderClassAnalysisPanel;
-  window.renderSignaturePanel   = renderSignaturePanel;
-  window.attSaveSignatures      = attSaveSignatures;
+  // ----------------------------------------------------------------
+  // Public API
+  // ----------------------------------------------------------------
+  window.initLearnerAttendanceTab  = initLearnerAttendanceTab;
+  window.loadAttendanceRegister    = loadAttendanceRegister;
+  window.attToggleWeek             = attToggleWeek;
+  window.attCycleCell              = attCycleCell;
+  window.attMarkClassPresent       = attMarkClassPresent;
+  window.attSaveAllChanges         = attSaveAllChanges;
+  window.attDiscardChanges         = attDiscardChanges;
+  window.attOpenPrintDialog        = attOpenPrintDialog;
+  window.attClosePrintDialog       = attClosePrintDialog;
+  window.attRunPrint               = attRunPrint;
+  window.renderClassAnalysisPanel  = renderClassAnalysisPanel;
+  window.renderSignaturePanel      = renderSignaturePanel;
+  window.attSaveSignatures         = attSaveSignatures;
 
     // ================================================================
   // [S11] STAFF ATTENDANCE
