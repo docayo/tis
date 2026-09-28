@@ -3123,61 +3123,271 @@
   window.renderClassAnalysisPanel = renderClassAnalysisPanel;
   window.renderSignaturePanel   = renderSignaturePanel;
   window.attSaveSignatures      = attSaveSignatures;
-  // ================================================================
+
+    // ================================================================
   // [S11] STAFF ATTENDANCE
+  //   • Today's list — every active staff member, marked or not
+  //   • Manual clock in / clock out via modal
+  //   • Movement log (in/out during the day)
+  //   • Monthly view (per staff, aggregated)
+  //   • Archive list (read-only, one row per month)
+  // All calls are guarded by try/finally so the spinner always stops.
   // ================================================================
+  const STAFF_ATT_TODAY = function () { return todayISO(); };
+
   async function initStaffAttendanceTab() {
-    const r1 = $('btnRefreshStaffAtt'); if (r1) r1.addEventListener('click', refreshStaffAttendance);
-    const r2 = $('btnManualStaffEntry'); if (r2) r2.addEventListener('click', openManualStaffEntryModal);
-    const r3 = $('btnViewArchivedMonths'); if (r3) r3.addEventListener('click', loadArchives);
-    const r4 = $('btnRunStaffArchive'); if (r4) r4.addEventListener('click', () => showToast('Archive is coming with the API layer', 'info'));
+    const r1 = $('btnRefreshStaffAtt');
+    if (r1 && !r1.__wired) { r1.addEventListener('click', refreshStaffAttendance); r1.__wired = true; }
+
+    const r2 = $('btnManualStaffEntry');
+    if (r2 && !r2.__wired) { r2.addEventListener('click', openManualStaffEntryModal); r2.__wired = true; }
+
+    const r3 = $('btnViewArchivedMonths');
+    if (r3 && !r3.__wired) { r3.addEventListener('click', loadArchiveList); r3.__wired = true; }
+
+    const r4 = $('btnRunStaffArchive');
+    if (r4 && !r4.__wired) {
+      r4.addEventListener('click', function () {
+        showToast('Archive is coming with the API layer', 'info');
+      });
+      r4.__wired = true;
+    }
+
     await refreshStaffAttendance();
   }
 
   async function refreshStaffAttendance() {
-    await loadStaffAttendanceToday();
-    await loadMovementLogToday();
-    await loadStaffMonthlyCurrent();
-    await loadArchiveList();
-  }
-
-  async function loadStaffAttendanceToday() {
-    setHTML('staffAttList', pageLoaderHTML('Loading staff attendance...'));
-    startLoader();
-    const r = await window.TIS.listStaffAttendanceToday(todayISO());
-    const staffRes = await window.TIS.listStaff();
-    stopLoader();
-    if (!r.ok || !staffRes.ok) {
-      setHTML('staffAttList', emptyHTML('fa-user-clock', 'No records today'));
-      return;
+    try {
+      await loadStaffAttendanceToday();
+      await loadMovementLogToday();
+      await loadStaffMonthlyCurrent();
+      await loadArchiveList();
+    } catch (err) {
+      console.error('[refreshStaffAttendance]', err);
+      showToast('Could not refresh staff attendance: ' + (err && err.message || err), 'error');
     }
-    const todayRows = r.data || [];
-    const staff = (staffRes.data || []).filter(s => s.status === 'Active');
-    const map = {};
-    todayRows.forEach(row => { map[row.staff_id] = row; });
-    let html = '';
-    staff.forEach(s => {
-      const row = map[s.id];
-      const stateLabel = row ? (row.status || 'Present') : 'Not Marked';
-      html += '<div class="staff-card"><div class="sc-info">' +
-        '<div class="sc-name">' + esc(s.full_name) + '</div>' +
-        '<div class="sc-detail">' + esc(s.department || '') + ' • ID: ' + esc(s.staff_id) + '</div>' +
-        '<div class="sc-detail">In: ' + esc(row && row.clock_in ? row.clock_in : '—') +
-        ' • Out: ' + esc(row && row.clock_out ? row.clock_out : '—') + '</div>' +
-        '</div><div class="sc-badge">' + esc(stateLabel) + '</div></div>';
+  }
+
+  // ---------------- Today's list ----------------
+  async function loadStaffAttendanceToday() {
+    setHTML('staffAttList', pageLoaderHTML('Loading staff attendance…'));
+    startLoader();
+    try {
+      if (typeof window.TIS.listStaffAttendanceToday !== 'function') {
+        setHTML('staffAttList', errorHTML(
+          'Staff Attendance not ready',
+          'The Supabase client is missing listStaffAttendanceToday(). Add it to supabase-client.js.'
+        ));
+        return;
+      }
+      if (typeof window.TIS.listStaff !== 'function') {
+        setHTML('staffAttList', errorHTML('Staff list not available', 'window.TIS.listStaff is missing.'));
+        return;
+      }
+
+      const [r, staffRes] = await Promise.all([
+        window.TIS.listStaffAttendanceToday(STAFF_ATT_TODAY()),
+        window.TIS.listStaff()
+      ]);
+
+      if (!r || !r.ok) {
+        setHTML('staffAttList', errorHTML(
+          'Could not load attendance',
+          (r && r.error) || 'Unknown error from attendance_staff.'
+        ));
+        return;
+      }
+      if (!staffRes || !staffRes.ok) {
+        setHTML('staffAttList', errorHTML(
+          'Could not load staff',
+          (staffRes && staffRes.error) || 'Unknown error from staff.'
+        ));
+        return;
+      }
+
+      const todayRows = r.data || [];
+      const staff = (staffRes.data || []).filter(function (s) {
+        return (s.status || 'Active') === 'Active';
+      });
+
+      if (staff.length === 0) {
+        setHTML('staffAttList', emptyHTML('fa-user-clock', 'No active staff', 'Add staff first.'));
+        return;
+      }
+
+      const map = {};
+      todayRows.forEach(function (row) { map[row.staff_id] = row; });
+
+      let html = '';
+      staff.forEach(function (s) {
+        const row = map[s.id];
+        const stateLabel = row ? (row.status || 'Present') : 'Not Marked';
+        const clockIn  = row && row.clock_in  ? row.clock_in  : '—';
+        const clockOut = row && row.clock_out ? row.clock_out : '—';
+        html += '<div class="staff-card">';
+        html +=   '<div class="sc-info">';
+        html +=     '<div class="sc-name">' + esc(s.full_name || '') + '</div>';
+        html +=     '<div class="sc-detail">' + esc(s.department || '') + ' • ID: ' + esc(s.staff_id || '') + '</div>';
+        html +=     '<div class="sc-detail">In: ' + esc(clockIn) + ' • Out: ' + esc(clockOut) + '</div>';
+        html +=   '</div>';
+        html +=   '<div class="sc-badge">' + esc(stateLabel) + '</div>';
+        html += '</div>';
+      });
+      setHTML('staffAttList', html);
+      renderStaffAttendanceStats(staff, todayRows);
+    } catch (err) {
+      console.error('[loadStaffAttendanceToday]', err);
+      setHTML('staffAttList', errorHTML('Unexpected error', String((err && err.message) || err)));
+    } finally {
+      stopLoader();
+    }
+  }
+
+  function renderStaffAttendanceStats(staff, todayRows) {
+    let present = 0, late = 0, absent = 0, unmarked = 0;
+    const byId = {};
+    todayRows.forEach(function (row) { byId[row.staff_id] = row; });
+    staff.forEach(function (s) {
+      const row = byId[s.id];
+      if (!row) { unmarked++; return; }
+      const st = (row.status || 'Present').toLowerCase();
+      if (st === 'present') present++;
+      else if (st === 'late') late++;
+      else if (st === 'absent') absent++;
+      else unmarked++;
     });
-    setHTML('staffAttList', html || emptyHTML('fa-user-clock', 'No staff records'));
-    setHTML('staffAttStats', '');
+    setHTML('staffAttStats',
+      '<div class="stat-card"><div class="stat-label">Total Active</div><div class="stat-value">' + staff.length + '</div></div>' +
+      '<div class="stat-card gold"><div class="stat-label">Present</div><div class="stat-value gold">' + present + '</div></div>' +
+      '<div class="stat-card red"><div class="stat-label">Late</div><div class="stat-value red">' + late + '</div></div>' +
+      '<div class="stat-card blue"><div class="stat-label">Unmarked</div><div class="stat-value" style="color:#1a5276;">' + unmarked + '</div></div>');
   }
 
+  // ---------------- Movement log ----------------
   async function loadMovementLogToday() {
-    setHTML('movementLogList', emptyHTML('fa-route', 'No movements today'));
+    setHTML('movementLogList', pageLoaderHTML('Loading movements…'));
+    try {
+      if (typeof window.TIS.listStaffMovementsToday !== 'function') {
+        setHTML('movementLogList', emptyHTML('fa-route', 'Movement log not available'));
+        return;
+      }
+      const r = await window.TIS.listStaffMovementsToday(STAFF_ATT_TODAY());
+      if (!r || !r.ok) {
+        setHTML('movementLogList', errorHTML('Could not load movements', (r && r.error) || 'Unknown error'));
+        return;
+      }
+      const rows = r.data || [];
+      if (rows.length === 0) {
+        setHTML('movementLogList', emptyHTML('fa-route', 'No movements today'));
+        return;
+      }
+      const staffRes = await window.TIS.listStaff();
+      const staffMap = {};
+      ((staffRes && staffRes.ok && staffRes.data) || []).forEach(function (s) { staffMap[s.id] = s; });
+
+      let html = '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+      html += '<th style="padding:6px;text-align:left;">Staff</th>';
+      html += '<th style="padding:6px;">Out</th>';
+      html += '<th style="padding:6px;">In</th>';
+      html += '<th style="padding:6px;text-align:left;">Reason</th>';
+      html += '<th style="padding:6px;text-align:left;">Destination</th>';
+      html += '</tr></thead><tbody>';
+      rows.forEach(function (m) {
+        const s = staffMap[m.staff_id] || {};
+        html += '<tr>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(s.full_name || m.staff_id) + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(m.time_out || '—') + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(m.time_in || '—') + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(m.reason || '') + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(m.destination || '') + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      setHTML('movementLogList', html);
+    } catch (err) {
+      console.error('[loadMovementLogToday]', err);
+      setHTML('movementLogList', errorHTML('Unexpected error', String((err && err.message) || err)));
+    }
   }
 
+  // ---------------- Monthly view ----------------
   async function loadStaffMonthlyCurrent() {
-    setHTML('staffMonthlyView', emptyHTML('fa-calendar-day', 'No records this month'));
+    setHTML('staffMonthlyView', pageLoaderHTML('Loading month…'));
+    try {
+      if (typeof window.TIS.listStaffAttendanceRange !== 'function') {
+        setHTML('staffMonthlyView', emptyHTML('fa-calendar-day', 'Monthly view not available'));
+        return;
+      }
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth();
+      const first = new Date(y, m, 1);
+      const last  = new Date(y, m + 1, 0);
+      const iso = function (d) {
+        return d.getFullYear() + '-' +
+          String(d.getMonth() + 1).padStart(2, '0') + '-' +
+          String(d.getDate()).padStart(2, '0');
+      };
+      const r = await window.TIS.listStaffAttendanceRange(iso(first), iso(last));
+      if (!r || !r.ok) {
+        setHTML('staffMonthlyView', errorHTML('Could not load month', (r && r.error) || 'Unknown error'));
+        return;
+      }
+      const rows = r.data || [];
+      if (rows.length === 0) {
+        setHTML('staffMonthlyView', emptyHTML('fa-calendar-day', 'No records this month'));
+        return;
+      }
+
+      const staffRes = await window.TIS.listStaff();
+      const staffMap = {};
+      ((staffRes && staffRes.ok && staffRes.data) || []).forEach(function (s) { staffMap[s.id] = s; });
+
+      const agg = {};
+      rows.forEach(function (row) {
+        const key = row.staff_id;
+        if (!agg[key]) agg[key] = { present: 0, late: 0, absent: 0, days: 0 };
+        agg[key].days++;
+        const st = (row.status || 'Present').toLowerCase();
+        if (st === 'present') agg[key].present++;
+        else if (st === 'late') agg[key].late++;
+        else if (st === 'absent') agg[key].absent++;
+      });
+
+      let html = '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="background:#0d4d26;color:#fff;">';
+      html += '<th style="padding:6px;text-align:left;">Staff</th>';
+      html += '<th style="padding:6px;">Days Logged</th>';
+      html += '<th style="padding:6px;">Present</th>';
+      html += '<th style="padding:6px;">Late</th>';
+      html += '<th style="padding:6px;">Absent</th>';
+      html += '</tr></thead><tbody>';
+      Object.keys(agg).forEach(function (id) {
+        const s = staffMap[id] || {};
+        const a = agg[id];
+        html += '<tr>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(s.full_name || id) + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + a.days + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + a.present + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + a.late + '</td>';
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + a.absent + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      setHTML('staffMonthlyView', html);
+    } catch (err) {
+      console.error('[loadStaffMonthlyCurrent]', err);
+      setHTML('staffMonthlyView', errorHTML('Unexpected error', String((err && err.message) || err)));
+    }
   }
 
+  // ---------------- Archive list ----------------
+  async function loadArchiveList() {
+    setHTML('archiveList', emptyHTML('fa-history', 'No archived months yet'));
+  }
+
+  // ---------------- Manual entry modal ----------------
   function openManualStaffEntryModal() {
     const html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
       '<div class="modal-box" style="max-width:520px;" onclick="event.stopPropagation()">' +
@@ -3186,7 +3396,9 @@
       '<div class="form-row"><div class="form-group"><label>Action</label><select id="se_action">' +
       '<option value="in">Clock In</option><option value="out">Clock Out</option>' +
       '</select></div></div>' +
-      '<div style="text-align:right;margin-top:16px;"><button class="btn btn-success" id="se_submit" type="button">Submit</button></div>' +
+      '<div style="text-align:right;margin-top:16px;">' +
+      '<button class="btn btn-secondary" onclick="TIS.closeModal()">Cancel</button> ' +
+      '<button class="btn btn-success" id="se_submit" type="button">Submit</button></div>' +
       '</div></div>';
     setHTML('modalContainer', html);
     const btn = $('se_submit');
@@ -3194,31 +3406,63 @@
   }
 
   async function submitManualStaffEntry() {
-    const staffId = $('se_staffId').value.trim();
-    const action = $('se_action').value;
+    const staffIdEl = $('se_staffId');
+    const actionEl  = $('se_action');
+    const staffId = staffIdEl ? staffIdEl.value.trim() : '';
+    const action  = actionEl  ? actionEl.value : 'in';
     if (!staffId) { showToast('Enter a staff ID', 'warning'); return; }
-    const staffRes = await window.TIS.listStaff();
-    if (!staffRes.ok) { showToast('Could not load staff', 'error'); return; }
-    const staff = (staffRes.data || []).find(s => s.staff_id === staffId);
-    if (!staff) { showToast('Staff not found: ' + staffId, 'error'); return; }
-    const now = new Date();
-    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
     startLoader();
-    const payload = { staff_id: staff.id, attendance_date: todayISO(), status: 'Present',
-                      logged_by: State.profile ? State.profile.name : 'Portal' };
-    if (action === 'in')  payload.clock_in  = t;
-    if (action === 'out') payload.clock_out = t;
-    const r = await window.TIS.upsertStaffAttendance(payload);
-    stopLoader();
-    if (!r.ok) { showToast(r.error || 'Could not save', 'error'); return; }
-    showToast('Recorded at ' + t, 'success');
-    closeModal();
+    try {
+      const staffRes = await window.TIS.listStaff();
+      if (!staffRes || !staffRes.ok) {
+        showToast('Could not load staff: ' + ((staffRes && staffRes.error) || 'unknown'), 'error');
+        return;
+      }
+      const staff = (staffRes.data || []).find(function (s) {
+        return String(s.staff_id || '').toUpperCase() === String(staffId).toUpperCase();
+      });
+      if (!staff) { showToast('Staff not found: ' + staffId, 'error'); return; }
+
+      const now = new Date();
+      const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+      const payload = {
+        staff_id: staff.id,
+        attendance_date: STAFF_ATT_TODAY(),
+        status: 'Present',
+        logged_by: (State.profile && State.profile.name) || 'Portal',
+        source: 'Manual'
+      };
+      if (action === 'in')  payload.clock_in  = t;
+      if (action === 'out') payload.clock_out = t;
+
+      if (typeof window.TIS.upsertStaffAttendance !== 'function') {
+        showToast('upsertStaffAttendance not available', 'error');
+        return;
+      }
+      const r = await window.TIS.upsertStaffAttendance(payload);
+      if (!r || !r.ok) {
+        showToast((r && r.error) || 'Could not save', 'error');
+        return;
+      }
+      showToast('Recorded at ' + t, 'success');
+      closeModal();
+      refreshStaffAttendance();
+    } finally {
+      stopLoader();
+    }
   }
 
-  async function loadArchiveList() {
-    setHTML('archiveList', emptyHTML('fa-history', 'No archived months yet'));
-  }
-
+  // ---------------- Public API ----------------
+  window.initStaffAttendanceTab = initStaffAttendanceTab;
+  window.refreshStaffAttendance = refreshStaffAttendance;
+  window.loadStaffAttendanceToday = loadStaffAttendanceToday;
+  window.loadMovementLogToday = loadMovementLogToday;
+  window.loadStaffMonthlyCurrent = loadStaffMonthlyCurrent;
+  window.loadArchiveList = loadArchiveList;
+  window.openManualStaffEntryModal = openManualStaffEntryModal;
+  window.submitManualStaffEntry = submitManualStaffEntry;
+  
    // ================================================================
   // [S12] CALENDAR
   // ================================================================
