@@ -2424,18 +2424,48 @@
 
   async function initLearnerAttendanceTab() {
     await populateAttendanceClassList();
+
     const loadBtn = document.getElementById('btnLoadAttendance');
     if (loadBtn && !loadBtn.__wired) {
-      loadBtn.addEventListener('click', loadAttendanceRegister);
+      loadBtn.addEventListener('click', function () {
+        loadAttendanceRegister().then(function () {
+          // After a successful load, refresh the analysis panel too.
+          if (attState) {
+            renderClassAnalysisPanel();
+            renderSignaturePanel();
+          }
+        });
+      });
       loadBtn.__wired = true;
     }
+
     const printBtn = document.getElementById('btnPrintAttendance');
     if (printBtn && !printBtn.__wired) {
       printBtn.addEventListener('click', function (e) { e.preventDefault(); attOpenPrintDialog(); });
       printBtn.__wired = true;
     }
-  }
 
+    // Wire the Class Analysis expandable so clicking its header
+    // always renders a fresh panel (once a register is loaded).
+    const analysisFrame = document.getElementById('analysisFrame');
+    if (analysisFrame && !analysisFrame.__wired) {
+      const header = analysisFrame.querySelector('.expandable-header');
+      if (header) {
+        header.addEventListener('click', function () {
+          if (!attState) {
+            setHTML('analysisBody', emptyHTML(
+              'fa-chart-bar',
+              'Load a class first',
+              'Pick a class, term and year, then click Load Term View.'
+            ));
+            return;
+          }
+          renderClassAnalysisPanel();
+        });
+      }
+      analysisFrame.__wired = true;
+    }
+  }
   async function populateAttendanceClassList() {
     const sel = document.getElementById('attendanceClass');
     if (!sel) return;
@@ -2554,25 +2584,60 @@
   // learner row. Its height = all learner rows. Text is written
   // vertically, bottom-to-top, blue bold on 3 red lines.
   // ----------------------------------------------------------------
+  // Column visibility state for the attendance register.
+  // PIN, Sex, Age can each be toggled. Name is always shown.
+  if (!window.__attColVisibility) {
+    window.__attColVisibility = { pin: true, sex: false, age: false };
+  }
+
+  function attToggleCol(col) {
+    if (!window.__attColVisibility) return;
+    window.__attColVisibility[col] = !window.__attColVisibility[col];
+    // Re-render current register if it exists.
+    if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
+  }
+  window.attToggleCol = attToggleCol;
+
   function renderWeekGrid(wk, weekLock) {
     const st = attState;
     const days = wk.days;
     const role = State.profile ? State.profile.role : 'operator';
     const numLearners = st.learners.length;
+    const vis = window.__attColVisibility;
 
-    let h = '<div style="overflow-x:auto;background:#fff;">';
-    h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">';
+    // Width of the Name column depends on which other columns are visible.
+    const nameLeft = vis.pin ? 70 : 0;
+    const nameWidth = vis.pin ? 'calc(100% - 70px)' : '100%';
+
+    // Column-visibility toggle bar (rendered once per grid)
+    let bar = '<div style="display:flex;gap:12px;align-items:center;padding:6px 10px;background:#f1f8e9;border-bottom:1px solid #c8e6c9;font-size:11px;">';
+    bar += '<span style="font-weight:700;color:#0d4d26;">Columns:</span>';
+    bar += '<label style="cursor:pointer;"><input type="checkbox" ' + (vis.pin ? 'checked' : '') +
+           ' onchange="attToggleCol(\'pin\')"> PIN</label>';
+    bar += '<label style="cursor:pointer;"><input type="checkbox" ' + (vis.sex ? 'checked' : '') +
+           ' onchange="attToggleCol(\'sex\')"> Sex</label>';
+    bar += '<label style="cursor:pointer;"><input type="checkbox" ' + (vis.age ? 'checked' : '') +
+           ' onchange="attToggleCol(\'age\')"> Age</label>';
+    bar += '<span style="color:#666;">(Name always shown)</span>';
+    bar += '</div>';
+
+    let h = bar;
+    h += '<div style="overflow-x:auto;background:#fff;">';
+    h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">';
 
     // ---- Header ----
     h += '<thead><tr style="background:#e8f5e9;">';
-    h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;">PIN</th>';
-    h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:70px;z-index:2;">Name</th>';
-    h += '<th style="padding:6px;">Sex</th><th style="padding:6px;">Age</th>';
+    if (vis.pin) {
+      h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;">PIN</th>';
+    }
+    h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:' +
+         nameLeft + 'px;z-index:2;min-width:140px;">Name</th>';
+    if (vis.sex) h += '<th style="padding:6px;">Sex</th>';
+    if (vis.age) h += '<th style="padding:6px;">Age</th>';
     days.forEach(function (d, i) {
       const isHol = d.isHoliday;
       const shortDay = ['Mon','Tue','Wed','Thu','Fri'][i];
       if (isHol) {
-        // Header cell for a holiday — no text overlay, just day + date.
         h += '<th colspan="2" style="background:#ffcdd2;color:#721c24;padding:4px 6px;">' +
              shortDay + '<br><span style="font-size:10px;font-weight:400;">' + fmtDateShort_(d.date) + '</span>' +
              '</th>';
@@ -2586,7 +2651,8 @@
 
     // Sub-header M / A row
     h += '<tr style="background:#f1f8e9;">';
-    h += '<th colspan="4" style="padding:2px;"></th>';
+    const subColspan = 1 + (vis.pin ? 1 : 0) + (vis.sex ? 1 : 0) + (vis.age ? 1 : 0);
+    h += '<th colspan="' + subColspan + '" style="padding:2px;"></th>';
     days.forEach(function (d) {
       if (d.isHoliday) {
         h += '<th colspan="2" style="background:#ffcdd2;color:#721c24;font-size:10px;padding:2px;">HOLIDAY</th>';
@@ -2599,22 +2665,18 @@
     // ---- Body ----
     st.learners.forEach(function (l, rowIndex) {
       h += '<tr id="attRow_' + l.id + '">';
-
-      // Sticky learner columns
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;">' + esc(l.pin || '') + '</td>';
+      if (vis.pin) {
+        h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;">' + esc(l.pin || '') + '</td>';
+      }
       const g = (l.gender || '').toLowerCase();
       const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:70px;background:#fff;z-index:1;">' + esc(l.name || '') + '</td>';
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.gender || '—') + '</td>';
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.age || '—') + '</td>';
+      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:' + nameLeft + 'px;background:#fff;z-index:1;min-width:140px;">' + esc(l.name || '') + '</td>';
+      if (vis.sex) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.gender || '—') + '</td>';
+      if (vis.age) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;">' + esc(l.age || '—') + '</td>';
 
       let weeklyPresent = 0;
-
-      // Day columns
       days.forEach(function (d) {
         if (d.isHoliday) {
-          // Only the FIRST learner row emits the tall merged cell.
-          // Subsequent rows emit nothing for this day.
           if (rowIndex === 0) {
             const holidayText = d.holidayName || 'Holiday';
             h += '<td colspan="2" rowspan="' + numLearners + '" ' +
@@ -2629,8 +2691,7 @@
                  'background-image:repeating-linear-gradient(to bottom,' +
                  'transparent 0,transparent 22px,#d32f2f 22px,#d32f2f 24px);' +
                  'opacity:0.45;pointer-events:none;">' +
-                 '</div>' +
-                 '</td>';
+                 '</div></td>';
           }
           return;
         }
@@ -2669,7 +2730,6 @@
     h += '</tbody></table></div>';
     return h;
   }
-
   function attCycleCell(learnerId, dateISO, session) {
     if (!attState) return;
     const st = attState;
