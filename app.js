@@ -5571,12 +5571,12 @@
   // [S21] ID CARDS
   //   Sub-pages: Staff / Learner / Visitor
   //   Two outputs from the same generated set:
-  //     1. A4 preview sheet (10 CR80 cards per sheet, 2 × 5 grid)
+  //     1. A4 preview sheet (2 × 5 grid, 10 CR80 cards per sheet)
   //     2. ZIP download of Front + Back PNG per card
-  //        (1012 × 638 px @ 300 DPI, 2 mm bleed → 1134 × 756 px)
-  //   Back of every card carries the centre-aligned ownership +
-  //   return text. Front carries photo, QR, logo, name, ID, class.
+  //        Delivered PNG: 1134 × 756 px (CR80 1012 × 638 + 2 mm bleed)
+  //        Trim to: 1012 × 638 px @ 300 DPI
   //   Card QR points to https://<origin>/s/<code>
+  //   Filenames: <Kind>_<Code>_Front.png / _Back.png
   // ================================================================
 
   const IDC_VISITOR_CARDS = ['VIS-01', 'VIS-02', 'VIS-03', 'VIS-04', 'VIS-05'];
@@ -5603,21 +5603,23 @@
   ];
 
   // Front PNG dimensions at 300 DPI
-  //   CR80 = 85.6 × 54 mm → 1012 × 638 px (content)
-  //   With 2 mm bleed each side → 89.6 × 58 mm → 1134 × 756 px (delivered)
+  //   CR80 content = 85.6 × 54 mm → 1012 × 638 px
+  //   With 2 mm bleed on each edge → 89.6 × 58 mm → 1134 × 756 px
   const IDC_PNG = {
-    contentW: 1012, contentH: 638,   // safe area
-    bleedPx: 24,                     // 2 mm at 300 DPI
-    fullW: 1134, fullH: 756          // delivered size
+    contentW: 1012, contentH: 638,   // safe area (after trim)
+    bleedPx:  24,                    // 2 mm at 300 DPI
+    fullW:    1134, fullH:   756     // delivered size (with bleed)
   };
 
+  const IDC_LOGO_URL = 'https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w400';
+
   let idcState = {
-    sub: 'staff',                 // 'staff' | 'learner' | 'visitor'
+    sub: 'staff',                    // 'staff' | 'learner' | 'visitor'
     staffAll: [],
     staffSelected: {},
+    learnerByClass: {},
     learnerClasses: [],
     learnerSelected: {},
-    learnerByClass: {},
     loaded: false,
     busy: false
   };
@@ -5626,20 +5628,26 @@
   // Tab init
   // ----------------------------------------------------------------
   async function initIDCardsTab() {
-    const bStaff = $('idcSubStaff');
+    const bStaff   = $('idcSubStaff');
     const bLearner = $('idcSubLearner');
     const bVisitor = $('idcSubVisitor');
 
     if (bStaff && !bStaff.__wired) {
-      bStaff.addEventListener('click', function () { idcState.sub = 'staff'; idcRenderPanel(); idcRefreshSubButtons(); });
+      bStaff.addEventListener('click', function () {
+        idcState.sub = 'staff'; idcRefreshSubButtons(); idcRenderPanel();
+      });
       bStaff.__wired = true;
     }
     if (bLearner && !bLearner.__wired) {
-      bLearner.addEventListener('click', function () { idcState.sub = 'learner'; idcRenderPanel(); idcRefreshSubButtons(); });
+      bLearner.addEventListener('click', function () {
+        idcState.sub = 'learner'; idcRefreshSubButtons(); idcRenderPanel();
+      });
       bLearner.__wired = true;
     }
     if (bVisitor && !bVisitor.__wired) {
-      bVisitor.addEventListener('click', function () { idcState.sub = 'visitor'; idcRenderPanel(); idcRefreshSubButtons(); });
+      bVisitor.addEventListener('click', function () {
+        idcState.sub = 'visitor'; idcRefreshSubButtons(); idcRenderPanel();
+      });
       bVisitor.__wired = true;
     }
 
@@ -5652,17 +5660,22 @@
   }
 
   function idcRefreshSubButtons() {
-    const bStaff = $('idcSubStaff');
-    const bLearner = $('idcSubLearner');
-    const bVisitor = $('idcSubVisitor');
-    [bStaff, bLearner, bVisitor].forEach(function (b) {
+    const map = {
+      staff:   $('idcSubStaff'),
+      learner: $('idcSubLearner'),
+      visitor: $('idcSubVisitor')
+    };
+    Object.keys(map).forEach(function (k) {
+      const b = map[k];
       if (!b) return;
-      b.classList.remove('btn-primary'); b.classList.add('btn-secondary');
+      if (k === idcState.sub) {
+        b.classList.remove('btn-secondary');
+        b.classList.add('btn-primary');
+      } else {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-secondary');
+      }
     });
-    const active = idcState.sub === 'staff' ? bStaff
-                 : idcState.sub === 'learner' ? bLearner
-                 : bVisitor;
-    if (active) { active.classList.remove('btn-secondary'); active.classList.add('btn-primary'); }
   }
 
   async function idcLoadData() {
@@ -5692,6 +5705,7 @@
 
       idcState.staffSelected = {};
       idcState.staffAll.forEach(function (s) { idcState.staffSelected[s.id] = true; });
+
       idcState.learnerSelected = {};
       learners.forEach(function (l) { idcState.learnerSelected[l.id] = true; });
     } finally {
@@ -5714,7 +5728,7 @@
   // Staff sub-page
   // ----------------------------------------------------------------
   function idcRenderStaffPanel(panel) {
-    const total = idcState.staffAll.length;
+    const total    = idcState.staffAll.length;
     const selected = idcState.staffAll.filter(function (s) { return idcState.staffSelected[s.id]; }).length;
 
     let html = '';
@@ -5729,21 +5743,25 @@
     html += '<button class="btn btn-sm btn-gold" onclick="idcGenerateStaffCards(\'zip\')"><i class="fas fa-file-zipper"></i> Download ZIP (Front + Back PNG)</button>';
     html += '</div>';
 
-    html += '<div style="max-height:400px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+    html += '<div style="max-height:420px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead style="position:sticky;top:0;background:#e8f5e9;">';
-    html += '<tr><th style="text-align:center;padding:6px;width:40px;">✓</th>' +
+    html += '<thead style="position:sticky;top:0;background:#e8f5e9;z-index:1;">';
+    html += '<tr>' +
+            '<th style="text-align:center;padding:6px;width:40px;">✓</th>' +
             '<th style="text-align:left;padding:6px;width:110px;">Staff ID</th>' +
             '<th style="text-align:left;padding:6px;">Name</th>' +
             '<th style="text-align:left;padding:6px;width:120px;">Department</th>' +
-            '<th style="text-align:left;padding:6px;width:140px;">Position</th></tr>';
+            '<th style="text-align:left;padding:6px;width:150px;">Position</th></tr>';
     html += '</thead><tbody>';
+
     idcState.staffAll.forEach(function (s) {
       const checked = idcState.staffSelected[s.id] ? ' checked' : '';
-      const name = [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ') || s.full_name || '';
+      const name = [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ')
+                   || s.full_name || '';
       html += '<tr>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
-              '<input type="checkbox"' + checked + ' onchange="idcToggleStaff(' + s.id + ', this.checked)"></td>';
+              '<input type="checkbox"' + checked +
+              ' onchange="idcToggleStaff(' + s.id + ', this.checked)"></td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(s.staff_id || '') + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(name) + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(s.department || '') + '</td>';
@@ -5757,7 +5775,9 @@
     panel.innerHTML = html;
   }
 
-  function idcToggleStaff(id, on) { idcState.staffSelected[id] = !!on; idcRenderPanel(); }
+  function idcToggleStaff(id, on) {
+    idcState.staffSelected[id] = !!on;
+  }
   function idcSelectAllStaff(on) {
     idcState.staffAll.forEach(function (s) { idcState.staffSelected[s.id] = !!on; });
     idcRenderPanel();
@@ -5766,31 +5786,30 @@
     const list = idcState.staffAll.filter(function (s) { return idcState.staffSelected[s.id]; });
     if (list.length === 0) { showToast('Select at least one staff member', 'warning'); return; }
     const cards = list.map(function (s) {
+      const name = [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ')
+                   || s.full_name || '';
       return {
-        code: s.staff_id || '',
-        kind: 'staff',
-        name: [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ') || s.full_name || '',
-        line1: 'Staff ID: ' + (s.staff_id || ''),
-        line2: s.department || '',
-        line3: s.position || '',
-        photo: s.photo_url || '',
-        role: 'STAFF'
+        code:   s.staff_id || ('STAFF' + s.id),
+        kind:   'Staff',
+        name:   name,
+        line1:  'Staff ID: ' + (s.staff_id || ''),
+        line2:  s.department || '',
+        line3:  s.position || '',
+        photo:  s.photo_url || '',
+        role:   'STAFF'
       };
     });
     if (mode === 'zip') idcDownloadZip(cards, 'Staff_ID_Cards');
     else idcOpenA4Preview(cards, 'Staff ID Cards');
   }
-  window.idcToggleStaff           = idcToggleStaff;
-  window.idcSelectAllStaff        = idcSelectAllStaff;
-  window.idcGenerateStaffCards    = idcGenerateStaffCards;
 
   // ----------------------------------------------------------------
   // Learner sub-page
   // ----------------------------------------------------------------
   function idcRenderLearnerPanel(panel) {
-    const classes = idcState.learnerClasses;
+    const classes    = idcState.learnerClasses;
     const allLearners = Object.values(idcState.learnerByClass).flat();
-    const selected = allLearners.filter(function (l) { return idcState.learnerSelected[l.id]; }).length;
+    const selected    = allLearners.filter(function (l) { return idcState.learnerSelected[l.id]; }).length;
 
     let html = '';
     html += '<h3 style="margin:0 0 8px;color:#0d4d26;">Learner ID Cards</h3>';
@@ -5809,20 +5828,23 @@
     html += '<div style="max-height:480px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;padding:8px;">';
     classes.forEach(function (c) {
       const learners = idcState.learnerByClass[c] || [];
-      const allSelected = learners.length > 0 && learners.every(function (l) { return idcState.learnerSelected[l.id]; });
-      const someSelected = learners.some(function (l) { return idcState.learnerSelected[l.id]; });
+      const allSel   = learners.length > 0 &&
+                       learners.every(function (l) { return idcState.learnerSelected[l.id]; });
+      const someSel  = learners.some(function (l) { return idcState.learnerSelected[l.id]; });
 
-      html += '<details style="margin:4px 0;"' + (someSelected ? ' open' : '') + '>';
-      html += '<summary style="cursor:pointer;font-weight:700;color:#0d4d26;font-size:13px;padding:4px 0;">';
-      html += '<input type="checkbox"' + (allSelected ? ' checked' : '') +
-              ' onclick="event.stopPropagation(); idcToggleClass(\'' + escAttr(c) + '\', this.checked)"> ' +
-              esc(c) + ' <span style="color:#888;font-weight:400;">(' + learners.length + ')</span>';
+      html += '<details style="margin:4px 0;"' + (someSel ? ' open' : '') + '>';
+      html += '<summary style="cursor:pointer;font-weight:700;color:#0d4d26;font-size:13px;padding:4px 0;list-style:none;">';
+      html += '<input type="checkbox"' + (allSel ? ' checked' : '') +
+              ' style="margin-right:6px;"' +
+              ' onclick="event.stopPropagation(); idcToggleClass(\'' + escAttr(c) + '\', this.checked)">';
+      html += esc(c) + ' <span style="color:#888;font-weight:400;">(' + learners.length + ')</span>';
       html += '</summary>';
-      html += '<div style="margin-left:22px;">';
+      html += '<div style="margin-left:26px;">';
       learners.forEach(function (l) {
         const checked = idcState.learnerSelected[l.id] ? ' checked' : '';
         html += '<label style="display:block;font-size:12px;padding:3px 0;">';
-        html += '<input type="checkbox"' + checked + ' onchange="idcToggleLearner(' + l.id + ', this.checked)"> ';
+        html += '<input type="checkbox"' + checked +
+                ' onchange="idcToggleLearner(' + l.id + ', this.checked)"> ';
         html += esc(l.pin || '') + ' — ' + esc(l.name || '');
         html += '</label>';
       });
@@ -5845,28 +5867,24 @@
     idcRenderPanel();
   }
   function idcGenerateLearnerCards(mode) {
-    const all = Object.values(idcState.learnerByClass).flat();
+    const all  = Object.values(idcState.learnerByClass).flat();
     const list = all.filter(function (l) { return idcState.learnerSelected[l.id]; });
     if (list.length === 0) { showToast('Select at least one learner', 'warning'); return; }
     const cards = list.map(function (l) {
       return {
-        code: l.pin || '',
-        kind: 'learner',
-        name: l.name || '',
-        line1: 'PIN: ' + (l.pin || ''),
-        line2: 'Class: ' + (l.class_name || ''),
-        line3: '',
-        photo: l.photo_url || '',
-        role: 'LEARNER'
+        code:   l.pin || ('LEARNER' + l.id),
+        kind:   'Learner',
+        name:   l.name || '',
+        line1:  'PIN: ' + (l.pin || ''),
+        line2:  'Class: ' + (l.class_name || ''),
+        line3:  '',
+        photo:  l.photo_url || '',
+        role:   'LEARNER'
       };
     });
     if (mode === 'zip') idcDownloadZip(cards, 'Learner_ID_Cards');
     else idcOpenA4Preview(cards, 'Learner ID Cards');
   }
-  window.idcToggleLearner        = idcToggleLearner;
-  window.idcToggleClass          = idcToggleClass;
-  window.idcSelectAllLearners    = idcSelectAllLearners;
-  window.idcGenerateLearnerCards = idcGenerateLearnerCards;
 
   // ----------------------------------------------------------------
   // Visitor sub-page
@@ -5890,9 +5908,11 @@
     IDC_VISITOR_CARDS.forEach(function (code) {
       html += '<tr>' +
               '<td style="padding:5px;border-bottom:1px solid #eee;"><b>' + esc(code) + '</b></td>' +
-              '<td style="padding:5px;border-bottom:1px solid #eee;">Asks name, purpose (Official / Personal); ' +
-              'if Official, agency (Ministry of Education, Ministry of Health, Internal Revenue, NAPPS, ' +
-              'Community, Police/Security, Other → please specify). Time in / out auto-recorded.</td>' +
+              '<td style="padding:5px;border-bottom:1px solid #eee;">' +
+              'Asks name, purpose (Official / Personal); if Official, agency ' +
+              '(Ministry of Education, Ministry of Health, Internal Revenue, NAPPS, ' +
+              'Community, Police/Security, Other → please specify). ' +
+              'Time in / out auto-recorded.</td>' +
               '</tr>';
     });
     html += '</tbody></table></div>';
@@ -5902,70 +5922,65 @@
   function idcGenerateVisitorCards(mode) {
     const cards = IDC_VISITOR_CARDS.map(function (code) {
       return {
-        code: code,
-        kind: 'visitor',
-        name: 'VISITOR',
-        line1: 'Card: ' + code,
-        line2: '',
-        line3: '',
-        photo: '',
-        role: 'VISITOR'
+        code:   code,
+        kind:   'Visitor',
+        name:   'VISITOR',
+        line1:  'Card: ' + code,
+        line2:  '',
+        line3:  '',
+        photo:  '',
+        role:   'VISITOR'
       };
     });
     if (mode === 'zip') idcDownloadZip(cards, 'Visitor_Cards');
     else idcOpenA4Preview(cards, 'Visitor Cards');
   }
-  window.idcGenerateVisitorCards = idcGenerateVisitorCards;
 
   // ----------------------------------------------------------------
-  // CARD FACE RENDERERS — draw one card to a canvas context
-  //   Used for both A4 preview (via dataURL) and ZIP PNG output.
+  // Canvas drawing — one card face at a time
+  //   All drawing coordinates are in pixels of the DELIVERED canvas
+  //   (1134 × 756). The visible (post-trim) area is inset by bleedPx.
   // ----------------------------------------------------------------
-  function idcDrawFront(ctx, card, x, y, w, h, opts) {
-    // w, h: card content size in pixels (1012 × 638 at 300 DPI)
-    // x, y: top-left position of the content inside ctx's canvas
+  function idcDrawFront(ctx, card, x, y, w, h) {
     ctx.save();
 
-    // Background
+    // Background (fills the whole bleed area)
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(x, y, w, h);
 
-    // Outer border
+    // Outer border drawn inside the SAFE (trimmed) area
     ctx.strokeStyle = '#0d4d26';
-    ctx.lineWidth = Math.max(2, h * 0.006);
-    ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+    ctx.lineWidth   = Math.max(2, h * 0.007);
+    ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2,
+                   w - ctx.lineWidth, h - ctx.lineWidth);
 
-    // Left column: photo + QR
-    const padX = w * 0.03;
-    const padY = h * 0.06;
-    const leftW = w * 0.22;
-    const photoSize = leftW - padX;
-    const photoY = y + padY + 4;
-    const qrSize = leftW - padX;
-    const qrY = y + h - padY - qrSize - 4;
+    // Left column layout
+    const padX    = w * 0.03;
+    const padY    = h * 0.06;
+    const leftW   = w * 0.22;
+    const photoSz = leftW - padX;
+    const photoY  = y + padY + 4;
+    const qrSz    = leftW - padX;
+    const qrY     = y + h - padY - qrSz - 4;
 
-    // Photo placeholder (photo drawn later — async)
-    idcDrawPhotoPlaceholder(ctx, card, x + padX, photoY, photoSize, photoSize);
-
-    // Right column
+    // Right column start
     const rightX = x + leftW + padX;
     const rightW = w - leftW - 2 * padX;
 
-    // School logo (small) — placeholder logo
-    // We render the banner as text for reliability without async image
-    ctx.fillStyle = '#0d4d26';
-    ctx.font = 'bold ' + Math.round(h * 0.045) + 'px Arial';
-    ctx.textAlign = 'left';
+    // School banner text
+    ctx.fillStyle    = '#0d4d26';
+    ctx.textAlign    = 'left';
     ctx.textBaseline = 'top';
+    ctx.font         = 'bold ' + Math.round(h * 0.045) + 'px Arial';
     ctx.fillText('THE IDEAL SCHOOLS', rightX, y + padY);
 
-    ctx.font = 'italic ' + Math.round(h * 0.03) + 'px Arial';
+    ctx.font      = 'italic ' + Math.round(h * 0.03) + 'px Arial';
     ctx.fillStyle = '#666666';
     ctx.fillText('Scientia est potentia', rightX, y + padY + h * 0.06);
 
     // Divider
     ctx.strokeStyle = '#c8e6c9';
-    ctx.lineWidth = 2;
+    ctx.lineWidth   = 2;
     ctx.beginPath();
     ctx.moveTo(rightX, y + padY + h * 0.115);
     ctx.lineTo(rightX + rightW, y + padY + h * 0.115);
@@ -5973,22 +5988,21 @@
 
     // Name
     ctx.fillStyle = '#0d4d26';
-    ctx.font = 'bold ' + Math.round(h * 0.07) + 'px Arial';
-    const name = (card.name || '').toUpperCase();
-    ctx.fillText(idcFitText(ctx, name, rightW), rightX, y + padY + h * 0.16);
+    ctx.font      = 'bold ' + Math.round(h * 0.07) + 'px Arial';
+    const nm = (card.name || '').toUpperCase();
+    ctx.fillText(idcFitText(ctx, nm, rightW), rightX, y + padY + h * 0.16);
 
-    // Line 1 (PIN / Staff ID)
+    // Line 1
     ctx.fillStyle = '#333333';
-    ctx.font = Math.round(h * 0.045) + 'px Arial';
+    ctx.font      = Math.round(h * 0.045) + 'px Arial';
     if (card.line1) ctx.fillText(idcFitText(ctx, card.line1, rightW), rightX, y + padY + h * 0.27);
 
-    // Line 2 (Class / Department)
-    ctx.font = Math.round(h * 0.045) + 'px Arial';
+    // Line 2
     if (card.line2) ctx.fillText(idcFitText(ctx, card.line2, rightW), rightX, y + padY + h * 0.34);
 
     // Divider 2
     ctx.strokeStyle = '#c8e6c9';
-    ctx.lineWidth = 2;
+    ctx.lineWidth   = 2;
     ctx.beginPath();
     ctx.moveTo(rightX, y + h * 0.53);
     ctx.lineTo(rightX + rightW, y + h * 0.53);
@@ -5996,22 +6010,25 @@
 
     // Address block
     ctx.fillStyle = '#333333';
-    ctx.font = Math.round(h * 0.038) + 'px Arial';
+    ctx.font      = Math.round(h * 0.038) + 'px Arial';
     ctx.fillText(idcFitText(ctx, IDC_ADDRESS.line1, rightW), rightX, y + h * 0.58);
     ctx.fillText(idcFitText(ctx, IDC_ADDRESS.line2, rightW), rightX, y + h * 0.63);
+
     ctx.font = Math.round(h * 0.034) + 'px Arial';
-    ctx.fillText(idcFitText(ctx, '☎ ' + IDC_ADDRESS.phone1 + '  ·  ' + IDC_ADDRESS.phone2, rightW), rightX, y + h * 0.70);
+    ctx.fillText(idcFitText(ctx, '☎ ' + IDC_ADDRESS.phone1 + '  ·  ' + IDC_ADDRESS.phone2, rightW),
+                 rightX, y + h * 0.70);
     ctx.fillText(idcFitText(ctx, '✉ ' + IDC_ADDRESS.email1, rightW), rightX, y + h * 0.75);
     ctx.fillText(idcFitText(ctx, '✉ ' + IDC_ADDRESS.email2, rightW), rightX, y + h * 0.80);
 
     // Role badge
-    ctx.fillStyle = '#b8860b';
-    ctx.font = 'bold ' + Math.round(h * 0.04) + 'px Arial';
-    ctx.textAlign = 'right';
+    ctx.fillStyle    = '#b8860b';
+    ctx.font         = 'bold ' + Math.round(h * 0.04) + 'px Arial';
+    ctx.textAlign    = 'right';
     ctx.fillText(card.role || '', x + w - padX, y + h - padY - h * 0.045);
 
-    // QR placeholder (drawn later)
-    idcDrawQRPlaceholder(ctx, card, x + padX, qrY, qrSize, qrSize);
+    // Placeholders (drawn under the async images)
+    idcDrawPhotoPlaceholder(ctx, card, x + padX, photoY, photoSz, photoSz);
+    idcDrawQRPlaceholder   (ctx,       x + padX, qrY,    qrSz,    qrSz);
 
     ctx.restore();
   }
@@ -6023,20 +6040,21 @@
     ctx.fillRect(x, y, w, h);
 
     ctx.strokeStyle = '#0d4d26';
-    ctx.lineWidth = Math.max(2, h * 0.006);
-    ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+    ctx.lineWidth   = Math.max(2, h * 0.007);
+    ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2,
+                   w - ctx.lineWidth, h - ctx.lineWidth);
 
-    ctx.textAlign = 'center';
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
 
-    const cx = x + w / 2;
+    const cx     = x + w / 2;
     const startY = y + h * 0.16;
-    const lineH = h * 0.088;
+    const lineH  = h * 0.088;
 
     IDC_BACK_TEXT.forEach(function (line, i) {
       const isHeader = (i === 1 || i === 2 || i === 3);
-      ctx.fillStyle = isHeader ? '#0d4d26' : '#333333';
-      ctx.font = (isHeader ? 'bold ' : '') + Math.round(h * 0.055) + 'px Arial';
+      ctx.fillStyle  = isHeader ? '#0d4d26' : '#333333';
+      ctx.font       = (isHeader ? 'bold ' : '') + Math.round(h * 0.055) + 'px Arial';
       ctx.fillText(line, cx, startY + i * lineH);
     });
 
@@ -6044,30 +6062,33 @@
   }
 
   function idcDrawPhotoPlaceholder(ctx, card, x, y, w, h) {
+    ctx.save();
     ctx.fillStyle = '#0d4d26';
     ctx.beginPath();
     ctx.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold ' + Math.round(w * 0.5) + 'px Arial';
-    ctx.textAlign = 'center';
+    ctx.fillStyle    = '#ffffff';
+    ctx.font         = 'bold ' + Math.round(w * 0.5) + 'px Arial';
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    const ch = card.kind === 'visitor' ? 'V' : ((card.name || '?').charAt(0));
+    const ch = card.kind === 'Visitor' ? 'V' : ((card.name || '?').charAt(0) || '?');
     ctx.fillText(ch, x + w / 2, y + h / 2 + w * 0.05);
+    ctx.restore();
   }
 
-  function idcDrawQRPlaceholder(ctx, card, x, y, w, h) {
-    // Light grey box as placeholder — QR filled in later via image
+  function idcDrawQRPlaceholder(ctx, x, y, w, h) {
+    ctx.save();
     ctx.fillStyle = '#f0f0f0';
     ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = '#cccccc';
-    ctx.lineWidth = 1;
+    ctx.lineWidth   = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    ctx.fillStyle = '#999999';
-    ctx.font = Math.round(w * 0.12) + 'px Arial';
-    ctx.textAlign = 'center';
+    ctx.fillStyle    = '#999999';
+    ctx.font         = Math.round(w * 0.12) + 'px Arial';
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('QR', x + w / 2, y + h / 2);
+    ctx.restore();
   }
 
   function idcFitText(ctx, text, maxWidth) {
@@ -6078,51 +6099,24 @@
   }
 
   // ----------------------------------------------------------------
-  // RENDER ONE CARD TO A PNG DATA URL (front or back)
-  //   Draws at fullW × fullH (with bleed) but the content is
-  //   inset by bleedPx on each side so that after trimming,
-  //   the visible area is exactly CR80.
+  // Async overlays: QR + photo, drawn on top of the placeholders
   // ----------------------------------------------------------------
-  async function idcRenderCardPng(card, side) {
-    const cvs = document.createElement('canvas');
-    cvs.width  = IDC_PNG.fullW;    // 1134
-    cvs.height = IDC_PNG.fullH;    // 756
-    const ctx = cvs.getContext('2d');
-
-    const contentX = IDC_PNG.bleedPx;
-    const contentY = IDC_PNG.bleedPx;
-    const contentW = IDC_PNG.contentW;   // 1012
-    const contentH = IDC_PNG.contentH;   // 638
-
-    if (side === 'front') {
-      idcDrawFront(ctx, card, contentX, contentY, contentW, contentH);
-      // Overlay QR image on top of the placeholder
-      await idcDrawQRImage(ctx, card, contentX, contentY, contentW, contentH);
-      // Overlay photo image on top of the placeholder if available
-      await idcDrawPhotoImage(ctx, card, contentX, contentY, contentW, contentH);
-    } else {
-      idcDrawBack(ctx, card, contentX, contentY, contentW, contentH);
-    }
-
-    return cvs.toDataURL('image/png');
-  }
-
   function idcDrawQRImage(ctx, card, cx, cy, cw, ch) {
     return new Promise(function (resolve) {
-      const url = window.location.origin + '/s/' + encodeURIComponent(card.code);
+      const url   = window.location.origin + '/s/' + encodeURIComponent(card.code);
       const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=0&data=' +
                     encodeURIComponent(url);
-      const img = new Image();
+      const img   = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = function () {
-        const padX = cw * 0.03;
-        const leftW = cw * 0.22;
+        const padX   = cw * 0.03;
+        const leftW  = cw * 0.22;
         const qrSize = leftW - padX;
-        const qrY = cy + ch - ch * 0.06 - qrSize - 4;
+        const qrY    = cy + ch - ch * 0.06 - qrSize - 4;
         ctx.drawImage(img, cx + padX, qrY, qrSize, qrSize);
         resolve();
       };
-      img.onerror = function () { resolve(); };   // leave the placeholder
+      img.onerror = function () { resolve(); };
       img.src = qrUrl;
     });
   }
@@ -6133,15 +6127,15 @@
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = function () {
-        const padX = cw * 0.03;
-        const padY = ch * 0.06;
-        const leftW = cw * 0.22;
+        const padX      = cw * 0.03;
+        const padY      = ch * 0.06;
+        const leftW     = cw * 0.22;
         const photoSize = leftW - padX;
-        const photoY = cy + padY + 4;
-        // Circular clip
+        const photoY    = cy + padY + 4;
         ctx.save();
         ctx.beginPath();
-        ctx.arc(cx + padX + photoSize / 2, photoY + photoSize / 2, photoSize / 2, 0, Math.PI * 2);
+        ctx.arc(cx + padX + photoSize / 2, photoY + photoSize / 2,
+                photoSize / 2, 0, Math.PI * 2);
         ctx.closePath();
         ctx.clip();
         ctx.drawImage(img, cx + padX, photoY, photoSize, photoSize);
@@ -6154,11 +6148,35 @@
   }
 
   // ----------------------------------------------------------------
-  // A4 PREVIEW (2 × 5 grid)
-  //   Uses the PNG data URLs from idcRenderCardPng.
-  //   Front sheet prints at 210 × 297 mm with cards at exact
-  //   85.6 × 54 mm. Cards include 2 mm bleed around each edge
-  //   and a printable offset so the layout centers on the page.
+  // Render one card face to a PNG data URL
+  // ----------------------------------------------------------------
+  async function idcRenderCardPng(card, side) {
+    const cvs = document.createElement('canvas');
+    cvs.width  = IDC_PNG.fullW;   // 1134
+    cvs.height = IDC_PNG.fullH;   // 756
+    const ctx  = cvs.getContext('2d');
+
+    const contentX = IDC_PNG.bleedPx;
+    const contentY = IDC_PNG.bleedPx;
+    const contentW = IDC_PNG.contentW;
+    const contentH = IDC_PNG.contentH;
+
+    if (side === 'front') {
+      idcDrawFront(ctx, card, contentX, contentY, contentW, contentH);
+      await idcDrawQRImage   (ctx, card, contentX, contentY, contentW, contentH);
+      await idcDrawPhotoImage(ctx, card, contentX, contentY, contentW, contentH);
+    } else {
+      idcDrawBack(ctx, card, contentX, contentY, contentW, contentH);
+    }
+
+    return cvs.toDataURL('image/png');
+  }
+
+  // ----------------------------------------------------------------
+  // A4 preview — 2 × 5 grid
+  //   Cards are placed at their natural CR80 size (85.6 × 54 mm).
+  //   The A4 sheet is 210 × 297 mm with 8 mm margins.
+  //   2 columns × 5 rows fits 10 cards per sheet.
   // ----------------------------------------------------------------
   async function idcOpenA4Preview(cards, title) {
     if (idcState.busy) { showToast('Already generating, please wait…', 'info'); return; }
@@ -6166,15 +6184,178 @@
     startLoader();
     try {
       const frontUrls = [];
-      const backUrls = [];
+      const backUrls  = [];
       for (let i = 0; i < cards.length; i++) {
         frontUrls.push(await idcRenderCardPng(cards[i], 'front'));
-        backUrls.push(await idcRenderCardPng(cards[i], 'back'));
+        backUrls .push(await idcRenderCardPng(cards[i], 'back'));
       }
 
-      // A4 with margins:
-      //   page = 210 × 297 mm
-      //   card + bleed = 89.6
+      const w = window.open('', '_blank');
+      if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+
+      const css = ''
+        + '@page { size: A4 portrait; margin: 8mm; }'
+        + 'body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #fff; }'
+        + '.sheet { page-break-after: always; }'
+        + '.sheet:last-child { page-break-after: auto; }'
+        + '.grid { display: grid; grid-template-columns: 85.6mm 85.6mm; '
+        +         'grid-auto-rows: 54mm; gap: 3mm 8mm; justify-content: center; }'
+        + '.cell { width: 85.6mm; height: 54mm; overflow: hidden; '
+        +         'border: 0.3mm dashed #bbb; box-sizing: border-box; '
+        +         'display: flex; align-items: center; justify-content: center; }'
+        + '.cell img { width: 100%; height: 100%; object-fit: cover; display: block; }'
+        + '.caption { font-size: 10pt; color: #0d4d26; font-weight: 700; '
+        +             'text-align: center; margin: 0 0 3mm 0; }'
+        + '.sidenote { font-size: 8pt; color: #666; text-align: center; margin-top: 4mm; }'
+        + '@media print { .sidenote { display: none; } .cell { border: none; } }';
+
+      let html = '<html><head><title>' + esc(title) + '</title><style>' + css + '</style></head><body>';
+
+      // --- FRONT SHEET ---
+      html += '<div class="sheet">';
+      html += '<div class="caption">' + esc(title) + ' — FRONT (trim to 85.6 × 54 mm)</div>';
+      html += '<div class="grid">';
+      frontUrls.forEach(function (u) {
+        html += '<div class="cell"><img src="' + u + '"></div>';
+      });
+      // pad the final row so the grid stays aligned
+      const frontPad = (2 - (frontUrls.length % 2)) % 2;
+      for (let i = 0; i < frontPad; i++) html += '<div class="cell"></div>';
+      html += '</div>';
+      html += '<div class="sidenote">Delivered PNG is 1134 × 756 px @ 300 DPI with 2 mm bleed. ' +
+              'Trim on the solid green border to 1012 × 638 px (85.6 × 54 mm).</div>';
+      html += '</div>';
+
+      // --- BACK SHEET ---
+      html += '<div class="sheet">';
+      html += '<div class="caption">' + esc(title) + ' — BACK (trim to 85.6 × 54 mm)</div>';
+      html += '<div class="grid">';
+      backUrls.forEach(function (u) {
+        html += '<div class="cell"><img src="' + u + '"></div>';
+      });
+      const backPad = (2 - (backUrls.length % 2)) % 2;
+      for (let i = 0; i < backPad; i++) html += '<div class="cell"></div>';
+      html += '</div>';
+      html += '<div class="sidenote">Centre-aligned ownership and return text.</div>';
+      html += '</div>';
+
+      html += '<script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script>';
+      html += '</body></html>';
+
+      w.document.write(html);
+      w.document.close();
+      showToast('Preview opened. ' + cards.length + ' card(s) — ' +
+                Math.ceil(cards.length / 10) + ' sheet(s).', 'success');
+    } finally {
+      idcState.busy = false;
+      stopLoader();
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // ZIP download — one Front PNG + one Back PNG per card + README
+  //   Requires JSZip loaded on the page. See index.html.
+  // ----------------------------------------------------------------
+  async function idcDownloadZip(cards, zipBaseName) {
+    if (typeof JSZip === 'undefined') {
+      showToast('JSZip not loaded. Add the JSZip CDN script to index.html.', 'error');
+      return;
+    }
+    if (idcState.busy) { showToast('Already generating, please wait…', 'info'); return; }
+    idcState.busy = true;
+    startLoader();
+    try {
+      const zip = new JSZip();
+      const front = zip.folder('Front');
+      const back  = zip.folder('Back');
+
+      for (let i = 0; i < cards.length; i++) {
+        const c = cards[i];
+        const safeCode = String(c.code || ('CARD' + (i + 1)))
+          .replace(/[^A-Za-z0-9_-]/g, '_');
+        const base = c.kind + '_' + safeCode;
+
+        const frontData = await idcRenderCardPng(c, 'front');
+        const backData  = await idcRenderCardPng(c, 'back');
+
+        front.file(base + '_Front.png', idcDataUrlToBlob(frontData));
+        back .file(base + '_Back.png',  idcDataUrlToBlob(backData));
+      }
+
+      const readme = ''
+        + 'THE IDEAL SCHOOLS — ID CARD PRINTING INSTRUCTIONS\r\n'
+        + '=================================================\r\n\r\n'
+        + 'Files in this ZIP\r\n'
+        + '-----------------\r\n'
+        + '  Front/  — one PNG per card, printed side A\r\n'
+        + '  Back/   — one PNG per card, printed side B\r\n\r\n'
+        + 'PNG specifications (for the commercial card printer)\r\n'
+        + '---------------------------------------------------\r\n'
+        + '  Resolution:    1134 × 756 px (delivered, includes 2 mm bleed on all sides)\r\n'
+        + '  Trim to:       1012 × 638 px @ 300 DPI  =  85.6 × 54 mm (CR80 landscape)\r\n'
+        + '  Colour space:  RGB (printer converts to CMYK)\r\n'
+        + '  Cut line:      the solid green border visible on each PNG. ' +
+                                   'Trim exactly on the inside edge of that border.\r\n\r\n'
+        + 'Filname convention\r\n'
+        + '------------------\r\n'
+        + '  <Kind>_<Code>_Front.png   (e.g. Learner_TIS0001_Front.png)\r\n'
+        + '  <Kind>_<Code>_Back.png    (e.g. Learner_TIS0001_Back.png)\r\n\r\n'
+        + 'Please keep matching Front/Back pairs together — they are printed as a set.\r\n\r\n'
+        + 'Generated by the TIS Operational Portal\r\n';
+
+      zip.file('README.txt', readme);
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      idcTriggerDownload(blob, zipBaseName + '_' + new Date().toISOString().slice(0, 10) + '.zip');
+      showToast('ZIP built: ' + cards.length + ' card(s).', 'success');
+    } catch (err) {
+      console.error('[idcDownloadZip]', err);
+      showToast('ZIP failed: ' + (err && err.message || err), 'error');
+    } finally {
+      idcState.busy = false;
+      stopLoader();
+    }
+  }
+
+  function idcDataUrlToBlob(dataUrl) {
+    const parts = String(dataUrl || '').split(',');
+    const meta  = parts[0] || '';
+    const b64   = parts[1] || '';
+    const mime  = (meta.match(/data:([^;]+);/) || [])[1] || 'image/png';
+    const bin   = atob(b64);
+    const len   = bin.length;
+    const u8    = new Uint8Array(len);
+    for (let i = 0; i < len; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: mime });
+  }
+
+  function idcTriggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href    = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 500);
+  }
+
+  // ----------------------------------------------------------------
+  // Public API (inline handlers on the ID Cards sub-page)
+  // ----------------------------------------------------------------
+  window.initIDCardsTab          = initIDCardsTab;
+  window.idcToggleStaff          = idcToggleStaff;
+  window.idcSelectAllStaff       = idcSelectAllStaff;
+  window.idcGenerateStaffCards   = idcGenerateStaffCards;
+  window.idcToggleLearner        = idcToggleLearner;
+  window.idcToggleClass          = idcToggleClass;
+  window.idcSelectAllLearners    = idcSelectAllLearners;
+  window.idcGenerateLearnerCards = idcGenerateLearnerCards;
+  window.idcGenerateVisitorCards = idcGenerateVisitorCards;
+
+})();
 // ================================================================
 // END OF app.js
 // ================================================================
