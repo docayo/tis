@@ -831,9 +831,6 @@
     else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
   }
 
-  // ================================================================
-  // Add learner
-  // ================================================================
   async function openAddLearnerModal() {
     const classNames = await getClassNamesForDropdown();
     let classOpts = '<option value="">— Select class —</option>';
@@ -848,77 +845,69 @@
              '<input id="' + id + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
     };
 
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Add New Learner</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+    html += '<div class="modal-header"><h2>Add New Learner</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
 
-    html += '<div class="form-row">' + f('nl_pin', 'PIN', '') + f('nl_name', 'Learner Name', '') + '</div>';
+    html += '<div class="form-row">' +
+      '<div class="form-group"><label>PIN <span style="font-weight:400;color:#888;font-size:11px;">(leave blank to auto-assign)</span></label>' +
+      '<input id="nl_pin" type="text" placeholder="TIS#### or blank" autocomplete="off"></div>' +
+      f('nl_name', 'Learner Name', '') + '</div>';
+
     html += '<div class="form-row">' +
       '<div class="form-group"><label>Class</label><select id="nl_class_name">' + classOpts + '</select></div>' +
       '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
       '</div>';
-    html += '<div class="form-row">' + f('nl_date_of_birth', 'Date of Birth', '', 'date') + f('nl_blood_group', 'Blood Group / Genotype', '') + '</div>';
-    html += '<div class="form-row">' + f('nl_father_phone', "Father's Phone", '') + f('nl_mother_phone', "Mother's Phone", '') + '</div>';
-    html += '<div class="form-row">' + f('nl_guardian_phone', "Guardian's Phone", '') + f('nl_account_number', 'Account Number', '') + '</div>';
+
+    html += '<div class="form-row">' +
+      f('nl_date_of_birth', 'Date of Birth', '', 'date') +
+      f('nl_blood_group', 'Blood Group / Genotype', '') + '</div>';
+
+    html += '<div class="form-row">' +
+      f('nl_father_phone', "Father's Phone", '') +
+      f('nl_mother_phone', "Mother's Phone", '') + '</div>';
+
+    html += '<div class="form-row">' +
+      f('nl_guardian_phone', "Guardian's Phone", '') +
+      f('nl_account_number', 'Account Number', '') + '</div>';
+
     html += '<div class="form-row">' +
       '<div class="form-group"><label>Religion</label><select id="nl_religion">' + relOpts + '</select></div>' +
       f('nl_allergy', 'Allergy', '') + '</div>';
+
     html += f('nl_parents_name', 'Parents Name', '');
     html += '<div class="form-group"><label>Address</label><textarea id="nl_address" rows="2"></textarea></div>';
     html += '<div class="form-row">' + f('nl_state_of_origin', 'State of Origin', '') + f('nl_lga_of_origin', 'LGA of Origin', '') + '</div>';
     html += '<div class="form-row">' + f('nl_state_of_birth', 'State of Birth', '') + f('nl_lga_of_birth', 'LGA of Birth', '') + '</div>';
     html += f('nl_lin', 'LIN', '');
 
+    html += '<div id="nl_feedback" style="margin-top:10px;font-size:12px;color:#c0392b;"></div>';
+
     html += '<div style="text-align:right;margin-top:14px;">';
-    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="submitNewLearner()">Add learner</button>';
+    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" id="nl_submit" type="button">Add learner</button>';
     html += '</div></div></div>';
     setHTML('modalContainer', html);
-  }
 
-  async function submitNewLearner() {
-    const get = function (id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
-    const row = {
-      pin:             get('nl_pin'),
-      name:            get('nl_name'),
-      class_name:      get('nl_class_name'),
-      gender:          get('nl_gender'),
-      date_of_birth:   get('nl_date_of_birth'),
-      blood_group:     get('nl_blood_group'),
-      father_phone:    get('nl_father_phone'),
-      mother_phone:    get('nl_mother_phone'),
-      guardian_phone:  get('nl_guardian_phone'),
-      account_number:  get('nl_account_number'),
-      religion:        get('nl_religion'),
-      allergy:         get('nl_allergy'),
-      parents_name:    get('nl_parents_name'),
-      address:         get('nl_address'),
-      state_of_origin: get('nl_state_of_origin'),
-      lga_of_origin:   get('nl_lga_of_origin'),
-      state_of_birth:  get('nl_state_of_birth'),
-      lga_of_birth:    get('nl_lga_of_birth'),
-      lin:             get('nl_lin')
+    const btn = $('nl_submit');
+    if (btn) btn.addEventListener('click', submitNewLearner);
+
+    // Esc closes this modal (and only this one).
+    if (openAddLearnerModal.__escHandler) {
+      document.removeEventListener('keydown', openAddLearnerModal.__escHandler);
+    }
+    openAddLearnerModal.__escHandler = function (e) {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        const mc = document.getElementById('modalContainer');
+        if (mc && mc.querySelector('#nl_submit')) {
+          TIS.closeModal();
+        }
+      }
     };
-    if (!row.pin || !row.name) { showToast('PIN and Name are required', 'warning'); return; }
-
-    startLoader();
-    const existing = await window.TIS.getLearnerByPin(row.pin);
-    if (existing && existing.ok && existing.data) {
-      stopLoader();
-      showToast('PIN ' + row.pin + ' already exists', 'error');
-      return;
-    }
-    const r = await window.TIS.createLearner(row);
-    stopLoader();
-    if (r && r.ok) {
-      showToast('Learner added: ' + row.name, 'success');
-      closeModal();
-      loadLearners();
-    } else {
-      showToast('Could not add: ' + ((r && r.error) || 'unknown'), 'error');
-    }
+    document.addEventListener('keydown', openAddLearnerModal.__escHandler);
   }
-
+  
   // ================================================================
   // Part payment
   // ================================================================
