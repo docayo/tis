@@ -120,7 +120,7 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 <button class="nav-tab" data-tab="reports"><i class="fas fa-file-pdf"></i> Reports</button>
 <button class="nav-tab" data-tab="classes"><i class="fas fa-layer-group"></i> Classes</button>
 <button class="nav-tab" data-tab="users"><i class="fas fa-user-cog"></i> Users</button>
-</div>
+<button class="nav-tab" data-tab="idcards"><i class="fas fa-id-card"></i> ID Cards</button>
 </div>
 
 <!-- ROW 3: Operator chip -->
@@ -685,6 +685,41 @@ Generate PDF
 </div>
 
 <div id="usersContent"></div>
+</div>
+
+<!-- ============ ID CARDS ============ -->
+<div class="module-view hidden" id="module-idcards">
+<div class="module-title"><i class="fas fa-id-card"></i> ID Cards</div>
+<div class="module-subtitle">Staff · Learner · Visitor — print A4 preview or download Front + Back PNG in a ZIP</div>
+
+<div class="card-bg">
+  <div class="form-row" style="gap:8px;flex-wrap:wrap;">
+    <div class="form-group" style="flex:0 0 auto;">
+      <button class="btn btn-primary" id="idcSubStaff" type="button">
+        <i class="fas fa-user-tie"></i> Staff
+      </button>
+    </div>
+    <div class="form-group" style="flex:0 0 auto;">
+      <button class="btn btn-secondary" id="idcSubLearner" type="button">
+        <i class="fas fa-users"></i> Learner
+      </button>
+    </div>
+    <div class="form-group" style="flex:0 0 auto;">
+      <button class="btn btn-secondary" id="idcSubVisitor" type="button">
+        <i class="fas fa-user-check"></i> Visitor
+      </button>
+    </div>
+  </div>
+  <p style="font-size:11px;color:#666;margin:8px 0 0;">
+    Card QR codes point to <code>/s/&lt;code&gt;</code> (unified for learner, staff, visitor).
+    A4 preview prints 10 CR80 cards per sheet.
+    ZIP delivers one Front PNG + one Back PNG per card at 1134 × 756 px @ 300 DPI (2 mm bleed included).
+  </p>
+</div>
+
+<div class="card-bg" id="idcPanel" style="margin-top:12px;">
+  <div class="page-loader"><p>Loading staff and learners…</p></div>
+</div>
 </div>
 
 </div>
