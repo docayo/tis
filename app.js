@@ -6707,9 +6707,10 @@
                 + idcPhotoBlockH(cw, ch)
                 + idcNameRowH(ch)
                 + ch * 0.032 * accountRowIdx
-                + ch * 0.032 * 0.20;              // small vertical centering within the row
+                + ch * 0.032 * 0.10;
 
-    const badgeH = ch * 0.022;
+    // Doubled from previous 0.022 / 1.7×.
+    const badgeH = ch * 0.044;
     const badgeW = badgeH * 1.7;
     const badgeX = cx + cw - padX - badgeW;
 
