@@ -707,7 +707,7 @@
       return;
     }
     const d = r.data;
-    const order = contactOrderOf(d);
+    const order = contactOrderOf(d);              // ['mother','father','guardian'] style
     const classNames = await getClassNamesForDropdown();
     stopLoader();
 
@@ -745,17 +745,25 @@
       }).join('');
       return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + id + '">' + opts + '</select></div>';
     };
-    const phoneField = function (id, label, value, slotIndex) {
-      const current = order[slotIndex - 1] || '';
-      let opts = '<option value="">—</option>';
-      ['father', 'mother', 'guardian'].forEach(function (role) {
-        opts += '<option value="' + role + '"' + (current === role ? ' selected' : '') + '>' + CONTACT_LABELS[role] + '</option>';
+    // Priority dropdown: a single select that says which role this slot belongs to.
+    const prioritySelect = function (id, slotIndex, currentRole) {
+      const roles = ['father', 'mother', 'guardian'];
+      let opts = '';
+      roles.forEach(function (role) {
+        opts += '<option value="' + role + '"' + (currentRole === role ? ' selected' : '') + '>' +
+                CONTACT_LABELS[role] + '</option>';
       });
-      return '<div class="form-group"><label>' + esc(label) + ' <span style="font-weight:400;color:#666;">(who is this?)</span></label>' +
-             '<div style="display:flex;gap:6px;">' +
-             '<input id="' + id + '" value="' + escAttr(value || '') + '" style="flex:2;">' +
-             '<select id="' + id + '_who" style="flex:1;">' + opts + '</select>' +
-             '</div></div>';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">' +
+             '<span style="font-weight:700;font-size:12px;color:#0d4d26;width:90px;">Priority ' + slotIndex + '</span>' +
+             '<select id="' + id + '" style="flex:1;padding:6px;border-radius:6px;border:1px solid #ccc;">' + opts + '</select>' +
+             '</div>';
+    };
+    // Number input: plain phone number field, one per role.
+    const numberField = function (id, label, value) {
+      return '<div class="form-group" style="margin:6px 0;">' +
+             '<label style="font-size:12px;">' + esc(label) + '</label>' +
+             '<input id="' + id + '" type="text" value="' + escAttr(value || '') + '" style="width:100%;">' +
+             '</div>';
     };
 
     // ---- Photo panel ----
@@ -774,6 +782,33 @@
                   '<i class="fas fa-camera"></i> Change Photo</button>';
     photoPanel += '</div></div>';
 
+    // ---- Contact section: priority dropdowns + number inputs ----
+    // order[0] is priority 1, order[1] is priority 2, order[2] is priority 3.
+    const p1 = order[0] || 'father';
+    const p2 = order[1] || 'mother';
+    const p3 = order[2] || 'guardian';
+
+    let contactBlock = '<div style="background:#f7fbf7;padding:12px;border-radius:8px;margin:8px 0;">';
+    contactBlock += '<div style="font-weight:700;font-size:13px;color:#0d4d26;margin-bottom:8px;">Contact priority — the order to call when we need a parent</div>';
+
+    // Priority section
+    contactBlock += '<div style="background:#fff;border:1px solid #e0e8e2;border-radius:6px;padding:8px 10px;margin-bottom:10px;">';
+    contactBlock += '<div style="font-size:11px;color:#666;margin-bottom:6px;">Which role do we call first, second, third?</div>';
+    contactBlock += prioritySelect('ed_prio_1', 1, p1);
+    contactBlock += prioritySelect('ed_prio_2', 2, p2);
+    contactBlock += prioritySelect('ed_prio_3', 3, p3);
+    contactBlock += '</div>';
+
+    // Number section
+    contactBlock += '<div style="background:#fff;border:1px solid #e0e8e2;border-radius:6px;padding:8px 10px;">';
+    contactBlock += '<div style="font-size:11px;color:#666;margin-bottom:6px;">Phone numbers — one per role. Leave blank if not available.</div>';
+    contactBlock += numberField('ed_num_father',   "Father's number",   d.father_phone);
+    contactBlock += numberField('ed_num_mother',   "Mother's number",   d.mother_phone);
+    contactBlock += numberField('ed_num_guardian', "Guardian's number", d.guardian_phone);
+    contactBlock += '</div>';
+
+    contactBlock += '</div>';
+
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
     html += '<div class="modal-header"><h2>Edit — ' + esc(d.name) + '</h2>' +
@@ -784,12 +819,7 @@
     html += '<div class="form-row">' + textField('ed_name', 'Name', d.name) + classField('ed_class_name', 'Class', d.class_name) + '</div>';
     html += '<div class="form-row">' + genderField('ed_gender', 'Gender', d.gender) + textField('ed_date_of_birth', 'Date of Birth', isoToDateInput(d.date_of_birth), 'date') + '</div>';
 
-    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin:8px 0;">';
-    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Contact priority — which number is 1st, 2nd, 3rd</div>';
-    html += phoneField('ed_prio_father',   "Father's phone",   d.father_phone,   1);
-    html += phoneField('ed_prio_mother',   "Mother's phone",   d.mother_phone,   2);
-    html += phoneField('ed_prio_guardian', "Guardian's phone", d.guardian_phone, 3);
-    html += '</div>';
+    html += contactBlock;
 
     html += '<div class="form-row">' + textField('ed_account_number', 'Account Number', d.account_number) + textField('ed_blood_group', 'Blood Group / Genotype', d.blood_group) + '</div>';
     html += '<div class="form-row">' + religionField('ed_religion', 'Religion', d.religion) + textField('ed_allergy', 'Allergy', d.allergy) + '</div>';
@@ -820,14 +850,16 @@
 
   async function saveLearnerEdits(id) {
     const get = function (fid) { const el = document.getElementById(fid); return el ? String(el.value || '').trim() : ''; };
+
+    // ---- Read the plain text fields ----
     const fields = {
       name:             get('ed_name'),
       class_name:       get('ed_class_name'),
       gender:           get('ed_gender'),
       date_of_birth:    get('ed_date_of_birth'),
-      father_phone:     get('ed_prio_father'),
-      mother_phone:     get('ed_prio_mother'),
-      guardian_phone:   get('ed_prio_guardian'),
+      father_phone:     get('ed_num_father'),
+      mother_phone:     get('ed_num_mother'),
+      guardian_phone:   get('ed_num_guardian'),
       account_number:   get('ed_account_number'),
       blood_group:      get('ed_blood_group'),
       religion:         get('ed_religion'),
@@ -841,9 +873,23 @@
       lin:              get('ed_lin'),
       exit_reason:      get('ed_exit_reason')
     };
-    const p1 = get('ed_prio_father_who');
-    const p2 = get('ed_prio_mother_who');
-    const p3 = get('ed_prio_guardian_who');
+
+    // ---- Read the priority dropdowns ----
+    const raw1 = get('ed_prio_1') || 'father';
+    const raw2 = get('ed_prio_2') || 'mother';
+    const raw3 = get('ed_prio_3') || 'guardian';
+
+    // ---- Sanitise: dedupe so the same role can't appear twice ----
+    // First occurrence wins; later duplicates fall through to the next
+    // unused role, in the order father, mother, guardian.
+    const used = {};
+    const sanitised = [];
+    [raw1, raw2, raw3].forEach(function (role) {
+      if (!used[role]) { used[role] = true; sanitised.push(role); }
+    });
+    ['father', 'mother', 'guardian'].forEach(function (role) {
+      if (sanitised.length < 3 && !used[role]) { used[role] = true; sanitised.push(role); }
+    });
 
     const submitBtn = document.getElementById('ed_submit');
     if (submitBtn) submitBtn.disabled = true;
@@ -852,7 +898,11 @@
     try {
       const r = await window.TIS.updateLearner(id, fields);
       if (r && r.ok) {
-        await window.TIS.setLearnerContactPriority(id, { p1: p1, p2: p2, p3: p3 });
+        await window.TIS.setLearnerContactPriority(id, {
+          p1: sanitised[0],
+          p2: sanitised[1],
+          p3: sanitised[2]
+        });
       }
       stopLoader();
       if (r && r.ok) {
@@ -873,7 +923,6 @@
       if (submitBtn) submitBtn.disabled = false;
     }
   }
-
   // ----------------------------------------------------------------
   // Learner photo modal — picks a file, uploads to
   // TISAssets/learners/<PIN>.png, saves the URL with a cache-bust.
