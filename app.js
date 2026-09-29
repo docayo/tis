@@ -830,7 +830,9 @@
     if (r && r.ok) { showToast('Learner updated', 'success'); closeModal(); loadLearners(); }
     else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
   }
-
+  // ================================================================
+  // Add learner
+  // ================================================================
   async function openAddLearnerModal() {
     const classNames = await getClassNamesForDropdown();
     let classOpts = '<option value="">— Select class —</option>';
@@ -907,7 +909,118 @@
     };
     document.addEventListener('keydown', openAddLearnerModal.__escHandler);
   }
-  
+
+  function nlSetFeedback(msg) {
+    const el = $('nl_feedback');
+    if (el) el.textContent = msg || '';
+  }
+
+  async function submitNewLearner() {
+    const get = function (id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+
+    const pinInput = get('nl_pin');
+    const name     = get('nl_name');
+    const dob      = get('nl_date_of_birth');
+
+    nlSetFeedback('');
+
+    // Basic validation — name is the only hard requirement besides class.
+    if (!name) { nlSetFeedback('Learner Name is required.'); return; }
+
+    // If the operator typed a PIN, validate the format strictly.
+    if (pinInput) {
+      const pinUp = pinInput.toUpperCase();
+      if (!/^TIS[0-9]+$/.test(pinUp)) {
+        nlSetFeedback('PIN must be in the format TIS followed by digits (e.g. TIS0241).');
+        return;
+      }
+    }
+
+    const submitBtn = $('nl_submit');
+    if (submitBtn) submitBtn.disabled = true;
+    startLoader();
+
+    try {
+      // -------- Step 1: hard-check a typed PIN for collisions --------
+      if (pinInput) {
+        const pinUp = pinInput.toUpperCase();
+        const existingPin = await window.TIS.getLearnerByPin(pinUp);
+        if (existingPin && existingPin.ok && existingPin.data) {
+          stopLoader();
+          if (submitBtn) submitBtn.disabled = false;
+          nlSetFeedback('PIN ' + pinUp + ' is already in use by ' +
+                        (existingPin.data.name || 'another learner') +
+                        '. Pick a different PIN, or leave the field blank for an automatic one.');
+          return;
+        }
+      }
+
+      // -------- Step 2: soft-check name+DOB for a likely duplicate --------
+      const dup = await window.TIS.findLearnerDuplicate(name, dob);
+      if (dup && dup.ok && dup.data && dup.data.row) {
+        const row = dup.data.row;
+        const ok = confirm(
+          'A learner with this name' + (dob ? ' and date of birth' : '') + ' already exists:\n\n' +
+          'Name:  ' + (row.name || '') + '\n' +
+          'PIN:   ' + (row.pin || '') + '\n' +
+          'Class: ' + (row.class_name || '') + '\n\n' +
+          'Add as a separate learner anyway?'
+        );
+        if (!ok) {
+          stopLoader();
+          if (submitBtn) submitBtn.disabled = false;
+          nlSetFeedback('Cancelled — no learner was added.');
+          return;
+        }
+      }
+
+      // -------- Step 3: build the row and insert --------
+      const row = {
+        pin:             pinInput ? pinInput.toUpperCase() : null,
+        name:            name,
+        class_name:      get('nl_class_name'),
+        gender:          get('nl_gender'),
+        date_of_birth:   get('nl_date_of_birth'),
+        blood_group:     get('nl_blood_group'),
+        father_phone:    get('nl_father_phone'),
+        mother_phone:    get('nl_mother_phone'),
+        guardian_phone:  get('nl_guardian_phone'),
+        account_number:  get('nl_account_number'),
+        religion:        get('nl_religion'),
+        allergy:         get('nl_allergy'),
+        parents_name:    get('nl_parents_name'),
+        address:         get('nl_address'),
+        state_of_origin: get('nl_state_of_origin'),
+        lga_of_origin:   get('nl_lga_of_origin'),
+        state_of_birth:  get('nl_state_of_birth'),
+        lga_of_birth:    get('nl_lga_of_birth'),
+        lin:             get('nl_lin')
+      };
+
+      const r = await window.TIS.createLearner(row);
+
+      if (r && r.ok) {
+        const assignedPin = r.data && r.data.pin ? r.data.pin : (row.pin || '(auto)');
+        showToast('Learner added: ' + row.name + ' — PIN ' + assignedPin, 'success');
+        closeModal();
+        loadLearners();
+      } else {
+        // If the DB rejected the insert for a duplicate pin (race), report it cleanly.
+        const msg = (r && r.error) || 'unknown error';
+        if (/duplicate key/i.test(msg) && /pin/i.test(msg)) {
+          nlSetFeedback('That PIN was just taken by another operator. ' +
+                        'Leave the field blank for an automatic PIN, or pick another.');
+        } else {
+          nlSetFeedback('Could not add: ' + msg);
+        }
+      }
+    } catch (err) {
+      nlSetFeedback('Unexpected error: ' + (err && err.message ? err.message : err));
+    } finally {
+      stopLoader();
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  }
   // ================================================================
   // Part payment
   // ================================================================
