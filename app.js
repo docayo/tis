@@ -41,10 +41,10 @@
     cachedClasses: []
   };
 
-  const ALL_MODULES = [
+   const ALL_MODULES = [
     'learners', 'staff', 'terms', 'attendance', 'staffatt',
     'broadsheet', 'calendar', 'qr', 'reports',
-    'classes', 'users'
+    'classes', 'users', 'idcards'
   ];
 
   // ================================================================
@@ -324,6 +324,7 @@
       else if (name === 'qr') loadActiveQR();
       else if (name === 'classes') loadClasses();
       else if (name === 'users') loadUsers();
+      else if (name === 'idcards') initIDCardsTab();
     } catch (err) {
       console.error('[switchTab]', name, err);
     }
