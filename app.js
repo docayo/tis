@@ -23,6 +23,7 @@
 //   [S18] PLACEHOLDERS
 //   [S19] WIRE + BOOT
 //   [S20] PUBLIC API
+//   [S21] ID CARDS
 // ================================================================
 
 (function () {
@@ -5565,6 +5566,615 @@
   window.TIS.toggleExpandable        = toggleExpandable;
 
 })();
+
+  // ================================================================
+  // [S21] ID CARDS
+  //   Sub-pages: Staff / Learner / Visitor
+  //   Two outputs from the same generated set:
+  //     1. A4 preview sheet (10 CR80 cards per sheet, 2 × 5 grid)
+  //     2. ZIP download of Front + Back PNG per card
+  //        (1012 × 638 px @ 300 DPI, 2 mm bleed → 1134 × 756 px)
+  //   Back of every card carries the centre-aligned ownership +
+  //   return text. Front carries photo, QR, logo, name, ID, class.
+  //   Card QR points to https://<origin>/s/<code>
+  // ================================================================
+
+  const IDC_VISITOR_CARDS = ['VIS-01', 'VIS-02', 'VIS-03', 'VIS-04', 'VIS-05'];
+
+  const IDC_ADDRESS = {
+    line1: 'Rounder Sokoto, Badagry Express Way',
+    line2: 'Abeokuta North, Ogun State, Nigeria',
+    phone1: '08067071557',
+    phone2: '08027270404',
+    email1: 'theidealschools15@gmail.com',
+    email2: 'dr_ayoola_gabriel@tis.ng'
+  };
+
+  const IDC_BACK_TEXT = [
+    'This ID Card belongs to',
+    'THE IDEAL SCHOOLS LTD.',
+    'The Ideal Secondary School',
+    'The Ideal Kiddies School',
+    '',
+    'FOUND? Kindly return to',
+    'The Ideal Schools address',
+    'overleaf, or to the nearest',
+    'Police Station.'
+  ];
+
+  // Front PNG dimensions at 300 DPI
+  //   CR80 = 85.6 × 54 mm → 1012 × 638 px (content)
+  //   With 2 mm bleed each side → 89.6 × 58 mm → 1134 × 756 px (delivered)
+  const IDC_PNG = {
+    contentW: 1012, contentH: 638,   // safe area
+    bleedPx: 24,                     // 2 mm at 300 DPI
+    fullW: 1134, fullH: 756          // delivered size
+  };
+
+  let idcState = {
+    sub: 'staff',                 // 'staff' | 'learner' | 'visitor'
+    staffAll: [],
+    staffSelected: {},
+    learnerClasses: [],
+    learnerSelected: {},
+    learnerByClass: {},
+    loaded: false,
+    busy: false
+  };
+
+  // ----------------------------------------------------------------
+  // Tab init
+  // ----------------------------------------------------------------
+  async function initIDCardsTab() {
+    const bStaff = $('idcSubStaff');
+    const bLearner = $('idcSubLearner');
+    const bVisitor = $('idcSubVisitor');
+
+    if (bStaff && !bStaff.__wired) {
+      bStaff.addEventListener('click', function () { idcState.sub = 'staff'; idcRenderPanel(); idcRefreshSubButtons(); });
+      bStaff.__wired = true;
+    }
+    if (bLearner && !bLearner.__wired) {
+      bLearner.addEventListener('click', function () { idcState.sub = 'learner'; idcRenderPanel(); idcRefreshSubButtons(); });
+      bLearner.__wired = true;
+    }
+    if (bVisitor && !bVisitor.__wired) {
+      bVisitor.addEventListener('click', function () { idcState.sub = 'visitor'; idcRenderPanel(); idcRefreshSubButtons(); });
+      bVisitor.__wired = true;
+    }
+
+    if (!idcState.loaded) {
+      await idcLoadData();
+      idcState.loaded = true;
+    }
+    idcRefreshSubButtons();
+    idcRenderPanel();
+  }
+
+  function idcRefreshSubButtons() {
+    const bStaff = $('idcSubStaff');
+    const bLearner = $('idcSubLearner');
+    const bVisitor = $('idcSubVisitor');
+    [bStaff, bLearner, bVisitor].forEach(function (b) {
+      if (!b) return;
+      b.classList.remove('btn-primary'); b.classList.add('btn-secondary');
+    });
+    const active = idcState.sub === 'staff' ? bStaff
+                 : idcState.sub === 'learner' ? bLearner
+                 : bVisitor;
+    if (active) { active.classList.remove('btn-secondary'); active.classList.add('btn-primary'); }
+  }
+
+  async function idcLoadData() {
+    startLoader();
+    try {
+      const [staffR, learnerR] = await Promise.all([
+        window.TIS.listStaff(),
+        window.TIS.listLearners()
+      ]);
+
+      idcState.staffAll = (staffR && staffR.ok ? staffR.data : [])
+        .filter(function (s) { return (s.status || 'Active') === 'Active'; });
+
+      const learners = (learnerR && learnerR.ok ? learnerR.data : [])
+        .filter(function (l) {
+          const w = (l.date_of_withdrawal || '').toString().trim();
+          return !(w && w !== '' && w !== 'N/A');
+        });
+
+      idcState.learnerByClass = {};
+      learners.forEach(function (l) {
+        const c = l.class_name || '(No class)';
+        if (!idcState.learnerByClass[c]) idcState.learnerByClass[c] = [];
+        idcState.learnerByClass[c].push(l);
+      });
+      idcState.learnerClasses = Object.keys(idcState.learnerByClass).sort();
+
+      idcState.staffSelected = {};
+      idcState.staffAll.forEach(function (s) { idcState.staffSelected[s.id] = true; });
+      idcState.learnerSelected = {};
+      learners.forEach(function (l) { idcState.learnerSelected[l.id] = true; });
+    } finally {
+      stopLoader();
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Panel router
+  // ----------------------------------------------------------------
+  function idcRenderPanel() {
+    const panel = $('idcPanel');
+    if (!panel) return;
+    if (idcState.sub === 'staff')   return idcRenderStaffPanel(panel);
+    if (idcState.sub === 'learner') return idcRenderLearnerPanel(panel);
+    if (idcState.sub === 'visitor') return idcRenderVisitorPanel(panel);
+  }
+
+  // ----------------------------------------------------------------
+  // Staff sub-page
+  // ----------------------------------------------------------------
+  function idcRenderStaffPanel(panel) {
+    const total = idcState.staffAll.length;
+    const selected = idcState.staffAll.filter(function (s) { return idcState.staffSelected[s.id]; }).length;
+
+    let html = '';
+    html += '<h3 style="margin:0 0 8px;color:#0d4d26;">Staff ID Cards</h3>';
+    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">';
+    html += total + ' active staff · <b>' + selected + '</b> selected for generation.</p>';
+
+    html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+    html += '<button class="btn btn-sm btn-secondary" onclick="idcSelectAllStaff(true)">Select all</button>';
+    html += '<button class="btn btn-sm btn-secondary" onclick="idcSelectAllStaff(false)">Deselect all</button>';
+    html += '<button class="btn btn-sm btn-primary" onclick="idcGenerateStaffCards(\'a4\')"><i class="fas fa-print"></i> Print A4 Preview</button>';
+    html += '<button class="btn btn-sm btn-gold" onclick="idcGenerateStaffCards(\'zip\')"><i class="fas fa-file-zipper"></i> Download ZIP (Front + Back PNG)</button>';
+    html += '</div>';
+
+    html += '<div style="max-height:400px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead style="position:sticky;top:0;background:#e8f5e9;">';
+    html += '<tr><th style="text-align:center;padding:6px;width:40px;">✓</th>' +
+            '<th style="text-align:left;padding:6px;width:110px;">Staff ID</th>' +
+            '<th style="text-align:left;padding:6px;">Name</th>' +
+            '<th style="text-align:left;padding:6px;width:120px;">Department</th>' +
+            '<th style="text-align:left;padding:6px;width:140px;">Position</th></tr>';
+    html += '</thead><tbody>';
+    idcState.staffAll.forEach(function (s) {
+      const checked = idcState.staffSelected[s.id] ? ' checked' : '';
+      const name = [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ') || s.full_name || '';
+      html += '<tr>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+              '<input type="checkbox"' + checked + ' onchange="idcToggleStaff(' + s.id + ', this.checked)"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(s.staff_id || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(name) + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(s.department || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(s.position || '') + '</td>';
+      html += '</tr>';
+    });
+    if (idcState.staffAll.length === 0) {
+      html += '<tr><td colspan="5" style="padding:14px;text-align:center;color:#888;">No active staff.</td></tr>';
+    }
+    html += '</tbody></table></div>';
+    panel.innerHTML = html;
+  }
+
+  function idcToggleStaff(id, on) { idcState.staffSelected[id] = !!on; idcRenderPanel(); }
+  function idcSelectAllStaff(on) {
+    idcState.staffAll.forEach(function (s) { idcState.staffSelected[s.id] = !!on; });
+    idcRenderPanel();
+  }
+  function idcGenerateStaffCards(mode) {
+    const list = idcState.staffAll.filter(function (s) { return idcState.staffSelected[s.id]; });
+    if (list.length === 0) { showToast('Select at least one staff member', 'warning'); return; }
+    const cards = list.map(function (s) {
+      return {
+        code: s.staff_id || '',
+        kind: 'staff',
+        name: [s.surname, s.first_name, s.middle_name].filter(Boolean).join(' ') || s.full_name || '',
+        line1: 'Staff ID: ' + (s.staff_id || ''),
+        line2: s.department || '',
+        line3: s.position || '',
+        photo: s.photo_url || '',
+        role: 'STAFF'
+      };
+    });
+    if (mode === 'zip') idcDownloadZip(cards, 'Staff_ID_Cards');
+    else idcOpenA4Preview(cards, 'Staff ID Cards');
+  }
+  window.idcToggleStaff           = idcToggleStaff;
+  window.idcSelectAllStaff        = idcSelectAllStaff;
+  window.idcGenerateStaffCards    = idcGenerateStaffCards;
+
+  // ----------------------------------------------------------------
+  // Learner sub-page
+  // ----------------------------------------------------------------
+  function idcRenderLearnerPanel(panel) {
+    const classes = idcState.learnerClasses;
+    const allLearners = Object.values(idcState.learnerByClass).flat();
+    const selected = allLearners.filter(function (l) { return idcState.learnerSelected[l.id]; }).length;
+
+    let html = '';
+    html += '<h3 style="margin:0 0 8px;color:#0d4d26;">Learner ID Cards</h3>';
+    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">';
+    html += allLearners.length + ' active learners · <b>' + selected + '</b> selected for generation.</p>';
+
+    html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+    html += '<button class="btn btn-sm btn-secondary" onclick="idcSelectAllLearners(true)">Select all</button>';
+    html += '<button class="btn btn-sm btn-secondary" onclick="idcSelectAllLearners(false)">Deselect all</button>';
+    html += '<button class="btn btn-sm btn-primary" onclick="idcGenerateLearnerCards(\'a4\')"><i class="fas fa-print"></i> Print A4 Preview</button>';
+    html += '<button class="btn btn-sm btn-gold" onclick="idcGenerateLearnerCards(\'zip\')"><i class="fas fa-file-zipper"></i> Download ZIP (Front + Back PNG)</button>';
+    html += '</div>';
+
+    html += '<p style="font-size:12px;color:#666;margin:0 0 6px;">Check a whole class with the class checkbox, then uncheck individual learners if needed.</p>';
+
+    html += '<div style="max-height:480px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;padding:8px;">';
+    classes.forEach(function (c) {
+      const learners = idcState.learnerByClass[c] || [];
+      const allSelected = learners.length > 0 && learners.every(function (l) { return idcState.learnerSelected[l.id]; });
+      const someSelected = learners.some(function (l) { return idcState.learnerSelected[l.id]; });
+
+      html += '<details style="margin:4px 0;"' + (someSelected ? ' open' : '') + '>';
+      html += '<summary style="cursor:pointer;font-weight:700;color:#0d4d26;font-size:13px;padding:4px 0;">';
+      html += '<input type="checkbox"' + (allSelected ? ' checked' : '') +
+              ' onclick="event.stopPropagation(); idcToggleClass(\'' + escAttr(c) + '\', this.checked)"> ' +
+              esc(c) + ' <span style="color:#888;font-weight:400;">(' + learners.length + ')</span>';
+      html += '</summary>';
+      html += '<div style="margin-left:22px;">';
+      learners.forEach(function (l) {
+        const checked = idcState.learnerSelected[l.id] ? ' checked' : '';
+        html += '<label style="display:block;font-size:12px;padding:3px 0;">';
+        html += '<input type="checkbox"' + checked + ' onchange="idcToggleLearner(' + l.id + ', this.checked)"> ';
+        html += esc(l.pin || '') + ' — ' + esc(l.name || '');
+        html += '</label>';
+      });
+      html += '</div></details>';
+    });
+    html += '</div>';
+    panel.innerHTML = html;
+  }
+
+  function idcToggleLearner(id, on) { idcState.learnerSelected[id] = !!on; }
+  function idcToggleClass(className, on) {
+    const learners = idcState.learnerByClass[className] || [];
+    learners.forEach(function (l) { idcState.learnerSelected[l.id] = !!on; });
+    idcRenderPanel();
+  }
+  function idcSelectAllLearners(on) {
+    Object.values(idcState.learnerByClass).flat().forEach(function (l) {
+      idcState.learnerSelected[l.id] = !!on;
+    });
+    idcRenderPanel();
+  }
+  function idcGenerateLearnerCards(mode) {
+    const all = Object.values(idcState.learnerByClass).flat();
+    const list = all.filter(function (l) { return idcState.learnerSelected[l.id]; });
+    if (list.length === 0) { showToast('Select at least one learner', 'warning'); return; }
+    const cards = list.map(function (l) {
+      return {
+        code: l.pin || '',
+        kind: 'learner',
+        name: l.name || '',
+        line1: 'PIN: ' + (l.pin || ''),
+        line2: 'Class: ' + (l.class_name || ''),
+        line3: '',
+        photo: l.photo_url || '',
+        role: 'LEARNER'
+      };
+    });
+    if (mode === 'zip') idcDownloadZip(cards, 'Learner_ID_Cards');
+    else idcOpenA4Preview(cards, 'Learner ID Cards');
+  }
+  window.idcToggleLearner        = idcToggleLearner;
+  window.idcToggleClass          = idcToggleClass;
+  window.idcSelectAllLearners    = idcSelectAllLearners;
+  window.idcGenerateLearnerCards = idcGenerateLearnerCards;
+
+  // ----------------------------------------------------------------
+  // Visitor sub-page
+  // ----------------------------------------------------------------
+  function idcRenderVisitorPanel(panel) {
+    let html = '';
+    html += '<h3 style="margin:0 0 8px;color:#0d4d26;">Visitor Cards</h3>';
+    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">';
+    html += 'Five permanent visitor cards. The school logo doubles as the visitor image on each card.</p>';
+
+    html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+    html += '<button class="btn btn-sm btn-primary" onclick="idcGenerateVisitorCards(\'a4\')"><i class="fas fa-print"></i> Print A4 Preview</button>';
+    html += '<button class="btn btn-sm btn-gold" onclick="idcGenerateVisitorCards(\'zip\')"><i class="fas fa-file-zipper"></i> Download ZIP (Front + Back PNG)</button>';
+    html += '</div>';
+
+    html += '<div style="border:1px solid #e6e9f0;border-radius:8px;padding:8px;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead style="background:#e8f5e9;"><tr>' +
+            '<th style="text-align:left;padding:6px;width:110px;">Card Code</th>' +
+            '<th style="text-align:left;padding:6px;">When scanned…</th></tr></thead><tbody>';
+    IDC_VISITOR_CARDS.forEach(function (code) {
+      html += '<tr>' +
+              '<td style="padding:5px;border-bottom:1px solid #eee;"><b>' + esc(code) + '</b></td>' +
+              '<td style="padding:5px;border-bottom:1px solid #eee;">Asks name, purpose (Official / Personal); ' +
+              'if Official, agency (Ministry of Education, Ministry of Health, Internal Revenue, NAPPS, ' +
+              'Community, Police/Security, Other → please specify). Time in / out auto-recorded.</td>' +
+              '</tr>';
+    });
+    html += '</tbody></table></div>';
+    panel.innerHTML = html;
+  }
+
+  function idcGenerateVisitorCards(mode) {
+    const cards = IDC_VISITOR_CARDS.map(function (code) {
+      return {
+        code: code,
+        kind: 'visitor',
+        name: 'VISITOR',
+        line1: 'Card: ' + code,
+        line2: '',
+        line3: '',
+        photo: '',
+        role: 'VISITOR'
+      };
+    });
+    if (mode === 'zip') idcDownloadZip(cards, 'Visitor_Cards');
+    else idcOpenA4Preview(cards, 'Visitor Cards');
+  }
+  window.idcGenerateVisitorCards = idcGenerateVisitorCards;
+
+  // ----------------------------------------------------------------
+  // CARD FACE RENDERERS — draw one card to a canvas context
+  //   Used for both A4 preview (via dataURL) and ZIP PNG output.
+  // ----------------------------------------------------------------
+  function idcDrawFront(ctx, card, x, y, w, h, opts) {
+    // w, h: card content size in pixels (1012 × 638 at 300 DPI)
+    // x, y: top-left position of the content inside ctx's canvas
+    ctx.save();
+
+    // Background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, h);
+
+    // Outer border
+    ctx.strokeStyle = '#0d4d26';
+    ctx.lineWidth = Math.max(2, h * 0.006);
+    ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+
+    // Left column: photo + QR
+    const padX = w * 0.03;
+    const padY = h * 0.06;
+    const leftW = w * 0.22;
+    const photoSize = leftW - padX;
+    const photoY = y + padY + 4;
+    const qrSize = leftW - padX;
+    const qrY = y + h - padY - qrSize - 4;
+
+    // Photo placeholder (photo drawn later — async)
+    idcDrawPhotoPlaceholder(ctx, card, x + padX, photoY, photoSize, photoSize);
+
+    // Right column
+    const rightX = x + leftW + padX;
+    const rightW = w - leftW - 2 * padX;
+
+    // School logo (small) — placeholder logo
+    // We render the banner as text for reliability without async image
+    ctx.fillStyle = '#0d4d26';
+    ctx.font = 'bold ' + Math.round(h * 0.045) + 'px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('THE IDEAL SCHOOLS', rightX, y + padY);
+
+    ctx.font = 'italic ' + Math.round(h * 0.03) + 'px Arial';
+    ctx.fillStyle = '#666666';
+    ctx.fillText('Scientia est potentia', rightX, y + padY + h * 0.06);
+
+    // Divider
+    ctx.strokeStyle = '#c8e6c9';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(rightX, y + padY + h * 0.115);
+    ctx.lineTo(rightX + rightW, y + padY + h * 0.115);
+    ctx.stroke();
+
+    // Name
+    ctx.fillStyle = '#0d4d26';
+    ctx.font = 'bold ' + Math.round(h * 0.07) + 'px Arial';
+    const name = (card.name || '').toUpperCase();
+    ctx.fillText(idcFitText(ctx, name, rightW), rightX, y + padY + h * 0.16);
+
+    // Line 1 (PIN / Staff ID)
+    ctx.fillStyle = '#333333';
+    ctx.font = Math.round(h * 0.045) + 'px Arial';
+    if (card.line1) ctx.fillText(idcFitText(ctx, card.line1, rightW), rightX, y + padY + h * 0.27);
+
+    // Line 2 (Class / Department)
+    ctx.font = Math.round(h * 0.045) + 'px Arial';
+    if (card.line2) ctx.fillText(idcFitText(ctx, card.line2, rightW), rightX, y + padY + h * 0.34);
+
+    // Divider 2
+    ctx.strokeStyle = '#c8e6c9';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(rightX, y + h * 0.53);
+    ctx.lineTo(rightX + rightW, y + h * 0.53);
+    ctx.stroke();
+
+    // Address block
+    ctx.fillStyle = '#333333';
+    ctx.font = Math.round(h * 0.038) + 'px Arial';
+    ctx.fillText(idcFitText(ctx, IDC_ADDRESS.line1, rightW), rightX, y + h * 0.58);
+    ctx.fillText(idcFitText(ctx, IDC_ADDRESS.line2, rightW), rightX, y + h * 0.63);
+    ctx.font = Math.round(h * 0.034) + 'px Arial';
+    ctx.fillText(idcFitText(ctx, '☎ ' + IDC_ADDRESS.phone1 + '  ·  ' + IDC_ADDRESS.phone2, rightW), rightX, y + h * 0.70);
+    ctx.fillText(idcFitText(ctx, '✉ ' + IDC_ADDRESS.email1, rightW), rightX, y + h * 0.75);
+    ctx.fillText(idcFitText(ctx, '✉ ' + IDC_ADDRESS.email2, rightW), rightX, y + h * 0.80);
+
+    // Role badge
+    ctx.fillStyle = '#b8860b';
+    ctx.font = 'bold ' + Math.round(h * 0.04) + 'px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText(card.role || '', x + w - padX, y + h - padY - h * 0.045);
+
+    // QR placeholder (drawn later)
+    idcDrawQRPlaceholder(ctx, card, x + padX, qrY, qrSize, qrSize);
+
+    ctx.restore();
+  }
+
+  function idcDrawBack(ctx, card, x, y, w, h) {
+    ctx.save();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, h);
+
+    ctx.strokeStyle = '#0d4d26';
+    ctx.lineWidth = Math.max(2, h * 0.006);
+    ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const cx = x + w / 2;
+    const startY = y + h * 0.16;
+    const lineH = h * 0.088;
+
+    IDC_BACK_TEXT.forEach(function (line, i) {
+      const isHeader = (i === 1 || i === 2 || i === 3);
+      ctx.fillStyle = isHeader ? '#0d4d26' : '#333333';
+      ctx.font = (isHeader ? 'bold ' : '') + Math.round(h * 0.055) + 'px Arial';
+      ctx.fillText(line, cx, startY + i * lineH);
+    });
+
+    ctx.restore();
+  }
+
+  function idcDrawPhotoPlaceholder(ctx, card, x, y, w, h) {
+    ctx.fillStyle = '#0d4d26';
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold ' + Math.round(w * 0.5) + 'px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const ch = card.kind === 'visitor' ? 'V' : ((card.name || '?').charAt(0));
+    ctx.fillText(ch, x + w / 2, y + h / 2 + w * 0.05);
+  }
+
+  function idcDrawQRPlaceholder(ctx, card, x, y, w, h) {
+    // Light grey box as placeholder — QR filled in later via image
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.fillStyle = '#999999';
+    ctx.font = Math.round(w * 0.12) + 'px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('QR', x + w / 2, y + h / 2);
+  }
+
+  function idcFitText(ctx, text, maxWidth) {
+    let t = String(text || '');
+    if (ctx.measureText(t).width <= maxWidth) return t;
+    while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
+    return t + '…';
+  }
+
+  // ----------------------------------------------------------------
+  // RENDER ONE CARD TO A PNG DATA URL (front or back)
+  //   Draws at fullW × fullH (with bleed) but the content is
+  //   inset by bleedPx on each side so that after trimming,
+  //   the visible area is exactly CR80.
+  // ----------------------------------------------------------------
+  async function idcRenderCardPng(card, side) {
+    const cvs = document.createElement('canvas');
+    cvs.width  = IDC_PNG.fullW;    // 1134
+    cvs.height = IDC_PNG.fullH;    // 756
+    const ctx = cvs.getContext('2d');
+
+    const contentX = IDC_PNG.bleedPx;
+    const contentY = IDC_PNG.bleedPx;
+    const contentW = IDC_PNG.contentW;   // 1012
+    const contentH = IDC_PNG.contentH;   // 638
+
+    if (side === 'front') {
+      idcDrawFront(ctx, card, contentX, contentY, contentW, contentH);
+      // Overlay QR image on top of the placeholder
+      await idcDrawQRImage(ctx, card, contentX, contentY, contentW, contentH);
+      // Overlay photo image on top of the placeholder if available
+      await idcDrawPhotoImage(ctx, card, contentX, contentY, contentW, contentH);
+    } else {
+      idcDrawBack(ctx, card, contentX, contentY, contentW, contentH);
+    }
+
+    return cvs.toDataURL('image/png');
+  }
+
+  function idcDrawQRImage(ctx, card, cx, cy, cw, ch) {
+    return new Promise(function (resolve) {
+      const url = window.location.origin + '/s/' + encodeURIComponent(card.code);
+      const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=0&data=' +
+                    encodeURIComponent(url);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        const padX = cw * 0.03;
+        const leftW = cw * 0.22;
+        const qrSize = leftW - padX;
+        const qrY = cy + ch - ch * 0.06 - qrSize - 4;
+        ctx.drawImage(img, cx + padX, qrY, qrSize, qrSize);
+        resolve();
+      };
+      img.onerror = function () { resolve(); };   // leave the placeholder
+      img.src = qrUrl;
+    });
+  }
+
+  function idcDrawPhotoImage(ctx, card, cx, cy, cw, ch) {
+    return new Promise(function (resolve) {
+      if (!card.photo) { resolve(); return; }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        const padX = cw * 0.03;
+        const padY = ch * 0.06;
+        const leftW = cw * 0.22;
+        const photoSize = leftW - padX;
+        const photoY = cy + padY + 4;
+        // Circular clip
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx + padX + photoSize / 2, photoY + photoSize / 2, photoSize / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(img, cx + padX, photoY, photoSize, photoSize);
+        ctx.restore();
+        resolve();
+      };
+      img.onerror = function () { resolve(); };
+      img.src = card.photo;
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // A4 PREVIEW (2 × 5 grid)
+  //   Uses the PNG data URLs from idcRenderCardPng.
+  //   Front sheet prints at 210 × 297 mm with cards at exact
+  //   85.6 × 54 mm. Cards include 2 mm bleed around each edge
+  //   and a printable offset so the layout centers on the page.
+  // ----------------------------------------------------------------
+  async function idcOpenA4Preview(cards, title) {
+    if (idcState.busy) { showToast('Already generating, please wait…', 'info'); return; }
+    idcState.busy = true;
+    startLoader();
+    try {
+      const frontUrls = [];
+      const backUrls = [];
+      for (let i = 0; i < cards.length; i++) {
+        frontUrls.push(await idcRenderCardPng(cards[i], 'front'));
+        backUrls.push(await idcRenderCardPng(cards[i], 'back'));
+      }
+
+      // A4 with margins:
+      //   page = 210 × 297 mm
+      //   card + bleed = 89.6
 // ================================================================
 // END OF app.js
 // ================================================================
