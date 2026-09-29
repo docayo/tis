@@ -5931,18 +5931,19 @@
   window.TIS.openChangePasswordModal = openChangePasswordModal;
   window.TIS.toggleExpandable        = toggleExpandable;
 
-  // ================================================================
+   // ================================================================
   // [S21] ID CARDS
-  //   Portrait CR80 cards, 2 × 3 on A4 preview (portrait), or 3 × 3
-  //   ZIP export of Front + Back PNG per card.
+  //   Portrait CR80 cards, 3 × 3 on A4 preview (9 cards per sheet),
+  //   or ZIP export of Front + Back PNG per card.
   //
   //   Delivered PNG: 662 × 1036 px (CR80 638 × 1012 + 2 mm bleed)
   //   Trim to:        638 × 1012 px @ 300 DPI (54 × 85.6 mm)
   //
-  //   Front: school banner header (logo + name + motto + ministry),
-  //          photo / initial circle, name (blue), identity block,
-  //          QR code, compact address, role badge.
-  //   Back:  centre-aligned ownership + return-to text.
+  //   Front: header text block (name + motto + schools) → logo row
+  //          (school left, ministry right) → photo → name (blue) →
+  //          identity block (full width) → QR → role badge.
+  //   Back:  ownership + return text at the top, address + email at
+  //          the bottom.
   //
   //   QR destination: https://<origin>/s/<code>
   //   Filenames: <Kind>_<Code>_Front.png / _Back.png
@@ -5978,13 +5979,15 @@
     fullW:    662,
     fullH:    1036
   };
+
   const IDC_LOGO_SCHOOL   = 'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/The%20Ideal%20Sch%20Logo.jpg';
   const IDC_LOGO_MINISTRY = 'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/ogun%20min%20edu%20logo.jpg';
   const IDC_LOGO_GTB      = 'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/gtb.jpg';
+  const IDC_LOGO_VISITOR  = 'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/The_Ideal_Schools_Logo_Transparent.png';
 
   const IDC_COLORS = {
-    schoolName: '#0d4d26',   // green
-    personName: '#1a3f8f',   // blue
+    schoolName: '#0d4d26',
+    personName: '#1a3f8f',
     label:      '#555555',
     value:      '#222222',
     divider:    '#c8e6c9',
@@ -5993,7 +5996,7 @@
   };
 
   let idcState = {
-    sub: 'staff',                 // 'staff' | 'learner' | 'visitor'
+    sub: 'staff',
     staffAll: [],
     staffSelected: {},
     learnerByClass: {},
@@ -6308,26 +6311,23 @@
         qualification: '',
         account:       '',
         blood:         '',
-        photo:         'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/The_Ideal_Schools_Logo_Transparent.png',
+        photo:         IDC_LOGO_VISITOR,
         role:          'VISITOR'
       };
     });
     if (mode === 'zip') idcDownloadZip(cards, 'Visitor_Cards');
     else idcOpenA4Preview(cards, 'Visitor Cards');
   }
+
   // ----------------------------------------------------------------
-  // Card face drawing — one card face at a time on the given context.
-  // Coordinates are in pixels of the DELIVERED canvas (662 × 1036).
-  // The visible (post-trim) area is inset by bleedPx on every side.
+  // Card face drawing
   // ----------------------------------------------------------------
-   function idcDrawFront(ctx, card, x, y, w, h) {
+  function idcDrawFront(ctx, card, x, y, w, h) {
     ctx.save();
 
-    // Background (fills the whole bleed area).
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(x, y, w, h);
 
-    // Outer border drawn inside the SAFE (trimmed) area.
     ctx.strokeStyle = '#0d4d26';
     ctx.lineWidth   = Math.max(2, w * 0.008);
     ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2,
@@ -6340,7 +6340,7 @@
     let cursorY = y + padY;
     const centreCX = x + w / 2;
 
-    // ---- Header text block (full width, no logos here) ----
+    // Header text block
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
 
@@ -6362,7 +6362,7 @@
 
     cursorY += h * 0.030;
 
-    // ---- Logo row ----
+    // Logo row
     const logoSize = h * 0.085;
     const logoY    = cursorY;
     card.__layout = card.__layout || {};
@@ -6374,7 +6374,6 @@
 
     cursorY += logoSize + h * 0.018;
 
-    // Divider under the logo row.
     ctx.strokeStyle = IDC_COLORS.divider;
     ctx.lineWidth   = 2;
     ctx.beginPath();
@@ -6384,7 +6383,7 @@
 
     cursorY += h * 0.018;
 
-    // ---- Photo ----
+    // Photo
     const photoSize = w * 0.46;
     const photoX    = x + (w - photoSize) / 2;
     const photoY    = cursorY;
@@ -6396,7 +6395,7 @@
 
     cursorY = photoY + photoSize + h * 0.018;
 
-    // ---- Name (blue) ----
+    // Name
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle    = IDC_COLORS.personName;
@@ -6406,13 +6405,12 @@
 
     cursorY += h * 0.052;
 
-    // ---- Identity block ----
+    // Identity block
     const labelX = x + padX;
     const valueX = x + w - padX;
     const lineH  = h * 0.032;
     const fontPx = Math.round(h * 0.024);
 
-    let rowIndex = 0;
     function pair(label, value) {
       if (!value) return;
       ctx.textAlign    = 'left';
@@ -6426,15 +6424,12 @@
       ctx.font         = 'bold ' + fontPx + 'px Inter, Arial, sans-serif';
       ctx.fillText(idcFitText(ctx, String(value), colW * 0.58), valueX, cursorY);
 
-      // Remember where the "Account No." row is so the GTB badge
-      // can land beside it.
       if (label === 'Account No.') {
-        card.__layout.accountRowY    = cursorY;
-        card.__layout.accountRowH    = lineH;
+        card.__layout.accountRowY = cursorY;
+        card.__layout.accountRowH = lineH;
       }
 
       cursorY += lineH;
-      rowIndex++;
     }
 
     if (card.kind === 'Learner') {
@@ -6455,7 +6450,7 @@
 
     cursorY += h * 0.010;
 
-    // ---- QR code ----
+    // QR
     const qrSize = w * 0.34;
     const qrX    = x + (w - qrSize) / 2;
     const qrY    = cursorY;
@@ -6465,11 +6460,7 @@
 
     idcDrawQRPlaceholder(ctx, qrX, qrY, qrSize, qrSize);
 
-    cursorY = qrY + qrSize + h * 0.014;
-
-       // ---- Address moved to back of card (see idcDrawBack) ----
-
-    // ---- Role badge ----
+    // Role badge
     const badgeText = card.role || '';
     const badgeW    = w * 0.30;
     const badgeH    = h * 0.036;
@@ -6487,8 +6478,8 @@
 
     ctx.restore();
   }
- 
-   function idcDrawBack(ctx, card, x, y, w, h) {
+
+  function idcDrawBack(ctx, card, x, y, w, h) {
     ctx.save();
 
     ctx.fillStyle = '#ffffff';
@@ -6506,7 +6497,7 @@
     const lineH  = h * 0.062;
     const startY = y + h * 0.20;
 
-       IDC_BACK_TEXT.forEach(function (line, i) {
+    IDC_BACK_TEXT.forEach(function (line, i) {
       const isHeader = (i === 1 || i === 2 || i === 3);
       ctx.fillStyle = isHeader ? '#0d4d26' : '#333333';
       ctx.font      = (isHeader ? 'bold ' : '') +
@@ -6515,7 +6506,6 @@
       ctx.fillText(line, cx, startY + i * lineH);
     });
 
-    // Address block at the bottom of the back.
     const addressTop = y + h * 0.76;
     ctx.fillStyle = '#555555';
     ctx.font      = Math.round(h * 0.020) + 'px Inter, Arial, sans-serif';
@@ -6525,17 +6515,15 @@
 
     ctx.restore();
   }
+
   function idcDrawPhotoPlaceholder(ctx, card, x, y, w, h) {
     ctx.save();
     if (card.photo) {
-      // A real photo is coming. Draw a neutral grey disc — the real
-      // image will fill it edge to edge with the exact same clip.
       ctx.fillStyle = '#e8e8e8';
       ctx.beginPath();
       ctx.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2);
       ctx.fill();
     } else {
-      // No photo. Draw the green initial circle as a placeholder.
       ctx.fillStyle = '#0d4d26';
       ctx.beginPath();
       ctx.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2);
@@ -6586,54 +6574,34 @@
     while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
     return t + '…';
   }
-   function idcFitTextRight(ctx, text, maxWidth) {
-    return idcFitText(ctx, text, maxWidth);
-  }
 
   // ----------------------------------------------------------------
-  // Layout block sizes — shared between the front-face drawing and
-  // the async overlays (QR / photo / logos / GTB) so they land in
-  // the same spot the placeholder was drawn.
+  // Identity row counter (used only for reference / debug)
   // ----------------------------------------------------------------
-   function idcHeaderBlockH(ch) {
-    // Text block (name + motto + subtitle) + logo row + divider spacing.
-    return ch * 0.062    // name line
-         + ch * 0.028    // motto line
-         + ch * 0.030    // subtitle line
-         + ch * 0.085    // logo row
-         + ch * 0.018    // gap after logo row
-         + ch * 0.018;   // gap after divider
-  }
-  function idcPhotoBlockH(cw, ch) {
-    return cw * 0.46 + ch * 0.018;
-  }
-  function idcNameRowH(ch) {
-    return ch * 0.052;
-  }
   function idcIdentityRowCount(card) {
     if (card.kind === 'Learner') {
       let n = 0;
-      if (card.idValue)     n++;   // PIN
-      if (card.classOrDept) n++;   // Class
-      if (card.gender)      n++;   // Gender
-      if (card.account)     n++;   // Account No.
-      if (card.blood)       n++;   // Blood Group / Genotype
+      if (card.idValue)     n++;
+      if (card.classOrDept) n++;
+      if (card.gender)      n++;
+      if (card.account)     n++;
+      if (card.blood)       n++;
       return n;
     }
     if (card.kind === 'Staff') {
       let n = 0;
-      if (card.idValue)       n++;   // Staff ID
-      if (card.classOrDept)   n++;   // Department
-      if (card.position)      n++;   // Position
-      if (card.gender)        n++;   // Gender
-      if (card.qualification) n++;   // Qualification
+      if (card.idValue)       n++;
+      if (card.classOrDept)   n++;
+      if (card.position)      n++;
+      if (card.gender)        n++;
+      if (card.qualification) n++;
       return n;
     }
-    return 1; // Visitor: just the card code
+    return 1;
   }
 
   // ----------------------------------------------------------------
-  // Async overlays: QR, photo, logos, GTB badge
+  // Async overlays
   // ----------------------------------------------------------------
   function idcLoadImage(url) {
     return new Promise(function (resolve) {
@@ -6646,21 +6614,7 @@
     });
   }
 
-    // Y offset of the header block below cy (logo size + spacing).
-  function idcHeaderBlockH(ch) {
-    const logoSize = ch * 0.090;
-    return logoSize + ch * 0.020 + ch * 0.018;   // logo + spacing + divider gap
-  }
-  // Y offset of the photo below cy.
-  function idcPhotoBlockH(cw, ch) {
-    return cw * 0.46 + ch * 0.018;               // photo size + spacing after
-  }
-  // Y offset of the name row below cy.
-  function idcNameRowH(ch) {
-    return ch * 0.052;
-  }
-
-   async function idcDrawQRImage(ctx, card, cx, cy, cw, ch) {
+  async function idcDrawQRImage(ctx, card, cx, cy, cw, ch) {
     const url   = window.location.origin + '/s/' + encodeURIComponent(card.code);
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=0&data=' +
                   encodeURIComponent(url);
@@ -6687,7 +6641,8 @@
     ctx.drawImage(img, L.photoX, L.photoY, L.photoSize, L.photoSize);
     ctx.restore();
   }
-   async function idcDrawLogos(ctx, card, cx, cy, cw, ch) {
+
+  async function idcDrawLogos(ctx, card, cx, cy, cw, ch) {
     const L = card.__layout || {};
     if (L.logoY === undefined) return;
     const padX = cw * 0.055;
@@ -6706,16 +6661,15 @@
     const L = card.__layout || {};
     if (L.accountRowY === undefined) return;
 
-       const padX   = cw * 0.055;
+    const padX   = cw * 0.055;
     const badgeH = L.accountRowH * 1.4;
     const badgeW = badgeH * 1.7;
     const badgeX = cx + cw - padX - badgeW;
-    // Shift down so the badge sits below the Account No. row,
-    // in the gap before the next identity row.
     const badgeY = L.accountRowY + L.accountRowH * 0.65;
 
     try { ctx.drawImage(img, badgeX, badgeY, badgeW, badgeH); } catch (e) {}
   }
+
   // ----------------------------------------------------------------
   // Render one card face to a PNG data URL
   // ----------------------------------------------------------------
@@ -6732,10 +6686,10 @@
 
     if (side === 'front') {
       idcDrawFront(ctx, card, contentX, contentY, contentW, contentH);
-      await idcDrawLogos   (ctx, card, contentX, contentY, contentW, contentH);
-      await idcDrawQRImage (ctx, card, contentX, contentY, contentW, contentH);
-      await idcDrawPhotoImage(ctx, card, contentX, contentY, contentW, contentH);
-      await idcDrawGTBBadge(ctx, card, contentX, contentY, contentW, contentH);
+      await idcDrawLogos      (ctx, card, contentX, contentY, contentW, contentH);
+      await idcDrawQRImage    (ctx, card, contentX, contentY, contentW, contentH);
+      await idcDrawPhotoImage (ctx, card, contentX, contentY, contentW, contentH);
+      await idcDrawGTBBadge   (ctx, card, contentX, contentY, contentW, contentH);
     } else {
       idcDrawBack(ctx, card, contentX, contentY, contentW, contentH);
     }
@@ -6779,12 +6733,10 @@
 
       let html = '<html><head><title>' + esc(title) + '</title><style>' + css + '</style></head><body>';
 
-      // ---- FRONT SHEET(S) ----
       html += idcChunkSheetsHtml(frontUrls, title + ' — FRONT', 9,
         'Delivered PNG is 662 × 1036 px @ 300 DPI with 2 mm bleed. ' +
         'Trim on the solid green border to 638 × 1012 px (54 × 85.6 mm).');
 
-      // ---- BACK SHEET(S) ----
       html += idcChunkSheetsHtml(backUrls, title + ' — BACK', 9,
         'Centre-aligned ownership and return text.');
 
@@ -6812,7 +6764,6 @@
       slice.forEach(function (u) {
         html += '<div class="cell"><img src="' + u + '"></div>';
       });
-      // Pad the last row so the grid stays tidy.
       const pad = (perSheet - (slice.length % perSheet)) % perSheet;
       for (let k = 0; k < pad; k++) html += '<div class="cell"></div>';
       html += '</div>';
@@ -6823,7 +6774,7 @@
   }
 
   // ----------------------------------------------------------------
-  // ZIP export — one Front PNG + one Back PNG per card, plus README
+  // ZIP export
   // ----------------------------------------------------------------
   async function idcDownloadZip(cards, zipBaseName) {
     if (typeof JSZip === 'undefined') {
