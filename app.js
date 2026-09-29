@@ -6556,8 +6556,45 @@
     while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
     return t + '…';
   }
-  function idcFitTextRight(ctx, text, maxWidth) {
+   function idcFitTextRight(ctx, text, maxWidth) {
     return idcFitText(ctx, text, maxWidth);
+  }
+
+  // ----------------------------------------------------------------
+  // Layout block sizes — shared between the front-face drawing and
+  // the async overlays (QR / photo / logos / GTB) so they land in
+  // the same spot the placeholder was drawn.
+  // ----------------------------------------------------------------
+  function idcHeaderBlockH(ch) {
+    const logoSize = ch * 0.090;
+    return logoSize + ch * 0.020 + ch * 0.018;
+  }
+  function idcPhotoBlockH(cw, ch) {
+    return cw * 0.46 + ch * 0.018;
+  }
+  function idcNameRowH(ch) {
+    return ch * 0.052;
+  }
+  function idcIdentityRowCount(card) {
+    if (card.kind === 'Learner') {
+      let n = 0;
+      if (card.idValue)     n++;   // PIN
+      if (card.classOrDept) n++;   // Class
+      if (card.gender)      n++;   // Gender
+      if (card.account)     n++;   // Account No.
+      if (card.blood)       n++;   // Blood Group / Genotype
+      return n;
+    }
+    if (card.kind === 'Staff') {
+      let n = 0;
+      if (card.idValue)       n++;   // Staff ID
+      if (card.classOrDept)   n++;   // Department
+      if (card.position)      n++;   // Position
+      if (card.gender)        n++;   // Gender
+      if (card.qualification) n++;   // Qualification
+      return n;
+    }
+    return 1; // Visitor: just the card code
   }
 
   // ----------------------------------------------------------------
