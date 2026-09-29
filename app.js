@@ -5973,9 +5973,8 @@
     fullW:    662,
     fullH:    1036
   };
-
-  const IDC_LOGO_SCHOOL   = 'https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w400';
-  const IDC_LOGO_MINISTRY = 'https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w400';
+  const IDC_LOGO_SCHOOL   = 'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/The%20Ideal%20Sch%20Logo.jpg';
+  const IDC_LOGO_MINISTRY = 'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/ogun%20min%20edu%20logo.jpg';
   const IDC_LOGO_GTB      = 'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/gtb.jpg';
 
   const IDC_COLORS = {
@@ -6316,7 +6315,6 @@
   // Coordinates are in pixels of the DELIVERED canvas (662 × 1036).
   // The visible (post-trim) area is inset by bleedPx on every side.
   // ----------------------------------------------------------------
-
   function idcDrawFront(ctx, card, x, y, w, h) {
     ctx.save();
 
@@ -6326,54 +6324,52 @@
 
     // Outer border drawn inside the SAFE (trimmed) area.
     ctx.strokeStyle = '#0d4d26';
-    ctx.lineWidth   = Math.max(2, w * 0.006);
+    ctx.lineWidth   = Math.max(2, w * 0.008);
     ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2,
                    w - ctx.lineWidth, h - ctx.lineWidth);
 
     // Padding constants.
-    const padX = w * 0.06;
-    const padY = h * 0.035;
+    const padX = w * 0.055;
+    const padY = h * 0.030;
     const colW = w - padX * 2;
 
     let cursorY = y + padY;
 
     // ---- Header banner ----
-    // School logo (left), name + motto + school subtitle (centre),
-    // Ministry logo (right).
-    const logoSize = h * 0.055;
-    const logoGap  = w * 0.015;
+    // Bigger logos: 9% of card height each.
+    const logoSize = h * 0.090;
+    const logoGap  = w * 0.020;
 
-    // Left school logo
     idcDrawImagePlaceholder(ctx, x + padX, cursorY, logoSize, logoSize, 'S');
-    // Right ministry logo
     idcDrawImagePlaceholder(ctx, x + w - padX - logoSize, cursorY, logoSize, logoSize, 'M');
 
     // Centre text block
     const centreX = x + padX + logoSize + logoGap;
     const centreW = w - (padX + logoSize + logoGap) * 2;
+    const centreCX = centreX + centreW / 2;
 
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
 
-    // "THE IDEAL SCHOOLS" — big green, sized to fill the centre width.
+    // "THE IDEAL SCHOOLS" — 5.5% of height, bold green.
     ctx.fillStyle = IDC_COLORS.schoolName;
-    ctx.font      = 'bold ' + Math.round(h * 0.032) + 'px Inter, Arial, sans-serif';
-    ctx.fillText('THE IDEAL SCHOOLS', centreX + centreW / 2, cursorY + logoSize * 0.05);
+    ctx.font      = 'bold ' + Math.round(h * 0.055) + 'px Inter, Arial, sans-serif';
+    ctx.fillText('THE IDEAL SCHOOLS', centreCX, cursorY + logoSize * 0.02);
 
-    // Motto
+    // Motto — 2.2% of height.
     ctx.fillStyle = '#666666';
-    ctx.font      = 'italic ' + Math.round(h * 0.014) + 'px Inter, Arial, sans-serif';
-    ctx.fillText('Scientia est potentia', centreX + centreW / 2, cursorY + logoSize * 0.52);
+    ctx.font      = 'italic ' + Math.round(h * 0.022) + 'px Inter, Arial, sans-serif';
+    ctx.fillText('Scientia est potentia', centreCX, cursorY + logoSize * 0.42);
 
-    // Two-school subtitle
+    // Two-school subtitle — 1.8% of height.
     ctx.fillStyle = '#333333';
-    ctx.font      = Math.round(h * 0.011) + 'px Inter, Arial, sans-serif';
+    ctx.font      = Math.round(h * 0.018) + 'px Inter, Arial, sans-serif';
     ctx.fillText('The Ideal Secondary Sch.  ·  The Ideal Kiddies Sch.',
-                 centreX + centreW / 2, cursorY + logoSize * 0.78);
+                 centreCX, cursorY + logoSize * 0.70);
 
-    cursorY += logoSize + h * 0.02;
+    cursorY += logoSize + h * 0.020;
 
-    // Divider under header
+    // Divider under header.
     ctx.strokeStyle = IDC_COLORS.divider;
     ctx.lineWidth   = 2;
     ctx.beginPath();
@@ -6381,77 +6377,90 @@
     ctx.lineTo(x + w - padX, cursorY);
     ctx.stroke();
 
-    cursorY += h * 0.02;
+    cursorY += h * 0.018;
 
     // ---- Photo ----
-    // Large portrait circle, centred.
-    const photoSize = w * 0.42;
+    // Bigger: 46% of width.
+    const photoSize = w * 0.46;
     const photoX    = x + (w - photoSize) / 2;
     const photoY    = cursorY;
     idcDrawPhotoPlaceholder(ctx, card, photoX, photoY, photoSize, photoSize);
 
-    cursorY = photoY + photoSize + h * 0.02;
+    cursorY = photoY + photoSize + h * 0.018;
 
-    // ---- Name (blue) ----
+    // ---- Name (blue, bigger) ----
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle    = IDC_COLORS.personName;
-    ctx.font         = 'bold ' + Math.round(h * 0.036) + 'px Inter, Arial, sans-serif';
+    ctx.font         = 'bold ' + Math.round(h * 0.042) + 'px Inter, Arial, sans-serif';
     const nameUp = String(card.name || '').toUpperCase();
     ctx.fillText(idcFitText(ctx, nameUp, colW), x + w / 2, cursorY);
 
-    cursorY += h * 0.045;
+    cursorY += h * 0.052;
 
-    // ---- Identity block (left/right label-value pairs) ----
+    // ---- Identity block: full-width label-left, value-right ----
     const labelX = x + padX;
     const valueX = x + w - padX;
-    const lineH  = h * 0.026;
+    const lineH  = h * 0.032;
+    const fontPx = Math.round(h * 0.024);
 
     function pair(label, value) {
       if (!value) return;
       ctx.textAlign    = 'left';
+      ctx.textBaseline = 'top';
       ctx.fillStyle    = IDC_COLORS.label;
-      ctx.font         = Math.round(h * 0.016) + 'px Inter, Arial, sans-serif';
+      ctx.font         = fontPx + 'px Inter, Arial, sans-serif';
       ctx.fillText(label, labelX, cursorY);
 
       ctx.textAlign    = 'right';
       ctx.fillStyle    = IDC_COLORS.value;
-      ctx.font         = 'bold ' + Math.round(h * 0.016) + 'px Inter, Arial, sans-serif';
-      ctx.fillText(idcFitTextRight(ctx, String(value), colW * 0.60), valueX, cursorY);
+      ctx.font         = 'bold ' + fontPx + 'px Inter, Arial, sans-serif';
+      ctx.fillText(idcFitText(ctx, String(value), colW * 0.58), valueX, cursorY);
 
       cursorY += lineH;
     }
 
-    pair(card.idLabel || 'ID',        card.idValue);
-    pair(card.kind === 'Learner' ? 'Class' : 'Department', card.classOrDept);
-    if (card.position)      pair('Position', card.position);
-    if (card.gender)        pair('Gender', card.gender);
-    if (card.qualification) pair('Qualification', card.qualification);
-    if (card.account)       pair('Account No.', card.account);
-    if (card.blood)         pair('Blood Group / Genotype', card.blood);
+    // Determine row order. Learner gets PIN, Class, Gender, Account,
+    // Blood. Staff gets Staff ID, Department, Position, Gender.
+    if (card.kind === 'Learner') {
+      pair('PIN',                    card.idValue);
+      pair('Class',                  card.classOrDept);
+      pair('Gender',                 card.gender);
+      pair('Account No.',            card.account);
+      pair('Blood Group / Genotype', card.blood);
+    } else if (card.kind === 'Staff') {
+      pair('Staff ID',        card.idValue);
+      pair('Department',      card.classOrDept);
+      pair('Position',        card.position);
+      pair('Gender',          card.gender);
+      pair('Qualification',   card.qualification);
+    } else {
+      // Visitor
+      pair('Card', card.idValue);
+    }
 
-    cursorY += h * 0.01;
+    cursorY += h * 0.010;
 
     // ---- QR code ----
-    const qrSize = w * 0.32;
+    const qrSize = w * 0.34;
     const qrX    = x + (w - qrSize) / 2;
     const qrY    = cursorY;
     idcDrawQRPlaceholder(ctx, qrX, qrY, qrSize, qrSize);
 
-    cursorY = qrY + qrSize + h * 0.015;
+    cursorY = qrY + qrSize + h * 0.014;
 
-    // ---- Address block (small, centred) ----
+    // ---- Address block (below the QR) ----
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle    = '#555555';
-    ctx.font         = Math.round(h * 0.011) + 'px Inter, Arial, sans-serif';
+    ctx.font         = Math.round(h * 0.016) + 'px Inter, Arial, sans-serif';
     ctx.fillText(IDC_ADDRESS.line1, x + w / 2, cursorY);
-    ctx.fillText(IDC_ADDRESS.line2, x + w / 2, cursorY + h * 0.014);
+    ctx.fillText(IDC_ADDRESS.line2, x + w / 2, cursorY + h * 0.020);
 
     // ---- Role badge (bottom-right corner) ----
     const badgeText = card.role || '';
-    const badgeW    = w * 0.28;
-    const badgeH    = h * 0.032;
+    const badgeW    = w * 0.30;
+    const badgeH    = h * 0.036;
     const badgeX    = x + w - padX - badgeW;
     const badgeY    = y + h - padY - badgeH;
 
@@ -6466,15 +6475,15 @@
 
     ctx.restore();
   }
-
-  function idcDrawBack(ctx, card, x, y, w, h) {
+ 
+   function idcDrawBack(ctx, card, x, y, w, h) {
     ctx.save();
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(x, y, w, h);
 
     ctx.strokeStyle = '#0d4d26';
-    ctx.lineWidth   = Math.max(2, w * 0.006);
+    ctx.lineWidth   = Math.max(2, w * 0.008);
     ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2,
                    w - ctx.lineWidth, h - ctx.lineWidth);
 
@@ -6482,21 +6491,20 @@
     ctx.textBaseline = 'middle';
 
     const cx     = x + w / 2;
-    const lineH  = h * 0.06;
+    const lineH  = h * 0.062;
     const startY = y + h * 0.20;
 
     IDC_BACK_TEXT.forEach(function (line, i) {
       const isHeader = (i === 1 || i === 2 || i === 3);
       ctx.fillStyle = isHeader ? '#0d4d26' : '#333333';
       ctx.font      = (isHeader ? 'bold ' : '') +
-                      Math.round(h * (isHeader ? 0.028 : 0.024)) +
+                      Math.round(h * (isHeader ? 0.032 : 0.028)) +
                       'px Inter, Arial, sans-serif';
       ctx.fillText(line, cx, startY + i * lineH);
     });
 
     ctx.restore();
   }
-
   function idcDrawPhotoPlaceholder(ctx, card, x, y, w, h) {
     ctx.save();
     ctx.fillStyle = '#0d4d26';
@@ -6566,48 +6574,52 @@
     });
   }
 
+    // Y offset of the header block below cy (logo size + spacing).
+  function idcHeaderBlockH(ch) {
+    const logoSize = ch * 0.090;
+    return logoSize + ch * 0.020 + ch * 0.018;   // logo + spacing + divider gap
+  }
+  // Y offset of the photo below cy.
+  function idcPhotoBlockH(cw, ch) {
+    return cw * 0.46 + ch * 0.018;               // photo size + spacing after
+  }
+  // Y offset of the name row below cy.
+  function idcNameRowH(ch) {
+    return ch * 0.052;
+  }
+
   async function idcDrawQRImage(ctx, card, cx, cy, cw, ch) {
     const url   = window.location.origin + '/s/' + encodeURIComponent(card.code);
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=0&data=' +
                   encodeURIComponent(url);
     const img = await idcLoadImage(qrUrl);
     if (!img) return;
-    const qrSize = cw * 0.32;
-    const qrX    = cx + (cw - qrSize) / 2;
-    // Match the y that idcDrawFront used for the placeholder.
-    // The value is deterministic — recompute it the same way.
-    const padY      = ch * 0.035;
-    const logoSize  = ch * 0.055;
-    const photoSize = cw * 0.42;
-    const qrY = cy + padY
-              + logoSize + ch * 0.02
-              + ch * 0.02
-              + photoSize + ch * 0.02
-              + ch * 0.045
-              + ch * 0.026 * (1 + idcIdentityRowCount(card))
-              + ch * 0.01;
-    ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
-  }
 
-  function idcIdentityRowCount(card) {
-    let n = 2; // id + class/department
-    if (card.position)      n++;
-    if (card.gender)        n++;
-    if (card.qualification) n++;
-    if (card.account)       n++;
-    if (card.blood)         n++;
-    return n;
+    const qrSize = cw * 0.34;
+    const qrX    = cx + (cw - qrSize) / 2;
+
+    const padY = ch * 0.030;
+    const rows = idcIdentityRowCount(card);
+    const qrY  = cy + padY
+               + idcHeaderBlockH(ch)
+               + idcPhotoBlockH(cw, ch)
+               + idcNameRowH(ch)
+               + ch * 0.032 * rows
+               + ch * 0.010;
+
+    ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
   }
 
   async function idcDrawPhotoImage(ctx, card, cx, cy, cw, ch) {
     if (!card.photo) return;
     const img = await idcLoadImage(card.photo);
     if (!img) return;
-    const padY      = ch * 0.035;
-    const logoSize  = ch * 0.055;
-    const photoSize = cw * 0.42;
+
+    const padY      = ch * 0.030;
+    const photoSize = cw * 0.46;
     const photoX    = cx + (cw - photoSize) / 2;
-    const photoY    = cy + padY + logoSize + ch * 0.02 + ch * 0.02;
+    const photoY    = cy + padY + idcHeaderBlockH(ch);
+
     ctx.save();
     ctx.beginPath();
     ctx.arc(photoX + photoSize / 2, photoY + photoSize / 2, photoSize / 2, 0, Math.PI * 2);
@@ -6617,10 +6629,10 @@
     ctx.restore();
   }
 
-  async function idcDrawLogos(ctx, cx, cy, cw, ch) {
-    const padX     = cw * 0.06;
-    const padY     = ch * 0.035;
-    const logoSize = ch * 0.055;
+  async function idcDrawLogos(ctx, card, cx, cy, cw, ch) {
+    const padX     = cw * 0.055;
+    const padY     = ch * 0.030;
+    const logoSize = ch * 0.090;
     const [schoolImg, ministryImg] = await Promise.all([
       idcLoadImage(IDC_LOGO_SCHOOL),
       idcLoadImage(IDC_LOGO_MINISTRY)
@@ -6631,41 +6643,29 @@
 
   async function idcDrawGTBBadge(ctx, card, cx, cy, cw, ch) {
     if (card.kind !== 'Learner' || !card.account) return;
-    // Small GTB badge sits just below the account number line in the
-    // identity block. We approximate by drawing at a fixed offset.
     const img = await idcLoadImage(IDC_LOGO_GTB);
     if (!img) return;
 
-    const padX  = cw * 0.06;
-    const padY  = ch * 0.035;
-    const logoSize  = ch * 0.055;
-    const photoSize = cw * 0.42;
+    const padX = cw * 0.055;
+    const padY = ch * 0.030;
 
-    // Rows in the identity block up to and including the account row.
-    // Order in the front: id, class, [position], [gender],
-    // [qualification], account, [blood].
-    let rowIndexForAccount = 2;                // id + class
-    if (card.position)      rowIndexForAccount++;
-    if (card.gender)        rowIndexForAccount++;
-    if (card.qualification) rowIndexForAccount++;
+    // Row index (0-based) of the Account row inside the identity block.
+    // Learner row order: PIN, Class, Gender, Account, Blood.
+    const accountRowIdx = 3;
 
-    const labelBaseY = cy + padY
-                     + logoSize + ch * 0.02
-                     + ch * 0.02
-                     + photoSize + ch * 0.02
-                     + ch * 0.045;
+    const baseY = cy + padY
+                + idcHeaderBlockH(ch)
+                + idcPhotoBlockH(cw, ch)
+                + idcNameRowH(ch)
+                + ch * 0.032 * accountRowIdx
+                + ch * 0.032 * 0.20;              // small vertical centering within the row
 
-    const lineH = ch * 0.026;
-    const badgeY = labelBaseY + lineH * rowIndexForAccount + lineH * 0.15;
-    const badgeH = ch * 0.018;
-    const badgeW = badgeH * 1.6;
+    const badgeH = ch * 0.022;
+    const badgeW = badgeH * 1.7;
     const badgeX = cx + cw - padX - badgeW;
 
-    try {
-      ctx.drawImage(img, badgeX, badgeY, badgeW, badgeH);
-    } catch (e) { /* silent */ }
+    try { ctx.drawImage(img, badgeX, baseY, badgeW, badgeH); } catch (e) {}
   }
-
   // ----------------------------------------------------------------
   // Render one card face to a PNG data URL
   // ----------------------------------------------------------------
