@@ -261,7 +261,7 @@
     } catch (err) { return fail(err); }
   };
 
-  TIS.setLearnerContactPriority = async function (learnerId, order) {
+   TIS.setLearnerContactPriority = async function (learnerId, order) {
     try {
       const sb = await loadSdk();
       const patch = {
@@ -276,6 +276,32 @@
     } catch (err) { return fail(err); }
   };
 
+  // ================================================================
+  // [LEARNERS] findLearnerDuplicate
+  //   Case-insensitive name match + exact date_of_birth match.
+  //   Returns { row: <learner> } when a match is found,
+  //   or { row: null } when the learner is safe to add.
+  //   Used by the Add Learner flow to warn + allow override.
+  // ================================================================
+  TIS.findLearnerDuplicate = async function (name, dateOfBirth) {
+    try {
+      const n = String(name || '').trim();
+      const d = String(dateOfBirth || '').trim();
+      if (!n || !d) return ok({ row: null });
+
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learners')
+        .select('id, pin, name, class_name, date_of_birth, gender, photo_url')
+        .ilike('name', n)
+        .eq('date_of_birth', d)
+        .limit(1);
+
+      if (error) return fail(error.message);
+      const row = (data && data.length) ? data[0] : null;
+      return ok({ row: row });
+    } catch (err) { return fail(err); }
+  };
   // ================================================================
   // [LEARNER_TERMS]
   // ================================================================
