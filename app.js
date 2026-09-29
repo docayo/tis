@@ -711,6 +711,9 @@
     const classNames = await getClassNamesForDropdown();
     stopLoader();
 
+    // Cache the current learner for the photo modal.
+    window.__editingLearner = d;
+
     const textField = function (id, label, value, type) {
       const t = type || 'text';
       return '<div class="form-group"><label>' + esc(label) + '</label>' +
@@ -755,9 +758,29 @@
              '</div></div>';
     };
 
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+    // ---- Photo panel ----
+    const photoUrl = d.photo_url || '';
+    let photoPanel = '<div style="display:flex;gap:14px;align-items:center;background:#f7fbf7;padding:12px;border-radius:8px;margin-bottom:12px;">';
+    photoPanel += '<div id="ed_photo_preview" style="width:86px;height:86px;border-radius:50%;overflow:hidden;background:linear-gradient(135deg,#0d4d26,#d4a017);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:28px;flex-shrink:0;">';
+    if (photoUrl) {
+      photoPanel += '<img id="ed_photo_img" src="' + esc(photoUrl) + '" style="width:100%;height:100%;object-fit:cover;display:block;">';
+    } else {
+      photoPanel += '<span id="ed_photo_initial">' + esc((d.name || '?').charAt(0) || '?') + '</span>';
+    }
+    photoPanel += '</div>';
+    photoPanel += '<div style="flex:1;min-width:180px;">';
+    photoPanel += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:4px;">Learner Photo</div>';
+    photoPanel += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Square photo works best. Saved to your Supabase storage.</div>';
+    photoPanel += '<button type="button" class="btn btn-sm btn-warning" onclick="openLearnerPhotoModal(\'' + escAttr(pin) + '\')">' +
+                  '<i class="fas fa-camera"></i> Change Photo</button>';
+    photoPanel += '</div></div>';
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Edit — ' + esc(d.name) + '</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+    html += '<div class="modal-header"><h2>Edit — ' + esc(d.name) + '</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    html += photoPanel;
 
     html += '<div class="form-row">' + textField('ed_name', 'Name', d.name) + classField('ed_class_name', 'Class', d.class_name) + '</div>';
     html += '<div class="form-row">' + genderField('ed_gender', 'Gender', d.gender) + textField('ed_date_of_birth', 'Date of Birth', isoToDateInput(d.date_of_birth), 'date') + '</div>';
@@ -787,9 +810,11 @@
     });
     html += '<div class="form-group"><label>Exit Reason</label><select id="ed_exit_reason">' + exitOpts + '</select></div>';
 
+    html += '<div id="ed_feedback" style="margin-top:8px;font-size:12px;color:#c0392b;"></div>';
+
     html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="saveLearnerEdits(' + d.id + ')">Save</button>';
+    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" id="ed_submit" type="button" onclick="saveLearnerEdits(' + d.id + ')">Save</button>';
     html += '</div></div></div>';
     setHTML('modalContainer', html);
   }
@@ -821,14 +846,143 @@
     const p2 = get('ed_prio_mother_who');
     const p3 = get('ed_prio_guardian_who');
 
+    const submitBtn = document.getElementById('ed_submit');
+    if (submitBtn) submitBtn.disabled = true;
+
     startLoader();
-    const r = await window.TIS.updateLearner(id, fields);
-    if (r && r.ok) {
-      await window.TIS.setLearnerContactPriority(id, { p1: p1, p2: p2, p3: p3 });
+    try {
+      const r = await window.TIS.updateLearner(id, fields);
+      if (r && r.ok) {
+        await window.TIS.setLearnerContactPriority(id, { p1: p1, p2: p2, p3: p3 });
+      }
+      stopLoader();
+      if (r && r.ok) {
+        showToast('Learner updated', 'success');
+        closeModal();
+        loadLearners();
+      } else {
+        const fb = document.getElementById('ed_feedback');
+        if (fb) fb.textContent = 'Save failed: ' + ((r && r.error) || 'unknown');
+        else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    } catch (err) {
+      stopLoader();
+      const fb = document.getElementById('ed_feedback');
+      if (fb) fb.textContent = 'Unexpected error: ' + (err && err.message ? err.message : err);
+      else showToast('Unexpected error: ' + (err && err.message ? err.message : err), 'error');
+      if (submitBtn) submitBtn.disabled = false;
     }
-    stopLoader();
-    if (r && r.ok) { showToast('Learner updated', 'success'); closeModal(); loadLearners(); }
-    else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+  }
+
+  // ----------------------------------------------------------------
+  // Learner photo modal — picks a file, uploads to
+  // TISAssets/learners/<PIN>.png, saves the URL with a cache-bust.
+  // ----------------------------------------------------------------
+  function openLearnerPhotoModal(pin) {
+    const learner = window.__editingLearner || null;
+    if (!learner) { showToast('Reopen the learner first.', 'warning'); return; }
+    const current = learner.photo_url || '';
+    const learnerName = learner.name || pin;
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box" style="max-width:440px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Photo — ' + esc(learnerName) + '</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    html += '<div style="text-align:center;">';
+    html += '<div id="lp_preview" style="width:140px;height:140px;margin:0 auto 12px;border-radius:50%;border:3px solid #d4a017;overflow:hidden;background:linear-gradient(135deg,#0d4d26,#d4a017);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:42px;">';
+    if (current) {
+      html += '<img id="lp_preview_img" src="' + esc(current) + '" style="width:100%;height:100%;object-fit:cover;">';
+    } else {
+      html += '<span id="lp_preview_initial">' + esc((learnerName || '?').charAt(0) || '?') + '</span>';
+    }
+    html += '</div>';
+
+    html += '<input type="file" id="lp_file" accept="image/*" style="margin-bottom:14px;">';
+    html += '<div id="lp_feedback" style="font-size:12px;color:#c0392b;margin-top:6px;min-height:16px;"></div>';
+    html += '<div style="margin-top:14px;display:flex;gap:8px;justify-content:center;">';
+    html += '<button class="btn btn-secondary" type="button" onclick="TIS.closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-primary" id="lp_submit" type="button" onclick="submitLearnerPhoto(\'' + escAttr(pin) + '\')">Upload photo</button>';
+    html += '</div></div></div></div>';
+    setHTML('modalContainer', html);
+
+    const inp = document.getElementById('lp_file');
+    if (inp) {
+      inp.addEventListener('change', function (e) {
+        const f = e.target.files[0];
+        if (!f) return;
+        // Local preview
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+          const box = document.getElementById('lp_preview');
+          if (box) box.innerHTML = '<img src="' + ev.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
+        };
+        reader.readAsDataURL(f);
+      });
+    }
+  }
+
+  async function submitLearnerPhoto(pin) {
+    const inp = document.getElementById('lp_file');
+    const fb  = document.getElementById('lp_feedback');
+    const setFb = function (m) { if (fb) fb.textContent = m || ''; };
+
+    if (!inp || !inp.files || !inp.files.length) { setFb('Choose a photo first.'); return; }
+    const file = inp.files[0];
+
+    // Sanity check type + size (5 MB ceiling).
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+      setFb('Only image files are allowed.'); return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFb('File is larger than 5 MB. Please resize before uploading.'); return;
+    }
+
+    const submitBtn = document.getElementById('lp_submit');
+    if (submitBtn) submitBtn.disabled = true;
+    setFb('');
+    startLoader();
+
+    try {
+      // Filename = <PIN>.png (we keep the extension of the uploaded file).
+      const extRaw = (file.name.split('.').pop() || 'png').toLowerCase();
+      const ext = /^(png|jpg|jpeg|webp)$/.test(extRaw) ? extRaw : 'png';
+      const filename = pin + '.' + ext;
+
+      const r = await window.TIS.uploadAsset('learners', filename, file);
+      if (!r || !r.ok) {
+        setFb('Upload failed: ' + ((r && r.error) || 'unknown'));
+        return;
+      }
+
+      // Save URL with cache-bust query so the browser fetches fresh.
+      const bust = Date.now();
+      const publicUrl = r.data.url + '?t=' + bust;
+      const learner = window.__editingLearner;
+      if (!learner || !learner.id) { setFb('Lost track of the learner. Reopen and retry.'); return; }
+
+      const upd = await window.TIS.updateLearner(learner.id, { photo_url: publicUrl });
+      if (!upd || !upd.ok) {
+        setFb('Photo uploaded but could not save the URL: ' + ((upd && upd.error) || 'unknown'));
+        return;
+      }
+
+      // Update the in-memory learner so the edit modal reflects the new photo.
+      window.__editingLearner.photo_url = publicUrl;
+
+      showToast('Photo updated for ' + pin, 'success');
+      closeModal();
+      // Reopen the edit modal to show the new photo immediately.
+      openLearnerEditModal(pin);
+      // Refresh the grid behind the modal.
+      loadLearners();
+    } catch (err) {
+      setFb('Unexpected error: ' + (err && err.message ? err.message : err));
+    } finally {
+      stopLoader();
+      if (submitBtn) submitBtn.disabled = false;
+    }
   }
   // ================================================================
   // Add learner
