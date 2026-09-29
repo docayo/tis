@@ -6303,7 +6303,7 @@
         qualification: '',
         account:       '',
         blood:         '',
-        photo:         '',
+        photo:         '        photo:         'https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/The_Ideal_Schools_Logo_Transparent.png',',
         role:          'VISITOR'
       };
     });
