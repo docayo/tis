@@ -6335,18 +6335,8 @@
 
     let cursorY = y + padY;
 
-    // ---- Header banner ----
-    // Bigger logos: 9% of card height each.
-    const logoSize = h * 0.090;
-    const logoGap  = w * 0.020;
-
-    idcDrawImagePlaceholder(ctx, x + padX, cursorY, logoSize, logoSize, 'S');
-    idcDrawImagePlaceholder(ctx, x + w - padX - logoSize, cursorY, logoSize, logoSize, 'M');
-
-    // Centre text block
-    const centreX = x + padX + logoSize + logoGap;
-    const centreW = w - (padX + logoSize + logoGap) * 2;
-    const centreCX = centreX + centreW / 2;
+    // ---- Header text block (full width, no logos here) ----
+    const centreCX = x + w / 2;
 
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
@@ -6354,22 +6344,34 @@
     // "THE IDEAL SCHOOLS" — 5.5% of height, bold green.
     ctx.fillStyle = IDC_COLORS.schoolName;
     ctx.font      = 'bold ' + Math.round(h * 0.055) + 'px Inter, Arial, sans-serif';
-    ctx.fillText('THE IDEAL SCHOOLS', centreCX, cursorY + logoSize * 0.02);
+    ctx.fillText('THE IDEAL SCHOOLS', centreCX, cursorY);
+
+    cursorY += h * 0.062;
 
     // Motto — 2.2% of height.
     ctx.fillStyle = '#666666';
     ctx.font      = 'italic ' + Math.round(h * 0.022) + 'px Inter, Arial, sans-serif';
-    ctx.fillText('Scientia est potentia', centreCX, cursorY + logoSize * 0.42);
+    ctx.fillText('Scientia est potentia', centreCX, cursorY);
+
+    cursorY += h * 0.028;
 
     // Two-school subtitle — 1.8% of height.
     ctx.fillStyle = '#333333';
     ctx.font      = Math.round(h * 0.018) + 'px Inter, Arial, sans-serif';
     ctx.fillText('The Ideal Secondary Sch.  ·  The Ideal Kiddies Sch.',
-                 centreCX, cursorY + logoSize * 0.70);
+                 centreCX, cursorY);
 
-    cursorY += logoSize + h * 0.020;
+    cursorY += h * 0.030;
 
-    // Divider under header.
+    // ---- Logo row: school (left) · thin divider · ministry (right) ----
+    const logoSize = h * 0.085;
+
+    idcDrawImagePlaceholder(ctx, x + padX,                    cursorY, logoSize, logoSize, 'S');
+    idcDrawImagePlaceholder(ctx, x + w - padX - logoSize,     cursorY, logoSize, logoSize, 'M');
+
+    cursorY += logoSize + h * 0.018;
+
+    // Divider under the logo row.
     ctx.strokeStyle = IDC_COLORS.divider;
     ctx.lineWidth   = 2;
     ctx.beginPath();
@@ -6379,8 +6381,7 @@
 
     cursorY += h * 0.018;
 
-    // ---- Photo ----
-    // Bigger: 46% of width.
+    // ---- Photo (unchanged position, follows the divider) ----
     const photoSize = w * 0.46;
     const photoX    = x + (w - photoSize) / 2;
     const photoY    = cursorY;
@@ -6420,8 +6421,6 @@
       cursorY += lineH;
     }
 
-    // Determine row order. Learner gets PIN, Class, Gender, Account,
-    // Blood. Staff gets Staff ID, Department, Position, Gender.
     if (card.kind === 'Learner') {
       pair('PIN',                    card.idValue);
       pair('Class',                  card.classOrDept);
@@ -6435,7 +6434,6 @@
       pair('Gender',          card.gender);
       pair('Qualification',   card.qualification);
     } else {
-      // Visitor
       pair('Card', card.idValue);
     }
 
@@ -6565,9 +6563,14 @@
   // the async overlays (QR / photo / logos / GTB) so they land in
   // the same spot the placeholder was drawn.
   // ----------------------------------------------------------------
-  function idcHeaderBlockH(ch) {
-    const logoSize = ch * 0.090;
-    return logoSize + ch * 0.020 + ch * 0.018;
+   function idcHeaderBlockH(ch) {
+    // Text block (name + motto + subtitle) + logo row + divider spacing.
+    return ch * 0.062    // name line
+         + ch * 0.028    // motto line
+         + ch * 0.030    // subtitle line
+         + ch * 0.085    // logo row
+         + ch * 0.018    // gap after logo row
+         + ch * 0.018;   // gap after divider
   }
   function idcPhotoBlockH(cw, ch) {
     return cw * 0.46 + ch * 0.018;
@@ -6666,16 +6669,25 @@
     ctx.restore();
   }
 
-  async function idcDrawLogos(ctx, card, cx, cy, cw, ch) {
-    const padX     = cw * 0.055;
-    const padY     = ch * 0.030;
-    const logoSize = ch * 0.090;
+    async function idcDrawLogos(ctx, card, cx, cy, cw, ch) {
+    const padX = cw * 0.055;
+    const padY = ch * 0.030;
+
+    // The logo row's Y: header text block + spacing before the logos.
+    const logoY = cy + padY
+                + ch * 0.062      // name line
+                + ch * 0.028      // motto line
+                + ch * 0.030;     // subtitle line
+
+    const logoSize = ch * 0.085;
+
     const [schoolImg, ministryImg] = await Promise.all([
       idcLoadImage(IDC_LOGO_SCHOOL),
       idcLoadImage(IDC_LOGO_MINISTRY)
     ]);
-    if (schoolImg)   ctx.drawImage(schoolImg,   cx + padX, cy + padY, logoSize, logoSize);
-    if (ministryImg) ctx.drawImage(ministryImg, cx + cw - padX - logoSize, cy + padY, logoSize, logoSize);
+
+    if (schoolImg)   ctx.drawImage(schoolImg,   cx + padX,                      logoY, logoSize, logoSize);
+    if (ministryImg) ctx.drawImage(ministryImg, cx + cw - padX - logoSize,      logoY, logoSize, logoSize);
   }
 
   async function idcDrawGTBBadge(ctx, card, cx, cy, cw, ch) {
