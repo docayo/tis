@@ -3701,9 +3701,10 @@
   window.attApplyHolidayMove         = attApplyHolidayMove;
   window.attRenderHolidayList        = attRenderHolidayList;
   
-   // ================================================================
+
+     // ================================================================
   // [S11] STAFF ATTENDANCE
-  //   • QR clock-in card with live preview + copy link
+  //   • QR link card (image lives in the QR tab)
   //   • Month picker → one Word-grid styled table per day
   //   • Red line after the last on-time clock-in
   //   • Collapsible movement log (same day-per-table shape)
@@ -4146,7 +4147,10 @@
   }
 
   // ----------------------------------------------------------------
-  // QR preview + modal
+  // QR preview + link modal
+  //   The QR image itself is generated and shown in the QR tab.
+  //   This modal just gives the operator a quick way to copy the
+  //   /g/<token> link for sharing with staff phones.
   // ----------------------------------------------------------------
   async function staffAttRenderQRPreview() {
     const box = $('staffQRPreview');
@@ -4174,30 +4178,43 @@
 
   async function staffAttOpenQRModal() {
     if (!window.__staffQRToken) {
-      // Try once more before giving up.
       await staffAttRenderQRPreview();
     }
     const token = window.__staffQRToken;
-    if (!token) { showToast('No active QR token. Generate one from the QR tab first.', 'warning'); return; }
+    if (!token) {
+      showToast('No active QR token. Generate one from the QR tab first.', 'warning');
+      return;
+    }
 
     const url = staffQRUrl(token);
-    const img = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=10&data=' + encodeURIComponent(url);
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
-    html += '<div class="modal-box" style="max-width:480px;text-align:center;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Staff Clock-in QR</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-    html += '<img src="' + esc(img) + '" style="max-width:340px;width:100%;border:6px solid #d4a017;border-radius:14px;background:#fff;padding:8px;">';
-    html += '<div style="font-size:11px;color:#666;margin-top:10px;word-break:break-all;">';
-    html += 'Link: <code>' + esc(url) + '</code>';
+    html += '<div class="modal-box" style="max-width:480px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Staff Clock-in Link</h2>';
+    html += '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    html += '<p style="font-size:13px;color:#555;line-height:1.6;margin:0 0 12px;">';
+    html += 'The QR code itself lives in the <b>QR tab</b> (generate there, print, post at gate). ';
+    html += 'This dialog is just for sending the same link to a phone via WhatsApp, email, or SMS.';
+    html += '</p>';
+
+    html += '<div class="form-group">';
+    html += '<label style="font-weight:600;font-size:12px;">Staff Clock-in Link</label>';
+    html += '<input type="text" readonly value="' + escAttr(url) + '" ';
+    html += 'style="width:100%;font-family:monospace;font-size:12px;" ';
+    html += 'onclick="this.select()">';
     html += '</div>';
-    html += '<div style="margin-top:14px;font-size:11px;color:#666;line-height:1.5;">';
-    html += 'Print this QR code and post it at the school gate. Staff scan with their phone camera, ' +
-            'which opens the clock-in page. No portal URL is exposed.';
+
+    html += '<div style="font-size:11px;color:#666;margin-top:8px;line-height:1.5;">';
+    html += 'The link never exposes the portal URL. Every scan asks for Staff ID. ' +
+            'One phone can be used by many staff.';
     html += '</div>';
-    html += '<div style="margin-top:14px;">';
+
+    html += '<div style="margin-top:14px;text-align:right;">';
     html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button> ';
-    html += '<a class="btn btn-primary" href="' + esc(img) + '" target="_blank">Open Full Size</a>';
+    html += '<button class="btn btn-primary" onclick="staffAttCopyQRLink()">Copy Link</button>';
     html += '</div>';
+
     html += '</div></div>';
     setHTML('modalContainer', html);
   }
