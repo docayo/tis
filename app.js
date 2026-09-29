@@ -769,8 +769,7 @@
     }
     photoPanel += '</div>';
     photoPanel += '<div style="flex:1;min-width:180px;">';
-    photoPanel += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:4px;">Learner Photo</div>';
-    photoPanel += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Square photo works best. Saved to your Supabase storage.</div>';
+    photoPanel += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Learner Photo</div>';
     photoPanel += '<button type="button" class="btn btn-sm btn-warning" onclick="openLearnerPhotoModal(\'' + escAttr(pin) + '\')">' +
                   '<i class="fas fa-camera"></i> Change Photo</button>';
     photoPanel += '</div></div>';
