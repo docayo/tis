@@ -5554,7 +5554,6 @@
   } else {
     boot();
   }
-
   // ================================================================
   // [S20] PUBLIC API
   // ================================================================
@@ -5565,8 +5564,6 @@
   window.TIS.logout                  = doLogout;
   window.TIS.openChangePasswordModal = openChangePasswordModal;
   window.TIS.toggleExpandable        = toggleExpandable;
-
-})();
 
   // ================================================================
   // [S21] ID CARDS
@@ -5579,7 +5576,6 @@
   //   Card QR points to https://<origin>/s/<code>
   //   Filenames: <Kind>_<Code>_Front.png / _Back.png
   // ================================================================
-
   const IDC_VISITOR_CARDS = ['VIS-01', 'VIS-02', 'VIS-03', 'VIS-04', 'VIS-05'];
 
   const IDC_ADDRESS = {
