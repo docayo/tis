@@ -735,6 +735,50 @@
   };
 
   // ================================================================
+  // [STORAGE] — public bucket "TISAssets"
+  //   Folder layout:
+  //     TISAssets/                          shared brand assets
+  //     TISAssets/learners/<PIN>.png        one file per learner
+  //     TISAssets/staff/<STAFFID>.png       one file per staff
+  //   upsert:true means a re-upload replaces the existing file,
+  //   so photo changes never leave orphans behind.
+  // ================================================================
+  TIS.uploadAsset = async function (folder, filename, file) {
+    try {
+      if (!file) return fail('No file provided.');
+      const safeFolder   = String(folder   || '').trim().replace(/^\/+|\/+$/g, '');
+      const safeFilename = String(filename || '').trim().replace(/^\/+|\/+$/g, '');
+      if (!safeFolder || !safeFilename) return fail('Folder and filename are required.');
+      const path = safeFolder + '/' + safeFilename;
+
+      const sb = await loadSdk();
+      const contentType = file.type || 'image/png';
+      const { error: upErr } = await sb.storage
+        .from('TISAssets')
+        .upload(path, file, { upsert: true, contentType: contentType });
+      if (upErr) return fail(upErr.message);
+
+      const { data } = sb.storage.from('TISAssets').getPublicUrl(path);
+      if (!data || !data.publicUrl) return fail('Upload succeeded but no public URL was returned.');
+      return ok({ url: data.publicUrl, path: path });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteAsset = async function (folder, filename) {
+    try {
+      const safeFolder   = String(folder   || '').trim().replace(/^\/+|\/+$/g, '');
+      const safeFilename = String(filename || '').trim().replace(/^\/+|\/+$/g, '');
+      if (!safeFolder || !safeFilename) return fail('Folder and filename are required.');
+      const path = safeFolder + '/' + safeFilename;
+
+      const sb = await loadSdk();
+      const { error } = await sb.storage.from('TISAssets').remove([path]);
+      if (error) return fail(error.message);
+      return ok({ path: path });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
   // [STAFF_ATTENDANCE]
   // ================================================================
   TIS.listStaffAttendanceToday = async function (dateISO) {
