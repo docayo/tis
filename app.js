@@ -5855,7 +5855,7 @@
   // ================================================================
   // [S19] WIRE + BOOT
   // ================================================================
-  function wireEventListeners() {
+   function wireEventListeners() {
     const loginBtn = $('loginBtn'); if (loginBtn) loginBtn.addEventListener('click', doLogin);
     const pw = $('loginPassword');  if (pw) pw.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
     const idIn = $('loginId');      if (idIn) idIn.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
@@ -5881,14 +5881,6 @@
     initReportsTab();
     initClassesTab();
     initUsersTab();
-    initStaffTab();
-    initTermsWiring();
-    initCalendarTab();
-    initCalendarImportTab();
-    initQRTab();
-    initReportsTab();
-    initClassesTab();
-    initUsersTab();
   }
 
   function safetySweep() {
@@ -5899,9 +5891,22 @@
     console.log('[TIS] safety sweep ran at ' + new Date().toISOString());
   }
 
-  function boot() {
+  async function boot() {
     try {
       safetySweep();
+
+      // Scan routes fire BEFORE any portal UI is shown.
+      // /g/<token> → staff-gate QR (all staff use one code).
+      // /s/<code>  → personal ID-card QR (learner / staff / visitor).
+      const handledByScan =
+        (typeof handleQRScanIfPresent    === 'function' ? await handleQRScanIfPresent()    : false) ||
+        (typeof handleIDCardScanIfPresent === 'function' ? await handleIDCardScanIfPresent() : false);
+
+      if (handledByScan) {
+        console.log('[TIS] scan handler took over.');
+        return;
+      }
+
       wireEventListeners();
       showLoginScreen();
       console.log('[TIS] app.js booted');
