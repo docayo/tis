@@ -6462,13 +6462,7 @@
 
     cursorY = qrY + qrSize + h * 0.014;
 
-    // ---- Address block ----
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle    = '#555555';
-    ctx.font         = Math.round(h * 0.016) + 'px Inter, Arial, sans-serif';
-    ctx.fillText(IDC_ADDRESS.line1, centreCX, cursorY);
-    ctx.fillText(IDC_ADDRESS.line2, centreCX, cursorY + h * 0.020);
+       // ---- Address moved to back of card (see idcDrawBack) ----
 
     // ---- Role badge ----
     const badgeText = card.role || '';
@@ -6507,7 +6501,7 @@
     const lineH  = h * 0.062;
     const startY = y + h * 0.20;
 
-    IDC_BACK_TEXT.forEach(function (line, i) {
+       IDC_BACK_TEXT.forEach(function (line, i) {
       const isHeader = (i === 1 || i === 2 || i === 3);
       ctx.fillStyle = isHeader ? '#0d4d26' : '#333333';
       ctx.font      = (isHeader ? 'bold ' : '') +
@@ -6515,6 +6509,14 @@
                       'px Inter, Arial, sans-serif';
       ctx.fillText(line, cx, startY + i * lineH);
     });
+
+    // Address block at the bottom of the back.
+    const addressTop = y + h * 0.76;
+    ctx.fillStyle = '#555555';
+    ctx.font      = Math.round(h * 0.020) + 'px Inter, Arial, sans-serif';
+    ctx.fillText(IDC_ADDRESS.line1, cx, addressTop);
+    ctx.fillText(IDC_ADDRESS.line2, cx, addressTop + h * 0.026);
+    ctx.fillText(IDC_ADDRESS.email, cx, addressTop + h * 0.052);
 
     ctx.restore();
   }
@@ -6699,11 +6701,13 @@
     const L = card.__layout || {};
     if (L.accountRowY === undefined) return;
 
-    const padX   = cw * 0.055;
+       const padX   = cw * 0.055;
     const badgeH = L.accountRowH * 1.4;
     const badgeW = badgeH * 1.7;
     const badgeX = cx + cw - padX - badgeW;
-    const badgeY = L.accountRowY + (L.accountRowH - badgeH) / 2;
+    // Shift down so the badge sits below the Account No. row,
+    // in the gap before the next identity row.
+    const badgeY = L.accountRowY + L.accountRowH * 0.65;
 
     try { ctx.drawImage(img, badgeX, badgeY, badgeW, badgeH); } catch (e) {}
   }
