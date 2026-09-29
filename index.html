@@ -9,7 +9,7 @@
 <link rel="icon" href="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w64" type="image/png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="/styles.css">
 
 <!-- SheetJS for Excel download/upload (bulk learner template) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -121,6 +121,7 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 <button class="nav-tab" data-tab="classes"><i class="fas fa-layer-group"></i> Classes</button>
 <button class="nav-tab" data-tab="users"><i class="fas fa-user-cog"></i> Users</button>
 <button class="nav-tab" data-tab="idcards"><i class="fas fa-id-card"></i> ID Cards</button>
+</div>
 </div>
 
 <!-- ROW 3: Operator chip -->
@@ -366,7 +367,7 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 <div class="expandable-body" id="signatureBody"></div>
 </div>
 </div>
-    
+
 <!-- ============ STAFF ATTENDANCE ============ -->
 <div class="module-view hidden" id="module-staffatt">
 <div class="module-title"><i class="fas fa-clock"></i> Staff Attendance</div>
@@ -712,8 +713,8 @@ Generate PDF
   </div>
   <p style="font-size:11px;color:#666;margin:8px 0 0;">
     Card QR codes point to <code>/s/&lt;code&gt;</code> (unified for learner, staff, visitor).
-    A4 preview prints 10 CR80 cards per sheet.
-    ZIP delivers one Front PNG + one Back PNG per card at 1134 × 756 px @ 300 DPI (2 mm bleed included).
+    A4 preview prints 9 portrait CR80 cards per sheet.
+    ZIP delivers one Front PNG + one Back PNG per card at 662 × 1036 px @ 300 DPI (2 mm bleed included).
   </p>
 </div>
 
@@ -741,15 +742,15 @@ Generate PDF
 <!-- ================================================================
      SCRIPT LOADING
      Order:
-       1. supabase-client.js — backend bridge (JSONP to Apps Script)
+       1. supabase-client.js — backend bridge
        2. app.js             — UI wiring
-       3. learner-bulk.js    — learner view/edit/bulk/print
+       3. learner-bulk.js    — legacy learner module
        4. calendar-module.js — calendar upload/render/adjust
      ================================================================ -->
-<script src="supabase-client.js"></script>
-<script src="app.js"></script>
-<script src="learner-bulk.js"></script>
-<script src="calendar-module.js"></script>
+<script src="/supabase-client.js"></script>
+<script src="/app.js"></script>
+<script src="/learner-bulk.js"></script>
+<script src="/calendar-module.js"></script>
 
 </body>
 </html>
