@@ -1992,26 +1992,39 @@
   function openStaffPhotoModal(id) {
     const s = (State.cachedStaff || []).find(function (x) { return String(x.id) === String(id); });
     const display = s ? (s.staff_id || staffName(s) || id) : id;
+    const current = s ? (s.photo_url || '') : '';
 
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
-    html += '<div class="modal-box" style="max-width:420px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Photo — ' + esc(display) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box" style="max-width:440px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Photo — ' + esc(display) + '</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
     html += '<div style="text-align:center;">';
-    html += '<input type="file" id="staffPhotoInput" accept="image/*" style="margin-bottom:14px;">';
-    html += '<div id="staffPhotoPreview" style="width:120px;height:120px;margin:10px auto;border-radius:50%;border:3px solid #d4a017;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f5f5f5;color:#666;font-size:12px;">preview</div>';
-    html += '<button class="btn btn-primary" onclick="submitStaffPhoto(\'' + escAttr(id) + '\')">Upload photo</button>';
-    html += '</div></div></div>';
+    html += '<div id="sp_preview" style="width:140px;height:140px;margin:0 auto 12px;border-radius:50%;border:3px solid #d4a017;overflow:hidden;background:linear-gradient(135deg,#0d4d26,#d4a017);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:42px;">';
+    if (current) {
+      html += '<img id="sp_preview_img" src="' + esc(current) + '" style="width:100%;height:100%;object-fit:cover;">';
+    } else {
+      html += '<span id="sp_preview_initial">' + esc((staffName(s) || '?').charAt(0) || '?') + '</span>';
+    }
+    html += '</div>';
+
+    html += '<input type="file" id="sp_file" accept="image/*" style="margin-bottom:14px;">';
+    html += '<div id="sp_feedback" style="font-size:12px;color:#c0392b;margin-top:6px;min-height:16px;"></div>';
+    html += '<div style="margin-top:14px;display:flex;gap:8px;justify-content:center;">';
+    html += '<button class="btn btn-secondary" type="button" onclick="TIS.closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-primary" id="sp_submit" type="button" onclick="submitStaffPhoto(\'' + escAttr(id) + '\')">Upload photo</button>';
+    html += '</div></div></div></div>';
     setHTML('modalContainer', html);
 
-    const inp = $('staffPhotoInput');
+    const inp = document.getElementById('sp_file');
     if (inp) {
       inp.addEventListener('change', function (e) {
         const f = e.target.files[0];
         if (!f) return;
         const reader = new FileReader();
         reader.onload = function (ev) {
-          $('staffPhotoPreview').innerHTML = '<img src="' + ev.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
-          window.__staffPhotoDataUrl = ev.target.result;
+          const box = document.getElementById('sp_preview');
+          if (box) box.innerHTML = '<img src="' + ev.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
         };
         reader.readAsDataURL(f);
       });
@@ -2019,21 +2032,65 @@
   }
 
   async function submitStaffPhoto(id) {
-    const dataUrl = window.__staffPhotoDataUrl;
-    if (!dataUrl) { showToast('Choose a photo first', 'warning'); return; }
+    const inp = document.getElementById('sp_file');
+    const fb  = document.getElementById('sp_feedback');
+    const setFb = function (m) { if (fb) fb.textContent = m || ''; };
+
+    if (!inp || !inp.files || !inp.files.length) { setFb('Choose a photo first.'); return; }
+    const file = inp.files[0];
+
+    // Sanity check type + size (5 MB ceiling).
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+      setFb('Only image files are allowed.'); return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFb('File is larger than 5 MB. Please resize before uploading.'); return;
+    }
+
+    // We need the staff row's staff_id (the TISxxxx string) for the filename.
+    const s = (State.cachedStaff || []).find(function (x) { return String(x.id) === String(id); });
+    if (!s) { setFb('Staff record not found. Refresh the list and try again.'); return; }
+    const staffNo = String(s.staff_id || '').trim();
+    if (!staffNo) { setFb('This staff record has no Staff ID. Add one before uploading a photo.'); return; }
+
+    const submitBtn = document.getElementById('sp_submit');
+    if (submitBtn) submitBtn.disabled = true;
+    setFb('');
     startLoader();
-    const r = await window.TIS.updateStaff(id, { photo_url: dataUrl });
-    stopLoader();
-    if (r && r.ok) {
-      showToast('Photo saved', 'success');
-      window.__staffPhotoDataUrl = null;
+
+    try {
+      const extRaw = (file.name.split('.').pop() || 'png').toLowerCase();
+      const ext = /^(png|jpg|jpeg|webp)$/.test(extRaw) ? extRaw : 'png';
+      const filename = staffNo + '.' + ext;
+
+      const r = await window.TIS.uploadAsset('staff', filename, file);
+      if (!r || !r.ok) {
+        setFb('Upload failed: ' + ((r && r.error) || 'unknown'));
+        return;
+      }
+
+      // Save URL with cache-bust query so the browser fetches fresh.
+      const bust = Date.now();
+      const publicUrl = r.data.url + '?t=' + bust;
+
+      const upd = await window.TIS.updateStaff(id, { photo_url: publicUrl });
+      if (!upd || !upd.ok) {
+        setFb('Photo uploaded but could not save the URL: ' + ((upd && upd.error) || 'unknown'));
+        return;
+      }
+
+      showToast('Photo updated for ' + staffNo, 'success');
       closeStaffModal();
-      loadStaff();
-    } else {
-      showToast('Upload failed: ' + ((r && r.error) || 'unknown'), 'error');
+      await loadStaff();
+      // Reopen the profile modal so the new photo shows immediately.
+      openStaffProfile(id);
+    } catch (err) {
+      setFb('Unexpected error: ' + (err && err.message ? err.message : err));
+    } finally {
+      stopLoader();
+      if (submitBtn) submitBtn.disabled = false;
     }
   }
-
   // ----------------------------------------------------------------
   // Print
   // ----------------------------------------------------------------
