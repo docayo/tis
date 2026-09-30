@@ -1521,7 +1521,11 @@
     const add = document.getElementById('btnAddLearner');
     if (add && !add.__wired) { add.addEventListener('click', function (e) { e.preventDefault(); openAddLearnerModal(); }); add.__wired = true; }
   }
-
+    const bulk = document.getElementById('btnBulkLearnerPhotos');
+    if (bulk && !bulk.__wired) {
+      bulk.addEventListener('click', function (e) { e.preventDefault(); openBulkPhotoUploadDialog('learner'); });
+      bulk.__wired = true;
+    }
   // ================================================================
   // Excel template download + upload
   // ================================================================
@@ -2478,7 +2482,11 @@
     }
     const add = $('btnAddStaff');
     if (add && !add.__wired) { add.addEventListener('click', openAddStaffModal); add.__wired = true; }
-       const rf  = $('btnRefreshStaff');
+          const bulk = $('btnBulkStaffPhotos');
+    if (bulk && !bulk.__wired) {
+      bulk.addEventListener('click', function () { openBulkPhotoUploadDialog('staff'); });
+      bulk.__wired = true;
+    } const rf  = $('btnRefreshStaff');
     if (rf  && !rf.__wired)  {
       rf.addEventListener('click', function () {
         State.staffFetchedAt = 0;       // force refetch
