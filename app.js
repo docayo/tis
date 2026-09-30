@@ -1495,7 +1495,14 @@
   // ================================================================
   function initLearnersTab() {
     const refresh = document.getElementById('btnRefreshLearners');
-    if (refresh && !refresh.__wired) { refresh.addEventListener('click', function (e) { e.preventDefault(); loadLearners(); }); refresh.__wired = true; }
+        if (refresh && !refresh.__wired) {
+      refresh.addEventListener('click', function (e) {
+        e.preventDefault();
+        State.learnersFetchedAt = 0;    // force refetch
+        loadLearners();
+      });
+      refresh.__wired = true;
+    }
 
     const printBtn = document.getElementById('btnPrintLearners');
     if (printBtn && !printBtn.__wired) { printBtn.addEventListener('click', function (e) { e.preventDefault(); printLearnerList(); }); printBtn.__wired = true; }
@@ -2216,8 +2223,14 @@
     }
     const add = $('btnAddStaff');
     if (add && !add.__wired) { add.addEventListener('click', openAddStaffModal); add.__wired = true; }
-    const rf  = $('btnRefreshStaff');
-    if (rf  && !rf.__wired)  { rf.addEventListener('click', loadStaff); rf.__wired = true; }
+       const rf  = $('btnRefreshStaff');
+    if (rf  && !rf.__wired)  {
+      rf.addEventListener('click', function () {
+        State.staffFetchedAt = 0;       // force refetch
+        loadStaff();
+      });
+      rf.__wired = true;
+    }
     const pr  = $('btnPrintStaff');
     if (pr  && !pr.__wired)  {
       pr.addEventListener('click', function () {
