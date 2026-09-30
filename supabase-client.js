@@ -44,7 +44,8 @@
     { key: 'calendar',         label: 'Calendar',            defaultReadAll: false },
     { key: 'classes',          label: 'Classes',             defaultReadAll: false },
     { key: 'terms',            label: 'Terms & Promotion',   defaultReadAll: false },
-    { key: 'users',            label: 'Users & Permissions', defaultReadAll: false }
+    { key: 'users',            label: 'Users & Permissions', defaultReadAll: false },
+    { key: 'idcards',          label: 'ID Cards',            defaultReadAll: true  }
   ];
   const PERMISSION_ACTIONS = ['read', 'write', 'print'];
 
