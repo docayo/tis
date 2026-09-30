@@ -1774,14 +1774,30 @@
     } catch (err) { return fail(err); }
   };
 
-  TIS.setUserAuthorities = async function (id, authorities) {
+   TIS.setUserAuthorities = async function (id, authorities) {
     try {
       const sb = await loadSdk();
+
+      // Step 1 — look up the real UUID from the operator_id.
+      const lookup = await sb
+        .from('users')
+        .select('id')
+        .eq('operator_id', id)
+        .maybeSingle();
+      if (lookup.error) return fail(lookup.error.message);
+      if (!lookup.data || !lookup.data.id) {
+        return fail('No user found with operator_id "' + id + '"');
+      }
+
+      // Step 2 — update by UUID only. This avoids Postgres trying to
+      // cast a value like "03" to the uuid column, which is what threw
+      // the "invalid input syntax for type uuid" error.
+      const uuid = lookup.data.id;
       const { error } = await sb.from('users')
         .update({ authorities: authorities, updated_at: new Date().toISOString() })
-        .or('operator_id.eq.' + id + ',id.eq.' + id);
+        .eq('id', uuid);
       if (error) return fail(error.message);
-      return ok({ id: id });
+      return ok({ id: id, uuid: uuid });
     } catch (err) { return fail(err); }
   };
 
