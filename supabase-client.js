@@ -261,7 +261,7 @@
     } catch (err) { return fail(err); }
   };
 
-   TIS.setLearnerContactPriority = async function (learnerId, order) {
+    TIS.setLearnerContactPriority = async function (learnerId, order) {
     try {
       const sb = await loadSdk();
       const patch = {
@@ -301,6 +301,146 @@
       const row = (data && data.length) ? data[0] : null;
       return ok({ row: row });
     } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [LEARNER SCAN] — records a learner present for a single day.
+  //   First scan of the day → '\'   (morning)
+  //   Second scan same day  → '\ /' (both)
+  //   If already '\ /', returns { noop: true }.
+  //   Returns { mark, action } where action is
+  //     'morning' | 'afternoon' | 'already-both'.
+  // ================================================================
+  TIS.recordLearnerScan = async function (learnerId, termType, year, markedBy) {
+    try {
+      const sb = await loadSdk();
+      const today = new Date().toISOString().slice(0, 10);
+
+      const existingR = await sb
+        .from('attendance_learner')
+        .select('mark')
+        .eq('learner_id', learnerId)
+        .eq('attendance_date', today)
+        .maybeSingle();
+      if (existingR.error) return fail(existingR.error.message);
+
+      const current = existingR.data ? String(existingR.data.mark || '') : '';
+
+      let nextMark = '\\';
+      let action   = 'morning';
+
+      if (current === '\\')        { nextMark = '\\ /'; action = 'afternoon'; }
+      else if (current === '\\ /') { nextMark = '\\ /'; action = 'already-both'; }
+      else if (current === '/')    { nextMark = '\\ /'; action = 'afternoon'; }
+      else if (current === 'O O' || current === '') { nextMark = '\\'; action = 'morning'; }
+
+      if (action === 'already-both') {
+        return ok({ mark: nextMark, action: action, noop: true });
+      }
+
+      const upsertR = await sb
+        .from('attendance_learner')
+        .upsert({
+          learner_id:      learnerId,
+          term_type:       termType,
+          year:            year,
+          attendance_date: today,
+          mark:            nextMark,
+          marked_by:       markedBy || 'ID-card scan',
+          marked_at:       new Date().toISOString()
+        }, { onConflict: 'learner_id,attendance_date' });
+      if (upsertR.error) return fail(upsertR.error.message);
+
+      return ok({ mark: nextMark, action: action });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [VISITS] — visitor card scans.
+  //   First scan of the day for a card_code → INSERT with time_in.
+  //   Second scan same day for the same card_code → UPDATE time_out.
+  //   Returns { action: 'check-in' | 'check-out', row }.
+  // ================================================================
+  TIS.recordVisitorScan = async function (payload) {
+    try {
+      const sb = await loadSdk();
+      const today = new Date().toISOString().slice(0, 10);
+      const cardCode = String(payload.card_code || '').trim();
+
+      const openR = await sb
+        .from('visits')
+        .select('*')
+        .eq('card_code', cardCode)
+        .eq('visit_date', today)
+        .is('time_out', null)
+        .order('time_in', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (openR.error) return fail(openR.error.message);
+
+      const now = new Date();
+      const timeStr = String(now.getHours()).padStart(2, '0') + ':' +
+                      String(now.getMinutes()).padStart(2, '0');
+
+      if (openR.data && openR.data.id) {
+        const updR = await sb
+          .from('visits')
+          .update({
+            time_out:   timeStr,
+            status:     'Out',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', openR.data.id)
+          .select()
+          .single();
+        if (updR.error) return fail(updR.error.message);
+        return ok({ action: 'check-out', row: updR.data });
+      }
+
+      const insR = await sb
+        .from('visits')
+        .insert({
+          card_code:    cardCode,
+          visitor_name: payload.visitor_name || '',
+          purpose:      payload.purpose || '',
+          agency:       payload.agency || null,
+          agency_other: payload.agency_other || null,
+          time_in:      timeStr,
+          visit_date:   today,
+          status:       'In',
+          recorded_by:  payload.recorded_by || 'ID-card scan',
+          notes:        payload.notes || null
+        })
+        .select()
+        .single();
+      if (insR.error) return fail(insR.error.message);
+      return ok({ action: 'check-in', row: insR.data });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [SCAN EVENTS] — audit log of every scan.
+  //   Best-effort write; a failure here must never block the scan.
+  // ================================================================
+  TIS.logScanEvent = async function (event) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        code:       String(event.code || ''),
+        code_type:  String(event.code_type || ''),
+        actor_id:   event.actor_id != null ? String(event.actor_id) : null,
+        actor_name: String(event.actor_name || ''),
+        action:     String(event.action || ''),
+        success:    event.success !== false,
+        detail:     event.detail ? String(event.detail) : null,
+        scanned_by: String(event.scanned_by || 'ID-card scan'),
+        scan_date:  new Date().toISOString().slice(0, 10),
+        scanned_at: new Date().toISOString()
+      };
+      const r = await sb.from('scan_events').insert(payload);
+      if (r.error) return ok({ skipped: true, reason: r.error.message });
+      return ok({ logged: true });
+    } catch (err) { return ok({ skipped: true, reason: String(err) }); }
   };
   // ================================================================
   // [LEARNER_TERMS]
