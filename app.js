@@ -5580,6 +5580,654 @@
   window.copyQRToken           = copyQRToken;
   window.initQRTab             = initQRTab;
   window.handleQRScanIfPresent = handleQRScanIfPresent;
+
+  // ================================================================
+  // [S14b] ID-CARD SCAN HANDLER — runs at boot when the URL is /s/<code>
+  //
+  //   Routes by what <code> matches:
+  //     • Learner PIN  (matches learners.pin)          → attendance
+  //     • Staff ID     (matches staff.staff_id)        → smart clock flow
+  //     • Visitor code (VIS-01 … VIS-05)               → visitor prompt
+  //     • anything else                                → fatal message
+  //
+  //   Reuses the qrScan* helpers defined in [S14].
+  //   Returns true when the page was taken over by a scan; false otherwise.
+  // ================================================================
+  async function handleIDCardScanIfPresent() {
+    // ---------- 1. Read the code from the URL ----------
+    let code = '';
+    const pathMatch = window.location.pathname.match(/^\/s\/([^\/?#]+)/);
+    if (pathMatch && pathMatch[1]) code = decodeURIComponent(pathMatch[1]);
+
+    // Query-string fallback: ?scancode=<code> (useful for testing)
+    if (!code) {
+      const params = new URLSearchParams(window.location.search);
+      code = params.get('scancode') || '';
+    }
+    if (!code) return false;
+
+    code = code.trim().toUpperCase();
+    if (!code) return false;
+
+    // ---------- 2. Blank the portal UI ----------
+    document.body.innerHTML = qrScanSkeleton();
+    qrScanSetStage('Identifying card…');
+
+    // ---------- 3. Route by code pattern ----------
+    //    VIS-01 … VIS-05  → visitor
+    //    TIS#### (any)    → could be learner OR staff; disambiguate
+    const isVisitorCode = /^VIS-\d{2}$/.test(code);
+    const isTisCode     = /^TIS[0-9]+$/.test(code);
+
+    if (isVisitorCode) {
+      return await idcScanVisitorFlow(code);
+    }
+
+    if (isTisCode) {
+      // Try learner first (PINs are the TIS#### pattern).
+      qrScanSetStage('Looking up card…');
+      startLoader();
+      const learnerR = await window.TIS.getLearnerByPin(code);
+      stopLoader();
+
+      if (learnerR && learnerR.ok && learnerR.data) {
+        return await idcScanLearnerFlow(code, learnerR.data);
+      }
+
+      // Not a learner — try staff.
+      startLoader();
+      const staffR = await window.TIS.listStaff();
+      stopLoader();
+      const staff = (staffR && staffR.ok ? staffR.data : []).find(function (s) {
+        return String(s.staff_id || '').trim().toUpperCase() === code;
+      });
+      if (staff) {
+        return await idcScanStaffFlow(code, staff);
+      }
+
+      // Neither learner nor staff.
+      qrScanShowFatal(
+        'Card not recognised',
+        'The code "' + code + '" is not in the system. ' +
+        'If this is a new card, ask the office to register it first.'
+      );
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'unknown', action: 'lookup', success: false,
+        detail: 'No learner or staff match'
+      });
+      return true;
+    }
+
+    // Unknown code pattern.
+    qrScanShowFatal(
+      'Card not recognised',
+      'The code on this card does not match any known format.'
+    );
+    await window.TIS.logScanEvent({
+      code: code, code_type: 'unknown', action: 'lookup', success: false,
+      detail: 'Bad pattern'
+    });
+    return true;
+  }
+
+  // ================================================================
+  // [S14b.1] LEARNER SCAN
+  //   First scan of the day → Morning present (\)
+  //   Second scan same day  → Afternoon present (\ /)
+  //   No prompts. Just show the result.
+  // ================================================================
+  async function idcScanLearnerFlow(code, learner) {
+    // We need the active term to record attendance against.
+    qrScanSetStage('Recording attendance…');
+    startLoader();
+    const activeTermR = await window.TIS.getActiveTerm();
+    stopLoader();
+
+    if (!activeTermR || !activeTermR.ok || !activeTermR.data) {
+      qrScanShowFatal(
+        'No active term',
+        'The school has not set an active term. ' +
+        'Ask an operator to set one from the Terms tab.'
+      );
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'learner',
+        actor_id: learner.id, actor_name: learner.name || '',
+        action: 'attendance', success: false, detail: 'No active term'
+      });
+      return true;
+    }
+    const term = activeTermR.data;
+
+    startLoader();
+    const r = await window.TIS.recordLearnerScan(
+      learner.id, term.term_type, term.year, 'ID-card scan'
+    );
+    stopLoader();
+
+    if (!r || !r.ok) {
+      qrScanShowFatal('Attendance not recorded', (r && r.error) || 'Unknown error.');
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'learner',
+        actor_id: learner.id, actor_name: learner.name || '',
+        action: 'attendance', success: false, detail: (r && r.error) || 'Unknown'
+      });
+      return true;
+    }
+
+    const action = r.data.action;
+    const mark = r.data.mark;
+
+    let title = '✓ Present';
+    let subtitleLine = '';
+
+    if (action === 'morning') {
+      title = '✓ Present — Morning';
+      subtitleLine = 'First scan of the day.';
+    } else if (action === 'afternoon') {
+      title = '✓ Present — Afternoon';
+      subtitleLine = 'Both morning and afternoon now recorded.';
+    } else if (action === 'already-both') {
+      title = '✓ Already recorded';
+      subtitleLine = 'Both morning and afternoon were already marked today.';
+    }
+
+    qrScanShowSuccess(title, [
+      '<b>' + esc(learner.name || '') + '</b>',
+      'PIN: ' + esc(learner.pin || ''),
+      'Class: ' + esc(learner.class_name || '—'),
+      'Term: ' + esc(term.label || (term.term_type.toUpperCase() + ' TERM ' + term.year)),
+      'Mark: <b>' + esc(mark) + '</b>',
+      subtitleLine ? '<div style="margin-top:10px;font-size:13px;color:#666;">' + esc(subtitleLine) + '</div>' : ''
+    ]);
+
+    await window.TIS.logScanEvent({
+      code: code, code_type: 'learner',
+      actor_id: learner.id, actor_name: learner.name || '',
+      action: 'attendance', success: true,
+      detail: 'mark=' + mark + ' action=' + action
+    });
+    return true;
+  }
+
+  // ================================================================
+  // [S14b.2] STAFF SCAN
+  //   Reuses the exact smart-scan logic used by /g/<token>.
+  //   We do NOT prompt for Staff ID — the code on the card already
+  //   identifies the staff. Everything else is identical.
+  // ================================================================
+  async function idcScanStaffFlow(code, staff) {
+    const today = new Date().toISOString().slice(0, 10);
+
+    qrScanSetStage('Checking today\'s activity…');
+    startLoader();
+    const attR = await window.TIS.listStaffAttendanceToday(today);
+    const mvR  = await window.TIS.listStaffMovementsToday(today);
+    stopLoader();
+
+    const attRow = (attR && attR.ok ? attR.data : []).find(function (a) { return a.staff_id === staff.id; });
+    const movements = (mvR && mvR.ok ? mvR.data : []).filter(function (mm) { return mm.staff_id === staff.id; });
+    const openMovement = movements.find(function (mm) { return !mm.time_in; });
+
+    // Case 1: no clock-in yet today → Clock IN.
+    if (!attRow || !attRow.clock_in) {
+      return await idcStaffDoClockIn(code, staff);
+    }
+
+    // Case 2: already clocked out → nothing to do.
+    if (attRow.clock_out) {
+      qrScanShowFatal(
+        'Already clocked out',
+        (staff.full_name || staff.staff_id) + ' already clocked out today. ' +
+        'See an admin if this is wrong.'
+      );
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'clock-out', success: false, detail: 'Already clocked out'
+      });
+      return true;
+    }
+
+    // Case 3: there is a movement with no time_in → record return.
+    if (openMovement) {
+      return await idcStaffDoMovementIn(code, staff, openMovement);
+    }
+
+    // Case 4: clocked in, not yet clocked out, no open movement →
+    //         ask the operator what this scan means.
+    return await idcStaffAskMovementOrClockOut(code, staff);
+  }
+
+  async function idcStaffDoClockIn(code, staff) {
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dateISO = now.toISOString().slice(0, 10);
+
+    qrScanSetStage('Clocking in…');
+    startLoader();
+    const r = await window.TIS.upsertStaffAttendance({
+      staff_id:        staff.id,
+      attendance_date: dateISO,
+      clock_in:        t,
+      status:          'Present',
+      logged_by:       'ID-card scan',
+      source:          'QR'
+    });
+    stopLoader();
+
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Clocked IN', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'Time: <b>' + t + '</b>',
+        'Date: ' + dateISO
+      ]);
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'clock-in', success: true, detail: 'time=' + t
+      });
+    } else {
+      qrScanShowFatal('Clock-in failed', (r && r.error) || 'Unknown error.');
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'clock-in', success: false, detail: (r && r.error) || 'Unknown'
+      });
+    }
+    return true;
+  }
+
+  async function idcStaffDoMovementOut(code, staff) {
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dateISO = now.toISOString().slice(0, 10);
+
+    const info = await qrScanPromptMovementInfo();
+    if (!info) return true;
+
+    qrScanSetStage('Recording movement…');
+    startLoader();
+    const r = await window.TIS.createStaffMovement({
+      staff_id:      staff.id,
+      movement_date: dateISO,
+      time_out:      t,
+      time_in:       null,
+      destination:   info.destination,
+      purpose:       info.purpose,
+      logged_by:     'ID-card scan'
+    });
+    stopLoader();
+
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Movement OUT recorded', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'Time out: <b>' + t + '</b>',
+        'Destination: ' + esc(info.destination || '—'),
+        'Purpose: ' + esc(info.purpose || '—'),
+        '<div style="margin-top:14px;font-size:13px;color:#666;">' +
+          'Scan the card again when you return.' +
+        '</div>'
+      ]);
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'movement-out', success: true,
+        detail: 'to=' + (info.destination || '') + ' purpose=' + (info.purpose || '')
+      });
+    } else {
+      qrScanShowFatal('Movement could not be recorded', (r && r.error) || 'Unknown error.');
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'movement-out', success: false, detail: (r && r.error) || 'Unknown'
+      });
+    }
+    return true;
+  }
+
+  async function idcStaffDoMovementIn(code, staff, openMovement) {
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+    qrScanSetStage('Recording return…');
+    startLoader();
+    const r = await window.TIS.closeStaffMovement(openMovement.id, t);
+    stopLoader();
+
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Movement IN recorded', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'Went out at: <b>' + esc(openMovement.time_out || '—') + '</b>',
+        'Returned at: <b>' + t + '</b>'
+      ]);
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'movement-in', success: true, detail: 'time=' + t
+      });
+    } else {
+      qrScanShowFatal('Return could not be recorded', (r && r.error) || 'Unknown error.');
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'movement-in', success: false, detail: (r && r.error) || 'Unknown'
+      });
+    }
+    return true;
+  }
+
+  function idcStaffAskMovementOrClockOut(code, staff) {
+    return new Promise(function (resolve) {
+      qrScanSetBody(
+        '<p style="font-size:14px;color:#333;margin:0 0 4px;">' +
+          'Welcome back, <b>' + esc(staff.full_name || '') + '</b>.' +
+        '</p>' +
+        '<p style="font-size:13px;color:#666;margin:0 0 18px;">' +
+          'What do you want to do with this scan?' +
+        '</p>' +
+        '<button id="idcChoiceMove" type="button" ' +
+          'style="width:100%;padding:16px;font-size:15px;background:#d4a017;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;margin-bottom:10px;">' +
+          '<i class="fas fa-route"></i> Log a movement</button>' +
+        '<button id="idcChoiceOut" type="button" ' +
+          'style="width:100%;padding:16px;font-size:15px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;margin-bottom:10px;">' +
+          '<i class="fas fa-sign-out-alt"></i> Clock OUT for the day</button>' +
+        '<button id="idcChoiceCancel" type="button" ' +
+          'style="width:100%;padding:12px;font-size:13px;background:#eee;color:#333;border:none;border-radius:8px;cursor:pointer;">' +
+          'Cancel</button>'
+      );
+      const mBtn = document.getElementById('idcChoiceMove');
+      const oBtn = document.getElementById('idcChoiceOut');
+      const cBtn = document.getElementById('idcChoiceCancel');
+      if (mBtn) mBtn.addEventListener('click', async function () {
+        await idcStaffDoMovementOut(code, staff);
+        resolve(true);
+      });
+      if (oBtn) oBtn.addEventListener('click', async function () {
+        await idcStaffDoClockOut(code, staff);
+        resolve(true);
+      });
+      if (cBtn) cBtn.addEventListener('click', function () {
+        qrScanShowFatal('Cancelled', 'You can close this page.');
+        resolve(true);
+      });
+    });
+  }
+
+  async function idcStaffDoClockOut(code, staff) {
+    const now = new Date();
+    const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const dateISO = now.toISOString().slice(0, 10);
+
+    qrScanSetStage('Clocking out…');
+    startLoader();
+    const r = await window.TIS.upsertStaffAttendance({
+      staff_id:        staff.id,
+      attendance_date: dateISO,
+      clock_out:       t,
+      status:          'Present',
+      logged_by:       'ID-card scan',
+      source:          'QR'
+    });
+    stopLoader();
+
+    if (r && r.ok) {
+      qrScanShowSuccess('✓ Clocked OUT', [
+        '<b>' + esc(staff.full_name || '') + '</b>',
+        'Staff No: ' + esc(staff.staff_id || ''),
+        'Time: <b>' + t + '</b>',
+        'Have a good evening.'
+      ]);
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'clock-out', success: true, detail: 'time=' + t
+      });
+    } else {
+      qrScanShowFatal('Clock-out failed', (r && r.error) || 'Unknown error.');
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'staff',
+        actor_id: staff.id, actor_name: staff.full_name || '',
+        action: 'clock-out', success: false, detail: (r && r.error) || 'Unknown'
+      });
+    }
+    return true;
+  }
+
+  // ================================================================
+  // [S14b.3] VISITOR SCAN
+  //   First scan of the day for a card → ask name / purpose / agency
+  //   Second scan same day for the same card → clock out
+  // ================================================================
+  async function idcScanVisitorFlow(code) {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Is there an open visit for this card today?
+    qrScanSetStage('Checking card…');
+    startLoader();
+    let openVisit = null;
+    try {
+      const sb = window.supabase
+        ? window.supabase.createClient
+          ? null  // app.js has no direct SDK handle; use TIS instead
+          : null
+        : null;
+      // Fall through to a TIS-level check via recordVisitorScan — but
+      // to avoid double insert, we query TIS.listVisitsToday if available.
+      if (typeof window.TIS.listVisitsToday === 'function') {
+        const r = await window.TIS.listVisitsToday(today);
+        if (r && r.ok) {
+          openVisit = (r.data || []).find(function (v) {
+            return String(v.card_code || '').toUpperCase() === code && !v.time_out;
+          });
+        }
+      }
+    } catch (e) { /* silent */ }
+    stopLoader();
+
+    if (openVisit) {
+      // Second scan → close out.
+      return await idcVisitorCheckOut(code, openVisit);
+    }
+    // First scan → check in.
+    return await idcVisitorCheckIn(code);
+  }
+
+  async function idcVisitorCheckIn(code) {
+    // Prompt: name
+    const visitorName = await idcPromptOneLine(
+      'Visitor name',
+      'Enter the visitor\'s full name.',
+      'e.g. Mr Adebayo Johnson'
+    );
+    if (!visitorName) {
+      qrScanShowFatal('Cancelled', 'No visit was recorded.');
+      return true;
+    }
+
+    // Prompt: purpose (Official / Personal)
+    const purpose = await idcPromptChoice(
+      'Purpose of visit',
+      'Is this visit official or personal?',
+      [
+        { value: 'Official', label: 'Official' },
+        { value: 'Personal', label: 'Personal' }
+      ]
+    );
+    if (!purpose) {
+      qrScanShowFatal('Cancelled', 'No visit was recorded.');
+      return true;
+    }
+
+    let agency = null;
+    let agencyOther = null;
+
+    if (purpose === 'Official') {
+      const agencyChoice = await idcPromptChoice(
+        'Which agency?',
+        'Select the agency the visitor is representing.',
+        [
+          { value: 'Ministry Of Education',  label: 'Ministry Of Education' },
+          { value: 'Ministry of Health',     label: 'Ministry of Health' },
+          { value: 'Internal Revenue',       label: 'Internal Revenue' },
+          { value: 'NAPPS',                  label: 'NAPPS' },
+          { value: 'Community',              label: 'Community' },
+          { value: 'Police/Security',        label: 'Police / Security' },
+          { value: '__OTHER__',              label: 'Other (please specify)' }
+        ]
+      );
+      if (!agencyChoice) {
+        qrScanShowFatal('Cancelled', 'No visit was recorded.');
+        return true;
+      }
+      if (agencyChoice === '__OTHER__') {
+        const other = await idcPromptOneLine(
+          'Please specify',
+          'Which agency is the visitor from?',
+          'e.g. WAEC, NECO, Ministry of Works'
+        );
+        if (!other) {
+          qrScanShowFatal('Cancelled', 'No visit was recorded.');
+          return true;
+        }
+        agency = 'Other';
+        agencyOther = other;
+      } else {
+        agency = agencyChoice;
+      }
+    }
+
+    qrScanSetStage('Recording visit…');
+    startLoader();
+    const r = await window.TIS.recordVisitorScan({
+      card_code:    code,
+      visitor_name: visitorName,
+      purpose:      purpose,
+      agency:       agency,
+      agency_other: agencyOther,
+      recorded_by:  'ID-card scan'
+    });
+    stopLoader();
+
+    if (r && r.ok) {
+      const timeIn = (r.data.row && r.data.row.time_in) || '';
+      qrScanShowSuccess('✓ Visitor checked in', [
+        '<b>' + esc(visitorName) + '</b>',
+        'Purpose: ' + esc(purpose),
+        agency ? 'Agency: ' + esc(agency) + (agencyOther ? ' — ' + esc(agencyOther) : '') : '',
+        'Time in: <b>' + esc(timeIn) + '</b>',
+        '<div style="margin-top:14px;font-size:13px;color:#666;">' +
+          'Scan this same card again when the visitor leaves, to record their time out.' +
+        '</div>'
+      ]);
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'visitor',
+        actor_id: null, actor_name: visitorName,
+        action: 'visit-in', success: true,
+        detail: 'purpose=' + purpose + (agency ? ' agency=' + agency : '')
+      });
+    } else {
+      qrScanShowFatal('Visit not recorded', (r && r.error) || 'Unknown error.');
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'visitor',
+        actor_id: null, actor_name: visitorName,
+        action: 'visit-in', success: false, detail: (r && r.error) || 'Unknown'
+      });
+    }
+    return true;
+  }
+
+  async function idcVisitorCheckOut(code, openVisit) {
+    qrScanSetStage('Recording departure…');
+    startLoader();
+    const r = await window.TIS.recordVisitorScan({
+      card_code:    code,
+      visitor_name: openVisit.visitor_name || '',
+      purpose:      openVisit.purpose || '',
+      agency:       openVisit.agency || null,
+      agency_other: openVisit.agency_other || null,
+      recorded_by:  'ID-card scan'
+    });
+    stopLoader();
+
+    if (r && r.ok) {
+      const timeOut = (r.data.row && r.data.row.time_out) || '';
+      qrScanShowSuccess('✓ Visitor checked out', [
+        '<b>' + esc(openVisit.visitor_name || '') + '</b>',
+        'Time in: <b>' + esc(openVisit.time_in || '—') + '</b>',
+        'Time out: <b>' + esc(timeOut) + '</b>'
+      ]);
+      await window.TIS.logScanEvent({
+        code: code, code_type: 'visitor',
+        actor_id: null, actor_name: openVisit.visitor_name || '',
+        action: 'visit-out', success: true, detail: 'time=' + timeOut
+      });
+    } else {
+      qrScanShowFatal('Departure not recorded', (r && r.error) || 'Unknown error.');
+    }
+    return true;
+  }
+
+  // ================================================================
+  // [S14b.4] Small prompt helpers used by the visitor flow
+  // ================================================================
+  function idcPromptOneLine(title, subtitle, placeholder) {
+    return new Promise(function (resolve) {
+      qrScanSetBody(
+        '<p style="font-size:14px;color:#333;margin:0 0 6px;">' +
+          '<b>' + esc(title) + '</b>' +
+        '</p>' +
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">' + esc(subtitle || '') + '</p>' +
+        '<input id="idcPromptInput" type="text" placeholder="' + escAttr(placeholder || '') + '" ' +
+          'style="width:100%;padding:14px;font-size:16px;border:2px solid #0d4d26;border-radius:8px;box-sizing:border-box;">' +
+        '<div style="display:flex;gap:10px;margin-top:16px;">' +
+          '<button id="idcPromptCancel" type="button" ' +
+            'style="flex:1;padding:12px;font-size:14px;background:#eee;color:#333;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Cancel</button>' +
+          '<button id="idcPromptGo" type="button" ' +
+            'style="flex:2;padding:12px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Continue</button>' +
+        '</div>'
+      );
+      const inp = document.getElementById('idcPromptInput');
+      const goBtn = document.getElementById('idcPromptGo');
+      const cancelBtn = document.getElementById('idcPromptCancel');
+      if (inp) { inp.value = ''; setTimeout(function () { inp.focus(); }, 80); }
+      if (goBtn) goBtn.addEventListener('click', submit);
+      if (cancelBtn) cancelBtn.addEventListener('click', function () { resolve(''); });
+      if (inp) inp.addEventListener('keypress', function (e) { if (e.key === 'Enter') submit(); });
+      function submit() {
+        const v = inp ? String(inp.value || '').trim() : '';
+        if (!v) { if (inp) inp.style.borderColor = '#c0392b'; return; }
+        resolve(v);
+      }
+    });
+  }
+
+  function idcPromptChoice(title, subtitle, options) {
+    return new Promise(function (resolve) {
+      let html = '<p style="font-size:14px;color:#333;margin:0 0 6px;">' +
+                 '<b>' + esc(title) + '</b></p>' +
+                 '<p style="font-size:13px;color:#666;margin:0 0 14px;">' + esc(subtitle || '') + '</p>';
+      options.forEach(function (opt, i) {
+        html += '<button id="idcChoice_' + i + '" type="button" ' +
+                'style="width:100%;padding:14px;font-size:15px;background:#0d4d26;color:#fff;' +
+                'border:none;border-radius:8px;cursor:pointer;font-weight:700;margin-bottom:10px;">' +
+                esc(opt.label) + '</button>';
+      });
+      html += '<button id="idcChoiceCancel" type="button" ' +
+              'style="width:100%;padding:12px;font-size:13px;background:#eee;color:#333;' +
+              'border:none;border-radius:8px;cursor:pointer;">Cancel</button>';
+      qrScanSetBody(html);
+
+      options.forEach(function (opt, i) {
+        const b = document.getElementById('idcChoice_' + i);
+        if (b) b.addEventListener('click', function () { resolve(opt.value); });
+      });
+      const c = document.getElementById('idcChoiceCancel');
+      if (c) c.addEventListener('click', function () { resolve(''); });
+    });
+  }
   // ================================================================
   // [S15] REPORTS
   // ================================================================
