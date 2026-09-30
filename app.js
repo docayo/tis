@@ -1666,21 +1666,8 @@
       renderStaff(State.cachedStaff);
       renderStaffStats(State.cachedStaff);
       return;
-    }
-
+   }   
     setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
-    startLoader();
-    const r = await window.TIS.listStaff();
-    stopLoader();
-    if (!r || !r.ok) {
-      setHTML('staffGrid', errorHTML('Could not load staff', r && r.error));
-      return;
-    }
-    State.cachedStaff = r.data || [];
-    State.staffFetchedAt = now;
-    renderStaff(State.cachedStaff);
-    renderStaffStats(State.cachedStaff);
-  }    setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
     startLoader();
     const r = await window.TIS.listStaff();
     stopLoader();
