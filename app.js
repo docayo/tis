@@ -1620,7 +1620,273 @@
     html += '</tbody></table></body></html>';
     w.document.write(html); w.document.close(); setTimeout(function () { w.print(); }, 250);
   }
+  // ================================================================
+  // [S07.x] BULK PHOTO UPLOAD — learners and staff
+  //   ZIP of photos, named <code>.jpg / .png / .webp.
+  //   For learners: <code> = learner PIN  (e.g. TIS0241.jpg)
+  //   For staff:    <code> = staff_id    (e.g. TIS2406.jpg)
+  //
+  //   Per-file flow:
+  //     1. Look up the learner/staff by code.
+  //     2. If they already have a photo_url → ask "replace?".
+  //     3. Upload via TIS.uploadAsset('<folder>', <code>.<ext>, file).
+  //     4. Save the returned URL (with cache-bust) into photo_url.
+  //
+  //   All work happens client-side; nothing touches the backend
+  //   except the per-file uploadAsset call.
+  // ================================================================
+  function openBulkPhotoUploadDialog(kind) {
+    if (typeof JSZip === 'undefined') {
+      showToast('JSZip not loaded — reload the page.', 'error');
+      return;
+    }
+    const isStaff = kind === 'staff';
+    const label   = isStaff ? 'Staff' : 'Learners';
 
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box" style="max-width:520px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Bulk Upload Photos — ' + label + '</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    html += '<p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6;">';
+    html += 'Select a ZIP file containing one photo per ' + (isStaff ? 'staff member' : 'learner') + '. ';
+    html += 'Each photo must be named <code>' + (isStaff ? 'TIS2406.jpg' : 'TIS0241.jpg') + '</code> — ';
+    html += 'the file name must exactly match the ' + (isStaff ? 'Staff ID' : 'PIN') + '. ';
+    html += 'Accepted formats: JPG, PNG, WEBP. Size limit: 5 MB per photo.';
+    html += '</p>';
+
+    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:12px;font-size:11px;color:#555;line-height:1.6;">';
+    html += '<b>Compression tip:</b> if your source photos are 3–4 MB each, compress them first. ';
+    html += 'Free tool: <b>Caesium Image Compressor</b> (caesium.app). ';
+    html += 'For 100+ photos, aim for ~300–500 KB each to keep upload under 10 minutes.';
+    html += '</div>';
+
+    html += '<input type="file" id="bulkPhotoZip" accept=".zip,application/zip" style="margin-bottom:14px;">';
+    html += '<div id="bulkPhotoFeedback" style="font-size:12px;color:#c0392b;margin-top:6px;min-height:16px;"></div>';
+
+    html += '<div id="bulkPhotoProgressWrap" style="display:none;margin-top:16px;">';
+    html += '<div style="background:#e8f5e9;border-radius:6px;height:12px;overflow:hidden;">';
+    html += '<div id="bulkPhotoBar" style="background:#0d4d26;height:100%;width:0%;transition:width .2s;"></div>';
+    html += '</div>';
+    html += '<div id="bulkPhotoProgressText" style="font-size:12px;color:#555;margin-top:6px;text-align:center;">Starting…</div>';
+    html += '</div>';
+
+    html += '<div style="text-align:right;margin-top:16px;">';
+    html += '<button class="btn btn-secondary" type="button" onclick="TIS.closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-primary" id="bulkPhotoGo" type="button">Start upload</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+
+    const go = document.getElementById('bulkPhotoGo');
+    if (go) go.addEventListener('click', function () { submitBulkPhotoUpload(kind); });
+  }
+
+  async function submitBulkPhotoUpload(kind) {
+    const inp = document.getElementById('bulkPhotoZip');
+    const fb  = document.getElementById('bulkPhotoFeedback');
+    const setFb = function (m) { if (fb) fb.textContent = m || ''; };
+
+    if (!inp || !inp.files || !inp.files.length) { setFb('Choose a ZIP file first.'); return; }
+    const zipFile = inp.files[0];
+    if (zipFile.size > 200 * 1024 * 1024) {
+      setFb('ZIP is larger than 200 MB. Please split it into smaller batches.'); return;
+    }
+
+    const isStaff = kind === 'staff';
+    const folder  = isStaff ? 'staff' : 'learners';
+    const goBtn   = document.getElementById('bulkPhotoGo');
+    if (goBtn) goBtn.disabled = true;
+    setFb('');
+
+    // Progress UI
+    const wrap = document.getElementById('bulkPhotoProgressWrap');
+    const bar  = document.getElementById('bulkPhotoBar');
+    const txt  = document.getElementById('bulkPhotoProgressText');
+    if (wrap) wrap.style.display = 'block';
+
+    function setProgress(done, total, extra) {
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      if (bar) bar.style.width = pct + '%';
+      if (txt) txt.textContent = done + ' of ' + total + ' processed' + (extra ? ' — ' + extra : '');
+    }
+    setProgress(0, 0, 'unzipping…');
+
+    // ---------- Load and read the ZIP ----------
+    let zip;
+    try {
+      zip = await JSZip.loadAsync(zipFile);
+    } catch (err) {
+      setFb('Could not read the ZIP: ' + (err && err.message ? err.message : err));
+      if (goBtn) goBtn.disabled = false;
+      return;
+    }
+
+    // Collect files that look like images
+    const entries = [];
+    zip.forEach(function (relPath, entry) {
+      if (entry.dir) return;
+      const lower = relPath.toLowerCase();
+      if (!/\.(jpg|jpeg|png|webp)$/.test(lower)) return;
+      // Strip folder prefixes — we only care about the filename
+      const justName = relPath.split('/').pop();
+      const extRaw = (justName.split('.').pop() || '').toLowerCase();
+      const code = justName.substring(0, justName.lastIndexOf('.')).trim().toUpperCase();
+      if (!code) return;
+      entries.push({ name: justName, code: code, ext: extRaw, entry: entry });
+    });
+
+    if (entries.length === 0) {
+      setFb('No image files found in the ZIP.');
+      if (goBtn) goBtn.disabled = false;
+      return;
+    }
+
+    // ---------- Load the lookup list ----------
+    let lookup = {};
+    try {
+      if (isStaff) {
+        const r = await window.TIS.listStaff();
+        if (!r || !r.ok) { setFb('Could not load staff list.'); if (goBtn) goBtn.disabled = false; return; }
+        (r.data || []).forEach(function (s) {
+          const key = String(s.staff_id || '').trim().toUpperCase();
+          if (key) lookup[key] = { id: s.id, name: s.full_name || '', existingPhoto: s.photo_url || '' };
+        });
+      } else {
+        const r = await window.TIS.listLearners();
+        if (!r || !r.ok) { setFb('Could not load learners list.'); if (goBtn) goBtn.disabled = false; return; }
+        (r.data || []).forEach(function (l) {
+          const key = String(l.pin || '').trim().toUpperCase();
+          if (key) lookup[key] = { id: l.id, name: l.name || '', existingPhoto: l.photo_url || '' };
+        });
+      }
+    } catch (err) {
+      setFb('Could not load ' + (isStaff ? 'staff' : 'learners') + ' list.');
+      if (goBtn) goBtn.disabled = false;
+      return;
+    }
+
+    // ---------- Ask about overwrites up-front ----------
+    const willOverwrite = {};
+    const alreadyHasPhoto = entries.filter(function (e) {
+      return lookup[e.code] && lookup[e.code].existingPhoto;
+    });
+
+    if (alreadyHasPhoto.length > 0) {
+      const msg = alreadyHasPhoto.length + ' ' + (isStaff ? 'staff member(s)' : 'learner(s)') +
+        ' in your ZIP already have a photo.\n\n' +
+        'OK  = replace ALL of them with the new photo.\n' +
+        'Cancel = skip them, keep their existing photo.\n\n' +
+        'You can choose differently per person later.';
+      const replaceAll = confirm(msg);
+      alreadyHasPhoto.forEach(function (e) { willOverwrite[e.code] = replaceAll; });
+    }
+
+    // ---------- Process each entry ----------
+    let okCount = 0, skipCount = 0, failCount = 0;
+    const failList = [];
+
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const lk = lookup[e.code];
+
+      if (!lk) {
+        failCount++;
+        failList.push(e.code + ' — no matching ' + (isStaff ? 'staff' : 'learner') + ' found');
+        setProgress(i + 1, entries.length, 'skipped ' + e.code);
+        continue;
+      }
+
+      if (lk.existingPhoto && willOverwrite[e.code] === false) {
+        skipCount++;
+        setProgress(i + 1, entries.length, 'skipped ' + e.code);
+        continue;
+      }
+
+      // Read the file bytes and build a Blob we can hand to uploadAsset.
+      let blob;
+      try {
+        const buf = await e.entry.async('blob');
+        blob = new File([buf], lk ? (e.code + '.' + e.ext) : (e.code + '.' + e.ext), {
+          type: e.ext === 'png' ? 'image/png'
+              : e.ext === 'webp' ? 'image/webp'
+              : 'image/jpeg'
+        });
+      } catch (err) {
+        failCount++;
+        failList.push(e.code + ' — could not read from ZIP');
+        setProgress(i + 1, entries.length);
+        continue;
+      }
+
+      const filename = e.code + '.' + e.ext;
+      const r = await window.TIS.uploadAsset(folder, filename, blob);
+      if (!r || !r.ok) {
+        failCount++;
+        failList.push(e.code + ' — upload failed: ' + ((r && r.error) || 'unknown'));
+        setProgress(i + 1, entries.length);
+        continue;
+      }
+
+      // Save URL with cache-bust
+      const url = r.data.url + '?t=' + Date.now();
+      let upd;
+      if (isStaff) upd = await window.TIS.updateStaff(lk.id, { photo_url: url });
+      else         upd = await window.TIS.updateLearner(lk.id, { photo_url: url });
+
+      if (!upd || !upd.ok) {
+        failCount++;
+        failList.push(e.code + ' — uploaded but DB update failed');
+      } else {
+        okCount++;
+      }
+      setProgress(i + 1, entries.length);
+    }
+
+    // ---------- Summary ----------
+    bulkPhotoShowSummary(okCount, skipCount, failCount, failList, kind);
+
+    // Bust the cache so the grid shows fresh data on next open.
+    if (isStaff) {
+      State.staffFetchedAt = 0;
+      if (typeof loadStaff === 'function') loadStaff();
+    } else {
+      State.learnersFetchedAt = 0;
+      if (typeof loadLearners === 'function') loadLearners();
+    }
+
+    if (goBtn) goBtn.disabled = false;
+  }
+
+  function bulkPhotoShowSummary(okCount, skipCount, failCount, failList, kind) {
+    const label = kind === 'staff' ? 'staff' : 'learners';
+    let html = '<h2 style="margin:0 0 12px;color:#0d4d26;font-size:20px;">Upload complete</h2>';
+    html += '<div style="font-size:14px;line-height:1.8;">';
+    html += '<div><b>' + okCount + '</b> photo(s) uploaded and saved.</div>';
+    if (skipCount) html += '<div>' + skipCount + ' skipped (kept existing photo).</div>';
+    if (failCount) html += '<div style="color:#c0392b;"><b>' + failCount + '</b> failed.</div>';
+    html += '</div>';
+
+    if (failList.length) {
+      html += '<div style="margin-top:14px;background:#fff5f5;border:1px solid #ffcdd2;border-radius:6px;padding:10px;max-height:220px;overflow-y:auto;">';
+      html += '<div style="font-weight:700;color:#c0392b;margin-bottom:6px;font-size:13px;">Failures</div>';
+      html += '<ul style="margin:0;padding-left:18px;font-size:12px;line-height:1.7;color:#333;">';
+      failList.forEach(function (f) { html += '<li>' + esc(f) + '</li>'; });
+      html += '</ul></div>';
+    }
+
+    html += '<div style="margin-top:16px;text-align:right;">';
+    html += '<button class="btn btn-primary" onclick="location.reload()">Reload portal</button> ';
+    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button>';
+    html += '</div>';
+
+    setHTML('modalContainer',
+      '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">' +
+      '<div class="modal-box" style="max-width:520px;" onclick="event.stopPropagation()">' +
+      html + '</div></div>');
+  }
+
+  window.openBulkPhotoUploadDialog = openBulkPhotoUploadDialog;
+  window.submitBulkPhotoUpload    = submitBulkPhotoUpload;
   // ================================================================
   // Expose to window (inline handlers)
   // ================================================================
