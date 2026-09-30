@@ -1638,7 +1638,9 @@
   window.printLearnerList        = printLearnerList;
   window.closeLearnerModal       = closeLearnerModal;
   window.downloadLearnerTemplate = downloadLearnerTemplate;
-  window.uploadLearnerUpdates    = uploadLearnerUpdates;
+ window.uploadLearnerUpdates    = uploadLearnerUpdates;
+  window.openLearnerPhotoModal   = openLearnerPhotoModal;
+  window.submitLearnerPhoto      = submitLearnerPhoto;
   
   // ================================================================
   // [S08] STAFF
