@@ -457,7 +457,17 @@
   // ================================================================
   // Load & render the grid
   // ================================================================
-  async function loadLearners() {
+   async function loadLearners() {
+    // Fast path: if we already fetched in the last 10 minutes,
+    // just re-render from cache. No network call.
+    const now = Date.now();
+    if (State.cachedLearners && State.cachedLearners.length > 0 &&
+        State.learnersFetchedAt && (now - State.learnersFetchedAt) < 10 * 60 * 1000) {
+      renderLearners(State.cachedLearners);
+      renderLearnerStats(State.cachedLearners);
+      return;
+    }
+
     setHTML('learnersGrid', pageLoaderHTML('Loading learners…'));
     startLoader();
     const r = await window.TIS.listLearners();
@@ -467,6 +477,7 @@
       return;
     }
     State.cachedLearners = r.data || [];
+    State.learnersFetchedAt = now;
     renderLearners(State.cachedLearners);
     renderLearnerStats(State.cachedLearners);
   }
@@ -1640,7 +1651,29 @@
   const STAFF_STATUSES    = ['Active', 'Inactive'];
 
   async function loadStaff() {
+    // Fast path: if we already fetched in the last 10 minutes,
+    // just re-render from cache. No network call.
+    const now = Date.now();
+    if (State.cachedStaff && State.cachedStaff.length > 0 &&
+        State.staffFetchedAt && (now - State.staffFetchedAt) < 10 * 60 * 1000) {
+      renderStaff(State.cachedStaff);
+      renderStaffStats(State.cachedStaff);
+      return;
+    }
+
     setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
+    startLoader();
+    const r = await window.TIS.listStaff();
+    stopLoader();
+    if (!r || !r.ok) {
+      setHTML('staffGrid', errorHTML('Could not load staff', r && r.error));
+      return;
+    }
+    State.cachedStaff = r.data || [];
+    State.staffFetchedAt = now;
+    renderStaff(State.cachedStaff);
+    renderStaffStats(State.cachedStaff);
+  }    setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
     startLoader();
     const r = await window.TIS.listStaff();
     stopLoader();
