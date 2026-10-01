@@ -1,12 +1,6 @@
 {
   "rewrites": [
     { "source": "/g/:token", "destination": "/index.html" },
-    { "source": "/s/:code",  "destination": "/index.html" }
-  ]
-}
-{
-  "rewrites": [
-    { "source": "/g/:token", "destination": "/index.html" },
     { "source": "/s/:code",  "destination": "/index.html" },
     { "source": "/rec",      "destination": "/rec.html" }
   ]
