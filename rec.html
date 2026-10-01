@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TIS Recovery</title>
+<link rel="icon" href="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w64" type="image/png">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #0d4d26;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 24px 16px;
+    line-height: 1.6;
+  }
+  .shell {
+    max-width: 900px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #0d4d26, #1a8a3a);
+    color: #ffffff;
+    padding: 24px 28px;
+  }
+  .header h1 {
+    margin: 0 0 4px;
+    font-size: 22px;
+    letter-spacing: 1px;
+  }
+  .header .sub {
+    font-size: 12px;
+    opacity: 0.85;
+    font-style: italic;
+  }
+  .banner {
+    background: #fff3cd;
+    border-left: 4px solid #d4a017;
+    padding: 12px 20px;
+    font-size: 13px;
+    color: #7a5a00;
+  }
+  .content {
+    padding: 24px 28px;
+  }
+  .content h1, .content h2, .content h3 {
+    color: #0d4d26;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+  .content h1 { font-size: 22px; margin-top: 0; }
+  .content h2 { font-size: 18px; }
+  .content h3 { font-size: 16px; }
+  .content p {
+    font-size: 14px;
+    color: #333;
+    margin: 0 0 12px;
+  }
+  .content pre, .content code {
+    font-family: "Courier New", Consolas, monospace;
+  }
+  .content code {
+    background: #eef2ef;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 13px;
+    color: #0d4d26;
+  }
+  .content pre {
+    background: #f4f7f5;
+    border-left: 3px solid #0d4d26;
+    padding: 12px 14px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    color: #1a1a1a;
+  }
+  .content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  .content th, .content td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid #e0e6e2;
+    vertical-align: top;
+  }
+  .content th {
+    background: #e8f5e9;
+    font-weight: 700;
+    color: #0d4d26;
+  }
+  .content ul, .content ol {
+    padding-left: 22px;
+    font-size: 14px;
+  }
+  .content li { margin-bottom: 4px; }
+  .content hr {
+    border: none;
+    border-top: 1px solid #e0e6e2;
+    margin: 20px 0;
+  }
+  .content strong { color: #0d4d26; }
+  .footer {
+    padding: 16px 28px;
+    border-top: 1px solid #e6e9f0;
+    font-size: 11px;
+    color: #666;
+    text-align: center;
+  }
+  .loader {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+    font-size: 14px;
+  }
+  .error-box {
+    background: #fff5f5;
+    border-left: 4px solid #c0392b;
+    padding: 14px 18px;
+    border-radius: 4px;
+    margin: 12px 0;
+    color: #7a1f15;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="header">
+    <h1>THE IDEAL SCHOOLS — Recovery</h1>
+    <div class="sub">Emergency recovery runbook</div>
+  </div>
+
+  <div class="banner">
+    <b>Read first:</b> do not run recovery unless you have exhausted the 3-step check at the top of the runbook.
+    If a specific record looks wrong, use the portal's edit tools — not recovery.
+  </div>
+
+  <div id="content" class="content">
+    <div class="loader">Loading runbook…</div>
+  </div>
+
+  <div class="footer">
+    TIS EMIS · Recovery page · If this page looks wrong, contact Dr Ayoola · 08067071557
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var RUNBOOK_URL = '/REC.md';
+  var RUNBOOK_CACHE_KEY = 'tis_runbook_cache_v1';
+
+  // ------- tiny markdown renderer (subset used by REC.md) -------
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function renderInline(s) {
+    return s
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  }
+
+  function renderMarkdown(md) {
+    var lines = String(md).split(/\r?\n/);
+    var out = [];
+    var i = 0;
+    var inCode = false;
+    var inList = false;
+    var inTable = false;
+    var tableRows = [];
+
+    function flushTable() {
+      if (!inTable) return;
+      if (tableRows.length === 0) { inTable = false; return; }
+      var head = tableRows[0];
+      var body = tableRows.length > 2 ? tableRows.slice(2) : [];
+      out.push('<table><thead><tr>');
+      head.forEach(function (c) { out.push('<th>' + renderInline(escapeHtml(c.trim())) + '</th>'); });
+      out.push('</tr></thead><tbody>');
+      body.forEach(function (row) {
+        out.push('<tr>');
+        row.forEach(function (c) { out.push('<td>' + renderInline(escapeHtml(c.trim())) + '</td>'); });
+        out.push('</tr>');
+      });
+      out.push('</tbody></table>');
+      tableRows = [];
+      inTable = false;
+    }
+
+    function flushList() {
+      if (!inList) return;
+      out.push('</ul>');
+      inList = false;
+    }
+
+    while (i < lines.length) {
+      var line = lines[i];
+
+      if (line.indexOf('```') === 0) {
+        if (inCode) { out.push('</pre>'); inCode = false; }
+        else { flushTable(); flushList(); out.push('<pre>'); inCode = true; }
+        i++; continue;
+      }
+      if (inCode) { out.push(escapeHtml(line)); i++; continue; }
+
+      if (line.indexOf('|') === 0 && line.lastIndexOf('|') > 0) {
+        flushList();
+        var cells = line.split('|').slice(1, -1);
+        tableRows.push(cells);
+        inTable = true;
+        i++; continue;
+      } else {
+        flushTable();
+      }
+
+      if (/^### /.test(line)) { flushList(); out.push('<h3>' + renderInline(escapeHtml(line.slice(4))) + '</h3>'); i++; continue; }
+      if (/^## /.test(line))  { flushList(); out.push('<h2>' + renderInline(escapeHtml(line.slice(3))) + '</h2>'); i++; continue; }
+      if (/^# /.test(line))   { flushList(); out.push('<h1>' + renderInline(escapeHtml(line.slice(2))) + '</h1>'); i++; continue; }
+
+      if (/^-{3,}\s*$/.test(line)) { flushList(); out.push('<hr>'); i++; continue; }
+
+      if (/^[-*] /.test(line)) {
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push('<li>' + renderInline(escapeHtml(line.slice(2))) + '</li>');
+        i++; continue;
+      } else {
+        flushList();
+      }
+
+      if (/^\s*$/.test(line)) { i++; continue; }
+
+      out.push('<p>' + renderInline(escapeHtml(line)) + '</p>');
+      i++;
+    }
+    if (inCode) out.push('</pre>');
+    flushTable();
+    flushList();
+    return out.join('\n');
+  }
+
+  function showError(msg, detail) {
+    var box = document.getElementById('content');
+    var html = '<div class="error-box"><b>Could not load the runbook.</b><br>' +
+               escapeHtml(msg) + '</div>';
+    if (detail) html += '<p style="font-size:13px;color:#666;">' + escapeHtml(detail) + '</p>';
+    html += '<p style="font-size:13px;"><b>Fallback:</b> open ' +
+            '<code>github.com/docayo/tis/blob/main/REC.md</code> in a browser with GitHub access.</p>';
+    box.innerHTML = html;
+  }
+
+  function loadRunbook() {
+    var box = document.getElementById('content');
+    var cached = null;
+    try { cached = localStorage.getItem(RUNBOOK_CACHE_KEY); } catch (e) {}
+    if (cached) box.innerHTML = renderMarkdown(cached);
+
+    fetch(RUNBOOK_URL, { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(function (md) {
+        try { localStorage.setItem(RUNBOOK_CACHE_KEY, md); } catch (e) {}
+        box.innerHTML = renderMarkdown(md);
+      })
+      .catch(function (err) {
+        if (!cached) showError('The file REC.md could not be fetched from the server.', err.message);
+      });
+  }
+
+  loadRunbook();
+})();
+</script>
+
+</body>
+</html>
