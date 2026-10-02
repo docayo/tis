@@ -7057,19 +7057,33 @@
       idcState.staffAll = (staffR && staffR.ok ? staffR.data : [])
         .filter(function (s) { return (s.status || 'Active') === 'Active'; });
 
+           // Pull the canonical class list first.
+      const classR = await window.TIS.listClasses();
+      const canonicalClasses = (classR && classR.ok ? classR.data : [])
+        .filter(function (c) { return c.is_active !== false; })
+        .sort(function (a, b) { return (a.sort_order || 9999) - (b.sort_order || 9999); })
+        .map(function (c) { return c.name; });
+      const canonicalSet = {};
+      canonicalClasses.forEach(function (n) { canonicalSet[n] = true; });
+
       const learners = (learnerR && learnerR.ok ? learnerR.data : [])
         .filter(function (l) {
           const w = (l.date_of_withdrawal || '').toString().trim();
-          return !(w && w !== '' && w !== 'N/A');
+          if (w && w !== '' && w !== 'N/A') return false;
+          // Only include learners whose class is in the canonical list.
+          return canonicalSet[l.class_name];
         });
 
       idcState.learnerByClass = {};
       learners.forEach(function (l) {
-        const c = l.class_name || '(No class)';
+        const c = l.class_name;
         if (!idcState.learnerByClass[c]) idcState.learnerByClass[c] = [];
         idcState.learnerByClass[c].push(l);
       });
-      idcState.learnerClasses = Object.keys(idcState.learnerByClass).sort();
+      // Classes come from the canonical list, not from learner data.
+      idcState.learnerClasses = canonicalClasses.filter(function (c) {
+        return idcState.learnerByClass[c] && idcState.learnerByClass[c].length > 0;
+      });
 
       idcState.staffSelected = {};
       idcState.staffAll.forEach(function (s) { idcState.staffSelected[s.id] = true; });
