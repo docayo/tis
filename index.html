@@ -677,6 +677,18 @@ Generate PDF
 </button>
 </div>
 
+<div class="card-bg" id="classSubjectsPanel" style="display:none;border-left:4px solid #d4a017;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <div>
+      <div style="font-weight:800;color:#0d4d26;font-size:15px;" id="classSubjectsTitle">Manage Subjects</div>
+      <div style="font-size:11px;color:#666;" id="classSubjectsSubtitle">Pick a class below to edit its subject slots.</div>
+    </div>
+    <button class="btn btn-sm btn-secondary" type="button" onclick="closeClassSubjects()">
+      <i class="fas fa-times"></i> Close
+    </button>
+  </div>
+  <div id="classSubjectsBody"></div>
+</div>
 <div id="classesContent">Loading...</div>
 </div>
 
