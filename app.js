@@ -7310,7 +7310,462 @@
       bsSetFeedback('Unexpected: ' + (err && err.message ? err.message : err), 'error');
     }
   }
+  // ================================================================
+  // [S18b] SCORES IMPORTER
+  //   1. Read XLSX
+  //   2. Parse header → identify slot columns
+  //   3. Verify PIN + name against learners
+  //   4. Look up class_subjects to resolve slot → subject
+  //   5. Compare against existing scores (upsert semantics)
+  //   6. Conflict modal → commit
+  // ================================================================
+  let bsImportState = null;
 
+  async function bsImportScoresFile(file) {
+    if (typeof XLSX === 'undefined') { bsSetFeedback('Excel library not loaded.', 'error'); return; }
+
+    bsSetFeedback('Reading file…');
+    startLoader();
+
+    try {
+      // ---------- 1. Parse the file ----------
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const firstSheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (!rows.length) { stopLoader(); bsSetFeedback('Empty sheet.', 'error'); return; }
+
+      // ---------- 2. Locate header row ----------
+      // Header must contain stud_pin in column A.
+      let headerRowIdx = -1;
+      for (let i = 0; i < Math.min(rows.length, 20); i++) {
+        const r = rows[i] || [];
+        if (String(r[0] || '').trim().toLowerCase() === 'stud_pin') { headerRowIdx = i; break; }
+      }
+      if (headerRowIdx === -1) {
+        stopLoader();
+        bsSetFeedback('Header row not found. Expected "stud_pin" in column A.', 'error');
+        return;
+      }
+
+      const header = rows[headerRowIdx].map(function (c) { return String(c || '').trim(); });
+
+      // ---------- 3. Column-index map for slots ----------
+      // Each subject block has three columns: subN_test1_score, subN_test2_score, subN_exam_score.
+      const slotColumns = {};   // { slotNumber: { test1: idx, test2: idx, exam: idx } }
+      for (let i = 0; i < header.length; i++) {
+        const m = header[i].match(/^sub(\d+)_test(1|2)_score$/);
+        if (m) {
+          const n = Number(m[1]);
+          if (!slotColumns[n]) slotColumns[n] = {};
+          slotColumns[n]['test' + m[2]] = i;
+          continue;
+        }
+        const mx = header[i].match(/^sub(\d+)_exam_score$/);
+        if (mx) {
+          const n = Number(mx[1]);
+          if (!slotColumns[n]) slotColumns[n] = {};
+          slotColumns[n].exam = i;
+        }
+      }
+      const slotNumbers = Object.keys(slotColumns).map(Number).sort(function (a, b) { return a - b; });
+      if (slotNumbers.length === 0) {
+        stopLoader();
+        bsSetFeedback('No subN_*_score columns found in the header.', 'error');
+        return;
+      }
+
+      const idxPin    = header.indexOf('stud_pin');
+      const idxName   = header.indexOf('stud_name');
+      const idxGender = header.indexOf('stud_gender');
+      const idxClass  = header.indexOf('stud_class');
+      const idxTimes  = header.indexOf('times_pre');
+
+      // ---------- 4. Read learners in the file ----------
+      const fileRows = [];
+      for (let i = headerRowIdx + 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const pin = String(r[idxPin] || '').trim().toUpperCase();
+        if (!pin) continue;
+        fileRows.push({
+          rowNumber: i + 1,
+          pin:       pin,
+          name:      String(r[idxName]  || '').trim(),
+          gender:    String(r[idxGender]|| '').trim(),
+          classCode: String(r[idxClass] || '').trim(),
+          timesPre:  String(r[idxTimes] || '').trim(),
+          raw:       r
+        });
+      }
+      if (!fileRows.length) { stopLoader(); bsSetFeedback('No data rows found.', 'error'); return; }
+
+      // ---------- 5. Get canonical data ----------
+      const learnerR = await window.TIS.listLearners();
+      if (!learnerR || !learnerR.ok) { stopLoader(); bsSetFeedback('Could not load learners.', 'error'); return; }
+      const learnerByPin = {};
+      (learnerR.data || []).forEach(function (l) {
+        if (l.pin) learnerByPin[String(l.pin).toUpperCase()] = l;
+      });
+
+      const aliasR = await sbLoadClassAliases();
+      // aliasMap: upload_code (uppercase) -> canonical_name
+      const aliasMap = {};
+      (aliasR || []).forEach(function (a) {
+        aliasMap[String(a.upload_code).toUpperCase()] = a.canonical_name;
+      });
+
+      // ---------- 6. Resolve + validate each row ----------
+      const termSel = $('bsTerm');
+      const yearEl  = $('bsYear');
+      const term = termSel ? termSel.value : '1st';
+      const year = yearEl ? parseInt(yearEl.value, 10) : 0;
+      if (!term || !year) { stopLoader(); bsSetFeedback('Pick term and year first.', 'error'); return; }
+
+      // Load existing scores for these learners to detect conflicts.
+      const learnerIds = fileRows
+        .map(function (fr) { const l = learnerByPin[fr.pin]; return l ? l.id : null; })
+        .filter(Boolean);
+      const existing = await window.TIS.getScoresForLearners(learnerIds, term, year);
+      const existingMap = (existing && existing.ok && existing.data) ? existing.data : {};
+
+      // Build the class_subjects lookup per class.
+      const classSubjCache = {};
+      async function getClassSubj(cn) {
+        if (classSubjCache[cn] !== undefined) return classSubjCache[cn];
+        const r = await window.TIS.getClassSubjects(cn);
+        const arr = (r && r.ok) ? r.data : [];
+        const byCode = {};
+        arr.forEach(function (x) { byCode[Number(x.slot)] = x.subject_code; });
+        classSubjCache[cn] = byCode;
+        return byCode;
+      }
+
+      const planned = [];
+      const errors  = [];
+      const skipped = [];
+
+      for (const fr of fileRows) {
+        const l = learnerByPin[fr.pin];
+        if (!l) { errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'PIN not found in system' }); continue; }
+
+        // Name verification — reject if it does not match.
+        if (fr.name && l.name && fr.name.toUpperCase() !== l.name.toUpperCase()) {
+          errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'Name mismatch (file: "' + fr.name + '", system: "' + l.name + '")' });
+          continue;
+        }
+
+        // Resolve canonical class from the file's class code OR from the learner record.
+        let canonicalClass = l.class_name;
+        if (fr.classCode) {
+          const mapped = aliasMap[fr.classCode.toUpperCase()];
+          if (mapped && mapped !== canonicalClass) {
+            errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'Class in file ("' + fr.classCode + '"→' + mapped + ') does not match learner record (' + canonicalClass + ')' });
+            continue;
+          }
+        }
+        if (!canonicalClass) {
+          errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'Learner has no class assigned' });
+          continue;
+        }
+
+        const slotMap = await getClassSubj(canonicalClass);
+
+        // Walk each slot in the file.
+        for (const n of slotNumbers) {
+          const cols = slotColumns[n];
+          const rawT1 = cols.test1 != null ? fr.raw[cols.test1] : '';
+          const rawT2 = cols.test2 != null ? fr.raw[cols.test2] : '';
+          const rawEx = cols.exam  != null ? fr.raw[cols.exam]  : '';
+          const t1 = parseFloatOrNull(rawT1);
+          const t2 = parseFloatOrNull(rawT2);
+          const ex = parseFloatOrNull(rawEx);
+
+          // Skip empty subject rows entirely.
+          if (t1 === null && t2 === null && ex === null) continue;
+
+          const subjCode = slotMap[n];
+          if (!subjCode) {
+            skipped.push({ row: fr.rowNumber, pin: fr.pin, slot: n, reason: 'Slot ' + n + ' not assigned for class ' + canonicalClass });
+            continue;
+          }
+
+          const key = l.id + '|' + subjCode;
+          const prev = existingMap[key] || null;
+
+          const conflictT1 = prev && prev.test1 != null && Number(prev.test1) !== 0 && t1 !== null && Number(prev.test1) !== t1;
+          const conflictT2 = prev && prev.test2 != null && Number(prev.test2) !== 0 && t2 !== null && Number(prev.test2) !== t2;
+          const conflictEx = prev && prev.exam  != null && Number(prev.exam)  !== 0 && ex !== null && Number(prev.exam)  !== ex;
+          const hasConflict = conflictT1 || conflictT2 || conflictEx;
+
+          planned.push({
+            learner_id: l.id,
+            pin: fr.pin,
+            learner_name: l.name,
+            class_name: canonicalClass,
+            subject_code: subjCode,
+            term_type: term,
+            year: year,
+            test1: t1,
+            test2: t2,
+            exam:  ex,
+            existing: prev,
+            conflict: hasConflict,
+            conflictFields: {
+              test1: conflictT1, test2: conflictT2, exam: conflictEx
+            },
+            rowNumber: fr.rowNumber,
+            slot: n
+          });
+        }
+      }
+
+      stopLoader();
+
+      if (planned.length === 0) {
+        bsSetFeedback('Nothing to import. Errors: ' + errors.length + ', skipped: ' + skipped.length, 'error');
+        bsImportState = { errors: errors, skipped: skipped };
+        bsShowImportErrors();
+        return;
+      }
+
+      bsImportState = {
+        file: file.name,
+        term: term, year: year,
+        planned: planned,
+        errors: errors,
+        skipped: skipped
+      };
+
+      const conflictCount = planned.filter(function (p) { return p.conflict; }).length;
+
+      if (conflictCount === 0 && errors.length === 0 && skipped.length === 0) {
+        // Fully clean — commit immediately.
+        await bsCommitImport(null);
+        return;
+      }
+
+      // Otherwise, show the review modal.
+      bsShowImportReview();
+
+    } catch (err) {
+      stopLoader();
+      bsSetFeedback('Unexpected: ' + (err && err.message ? err.message : err), 'error');
+      console.error('[bsImportScoresFile]', err);
+    }
+  }
+
+  function parseFloatOrNull(v) {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+    if (isNaN(n)) return null;
+    return n;
+  }
+
+  async function sbLoadClassAliases() {
+    try {
+      const sb = window.supabase ? null : null;
+      // Use TIS method — added below.
+      if (typeof window.TIS.listClassAliases === 'function') {
+        const r = await window.TIS.listClassAliases();
+        return (r && r.ok) ? r.data : [];
+      }
+      return [];
+    } catch (e) { return []; }
+  }
+
+  function bsShowImportReview() {
+    const st = bsImportState;
+    if (!st) return;
+    const planned = st.planned;
+    const conflicts = planned.filter(function (p) { return p.conflict; });
+    const clean = planned.filter(function (p) { return !p.conflict; });
+    const errs = st.errors || [];
+    const skips = st.skipped || [];
+
+    const esc2 = esc;
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)return;">';
+    html += '<div class="modal-box wide" style="max-width:900px;max-height:88vh;overflow-y:auto;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Import review — ' + esc2(st.file) + '</h2>' +
+            '<button class="close-btn" onclick="bsCancelImport()">&times;</button></div>';
+
+    html += '<div style="padding:14px 18px;">';
+
+    // Summary
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px;">';
+    html += '<div style="background:#e8f5e9;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">Clean rows</div><div style="font-size:20px;font-weight:900;color:#0d4d26;">' + clean.length + '</div></div>';
+    html += '<div style="background:#fff8e1;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">Conflicts</div><div style="font-size:20px;font-weight:900;color:#b8860b;">' + conflicts.length + '</div></div>';
+    html += '<div style="background:#fff5f5;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">Errors</div><div style="font-size:20px;font-weight:900;color:#c0392b;">' + errs.length + '</div></div>';
+    html += '<div style="background:#f0f0f0;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">Skipped</div><div style="font-size:20px;font-weight:900;color:#666;">' + skips.length + '</div></div>';
+    html += '</div>';
+
+    // Term / year
+    html += '<div style="font-size:13px;color:#333;margin-bottom:12px;">Importing into: <b>' +
+            esc2(st.term.toUpperCase()) + ' TERM ' + esc2(String(st.year)) + '</b></div>';
+
+    // Conflicts section
+    if (conflicts.length > 0) {
+      html += '<h4 style="color:#b8860b;margin:16px 0 8px;">Conflicts — tick each to allow overwrite</h4>';
+      html += '<p style="font-size:12px;color:#666;margin:0 0 8px;">Rows with non-zero existing scores. Unticked rows will be skipped.</p>';
+      html += '<div style="max-height:340px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead style="position:sticky;top:0;background:#fff8e1;">';
+      html += '<tr>' +
+              '<th style="padding:6px;text-align:center;width:40px;">✓</th>' +
+              '<th style="padding:6px;text-align:left;">PIN</th>' +
+              '<th style="padding:6px;text-align:left;">Learner</th>' +
+              '<th style="padding:6px;text-align:left;">Class</th>' +
+              '<th style="padding:6px;text-align:left;">Subject</th>' +
+              '<th style="padding:6px;text-align:center;">Existing (T1/T2/Ex)</th>' +
+              '<th style="padding:6px;text-align:center;">New (T1/T2/Ex)</th>' +
+              '</tr></thead><tbody>';
+      conflicts.forEach(function (c, i) {
+        html += '<tr>' +
+          '<td style="padding:4px;text-align:center;border-bottom:1px solid #eee;">' +
+            '<input type="checkbox" class="bsConflictChk" data-idx="' + i + '">' +
+          '</td>' +
+          '<td style="padding:4px;border-bottom:1px solid #eee;">' + esc2(c.pin) + '</td>' +
+          '<td style="padding:4px;border-bottom:1px solid #eee;">' + esc2(c.learner_name) + '</td>' +
+          '<td style="padding:4px;border-bottom:1px solid #eee;">' + esc2(c.class_name) + '</td>' +
+          '<td style="padding:4px;border-bottom:1px solid #eee;">' + esc2(c.subject_code) + '</td>' +
+          '<td style="padding:4px;border-bottom:1px solid #eee;text-align:center;color:#666;">' +
+            (c.existing ? (c.existing.test1||0) + ' / ' + (c.existing.test2||0) + ' / ' + (c.existing.exam||0) : '—') +
+          '</td>' +
+          '<td style="padding:4px;border-bottom:1px solid #eee;text-align:center;font-weight:700;">' +
+            (c.test1 != null ? c.test1 : '—') + ' / ' +
+            (c.test2 != null ? c.test2 : '—') + ' / ' +
+            (c.exam  != null ? c.exam  : '—') +
+          '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    // Errors
+    if (errs.length > 0) {
+      html += '<h4 style="color:#c0392b;margin:16px 0 8px;">Errors — will be skipped</h4>';
+      html += '<div style="max-height:200px;overflow-y:auto;background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:10px;font-size:12px;">';
+      errs.forEach(function (e) {
+        html += '<div style="padding:3px 0;">Row ' + e.row + ' — PIN ' + esc2(e.pin) + ' — ' + esc2(e.reason) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Skipped (informational)
+    if (skips.length > 0) {
+      html += '<h4 style="color:#666;margin:16px 0 8px;">Skipped — slot not assigned for the class</h4>';
+      html += '<div style="max-height:120px;overflow-y:auto;background:#f0f0f0;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:11px;color:#555;">';
+      skips.slice(0, 50).forEach(function (s) {
+        html += '<div>Row ' + s.row + ' — ' + esc2(s.pin) + ' — sub' + s.slot + ' — ' + esc2(s.reason) + '</div>';
+      });
+      if (skips.length > 50) html += '<div>…and ' + (skips.length - 50) + ' more.</div>';
+      html += '</div>';
+    }
+
+    // Buttons
+    html += '<div style="margin-top:18px;text-align:right;">';
+    html += '<button class="btn btn-secondary" type="button" onclick="bsCancelImport()">Cancel</button> ';
+    html += '<button class="btn btn-primary" type="button" onclick="bsCommitImportFromReview()">Import ' + clean.length + ' clean row(s)';
+
+    if (conflicts.length > 0) {
+      html += ' + ticked conflicts';
+    }
+    html += '</button>';
+    html += '</div>';
+
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+  }
+
+  function bsCommitImportFromReview() {
+    const ticked = [];
+    document.querySelectorAll('.bsConflictChk').forEach(function (chk) {
+      if (chk.checked) ticked.push(Number(chk.dataset.idx));
+    });
+    bsCommitImport(ticked);
+  }
+  window.bsCommitImportFromReview = bsCommitImportFromReview;
+
+  function bsCancelImport() {
+    bsImportState = null;
+    closeModal();
+    bsSetFeedback('Import cancelled.', 'info');
+  }
+  window.bsCancelImport = bsCancelImport;
+
+  async function bsCommitImport(allowConflictIndices) {
+    const st = bsImportState;
+    if (!st) return;
+    const allowSet = {};
+    if (allowConflictIndices) allowConflictIndices.forEach(function (i) { allowSet[i] = true; });
+
+    const rowsToWrite = [];
+    let conflictIdx = 0;
+    st.planned.forEach(function (p) {
+      if (p.conflict) {
+        if (allowSet[conflictIdx]) rowsToWrite.push(p);
+        conflictIdx++;
+      } else {
+        rowsToWrite.push(p);
+      }
+    });
+
+    if (rowsToWrite.length === 0) {
+      bsSetFeedback('Nothing to write.', 'info');
+      bsCancelImport();
+      return;
+    }
+
+    startLoader();
+    bsSetFeedback('Writing ' + rowsToWrite.length + ' row(s)…');
+
+    const written = [];
+    const failed  = [];
+
+    for (const p of rowsToWrite) {
+      const payload = {
+        learner_id:   p.learner_id,
+        subject_code: p.subject_code,
+        term_type:    p.term_type,
+        year:         p.year,
+        test1:        p.test1,
+        test2:        p.test2,
+        exam:         p.exam,
+        source:       'upload',
+        uploaded_by:  (State.profile && State.profile.name) || 'Operator',
+        updated_at:   new Date().toISOString()
+      };
+      const total = (p.test1 || 0) + (p.test2 || 0) + (p.exam || 0);
+      payload.total = total;
+      const band = gradeForScore(total);
+      payload.grade  = band.grade;
+      payload.remark = band.remark;
+
+      const r = await window.TIS.upsertScore(payload);
+      if (r && r.ok) written.push(p);
+      else failed.push({ row: p.rowNumber, pin: p.pin, subject: p.subject_code, error: (r && r.error) || 'unknown' });
+    }
+
+    stopLoader();
+
+    const msg = 'Imported ' + written.length + ' row(s)';
+    if (failed.length) bsSetFeedback(msg + ' — ' + failed.length + ' failed. See console.', 'error');
+    else bsSetFeedback(msg + ' successfully.', 'ok');
+
+    showToast(msg + (failed.length ? ' (' + failed.length + ' failed)' : '.'), failed.length ? 'warning' : 'success');
+    if (failed.length) console.warn('[bsCommitImport failed]', failed);
+
+    bsImportState = null;
+    closeModal();
+  }
+
+  function gradeForScore(total) {
+    if (total >= 80) return { grade: 'A', remark: 'EXCELLENT' };
+    if (total >= 70) return { grade: 'B', remark: 'VERY GOOD' };
+    if (total >= 60) return { grade: 'C', remark: 'GOOD' };
+    if (total >= 50) return { grade: 'D', remark: 'FAIR' };
+    if (total >= 40) return { grade: 'E', remark: 'POOR' };
+    return { grade: 'F', remark: 'FAIL' };
+  }
   // ---------------- Tab init ----------------
   async function initBroadSheetTab() {
     await bsPopulatePickers();
@@ -7328,15 +7783,13 @@
     const h = $('btnHarvestScores');
     if (h && !h.__wired) { h.addEventListener('click', bsHarvestScores); h.__wired = true; }
 
-    const u = $('btnUploadScoresFile');
+        const u = $('btnUploadScoresFile');
     const fi = $('bsUploadInput');
     if (u && fi && !u.__wired) {
       u.addEventListener('click', function () { fi.click(); });
       fi.addEventListener('change', function () {
-        if (fi.files && fi.files[0]) {
-          showToast('Importer coming next — file ready: ' + fi.files[0].name, 'info');
-          bsSetFeedback('File picked: ' + fi.files[0].name + ' — importer is Delivery 2.2c.', 'info');
-        }
+        const f = fi.files && fi.files[0];
+        if (f) bsImportScoresFile(f);
         fi.value = '';
       });
       u.__wired = true;
