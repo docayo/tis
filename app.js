@@ -1247,7 +1247,6 @@
         }).catch(function(){});
         closeModal();
         loadLearners();
-      }
       } else {
         // If the DB rejected the insert for a duplicate pin (race), report it cleanly.
         const msg = (r && r.error) || 'unknown error';
