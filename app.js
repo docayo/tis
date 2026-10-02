@@ -6579,9 +6579,12 @@
     });
   }
 
-  // ================================================================
+    // ================================================================
   // [S16] CLASSES
   // ================================================================
+  let __classSubjectsCache = null;   // array of {code, display_name}
+  let __classSubjectsEditState = null; // { className, slots: [{slot, subject_code}] }
+
   async function loadClasses() {
     setHTML('classesContent', pageLoaderHTML('Loading classes...'));
     const r = await window.TIS.listClasses();
@@ -6591,14 +6594,205 @@
       setHTML('classesContent', emptyHTML('fa-layer-group', 'No classes yet', 'Click Seed Defaults to create the starting list.'));
       return;
     }
-    let html = '<div class="card-bg" style="overflow-x:auto;"><table class="users-table"><thead><tr><th>Class</th><th>Level</th><th>Stream</th><th>Next Class</th><th>Status</th></tr></thead><tbody>';
-    State.cachedClasses.forEach(c => {
-      html += '<tr><td><strong>' + esc(c.name) + '</strong></td><td>' + esc(c.level || '—') + '</td><td>' +
-        esc(c.stream || '—') + '</td><td>' + esc(c.next_class || '—') + '</td><td>' +
-        (c.is_active ? '<span style="color:#27ae60;font-weight:600;">Active</span>' : '<span style="color:#c0392b;font-weight:600;">Retired</span>') + '</td></tr>';
-    });
+
+    let html = '<div class="card-bg" style="overflow-x:auto;"><table class="users-table"><thead><tr><th>Order</th><th>Class</th><th>Level</th><th>Stream</th><th>Next Class</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead><tbody>';
+    State.cachedClasses
+      .sort(function (a, b) { return (a.sort_order || 9999) - (b.sort_order || 9999); })
+      .forEach(function (c) {
+        html += '<tr>' +
+          '<td style="color:#999;font-size:11px;">' + (c.sort_order || '—') + '</td>' +
+          '<td><strong>' + esc(c.name) + '</strong></td>' +
+          '<td>' + esc(c.level || '—') + '</td>' +
+          '<td>' + esc(c.stream || '—') + '</td>' +
+          '<td>' + esc(c.next_class || '—') + '</td>' +
+          '<td>' + (c.is_active ? '<span style="color:#27ae60;font-weight:600;">Active</span>' : '<span style="color:#c0392b;font-weight:600;">Retired</span>') + '</td>' +
+          '<td style="text-align:right;">' +
+            '<button type="button" class="btn btn-sm btn-primary" data-manage-class="' + escAttr(c.name) + '">' +
+              '<i class="fas fa-list"></i> Manage Subjects' +
+            '</button>' +
+          '</td>' +
+        '</tr>';
+      });
     html += '</tbody></table></div>';
     setHTML('classesContent', html);
+
+    document.querySelectorAll('#classesContent [data-manage-class]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        openClassSubjectsEditor(btn.dataset.manageClass);
+      });
+    });
+  }
+
+  async function ensureClassSubjectsCache() {
+    if (__classSubjectsCache) return __classSubjectsCache;
+    const r = await window.TIS.listSubjects();
+    if (!r || !r.ok) return [];
+    __classSubjectsCache = r.data || [];
+    return __classSubjectsCache;
+  }
+
+  function closeClassSubjects() {
+    const panel = document.getElementById('classSubjectsPanel');
+    if (panel) panel.style.display = 'none';
+    __classSubjectsEditState = null;
+  }
+  window.closeClassSubjects = closeClassSubjects;
+
+  async function openClassSubjectsEditor(className) {
+    startLoader();
+    const subjects = await ensureClassSubjectsCache();
+    const current = await window.TIS.getClassSubjects(className);
+    stopLoader();
+
+    if (!current || !current.ok) { showToast('Could not load subject slots.', 'error'); return; }
+
+    // Build slots 1..18 from the current mapping (missing = empty).
+    const slots = [];
+    const currentMap = {};
+    (current.data || []).forEach(function (s) { currentMap[Number(s.slot)] = s.subject_code; });
+    for (let i = 1; i <= 18; i++) {
+      slots.push({ slot: i, subject_code: currentMap[i] || '' });
+    }
+
+    __classSubjectsEditState = { className: className, slots: slots, subjects: subjects };
+
+    renderClassSubjectsEditor();
+  }
+
+  function renderClassSubjectsEditor() {
+    const state = __classSubjectsEditState;
+    if (!state) return;
+
+    const panel = document.getElementById('classSubjectsPanel');
+    const body  = document.getElementById('classSubjectsBody');
+    const title = document.getElementById('classSubjectsTitle');
+    const subtitle = document.getElementById('classSubjectsSubtitle');
+    if (!panel || !body) return;
+
+    title.textContent = 'Manage Subjects — ' + state.className;
+    subtitle.textContent = 'Slots 1 through 18. A slot can be empty, or bound to one subject from the master list. Save requires double confirmation.';
+    panel.style.display = 'block';
+
+    // Gather the codes already assigned (to prevent duplicates within a class).
+    const used = {};
+    state.slots.forEach(function (s) {
+      if (s.subject_code) used[s.subject_code] = true;
+    });
+
+    let html = '<div style="overflow-x:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="background:#e8f5e9;">' +
+            '<th style="text-align:left;padding:8px;width:70px;">Slot</th>' +
+            '<th style="text-align:left;padding:8px;">Subject</th>' +
+            '<th style="text-align:center;padding:8px;width:100px;">Status</th>' +
+            '</tr></thead><tbody>';
+
+    state.slots.forEach(function (s) {
+      let opts = '<option value="">— (unused) —</option>';
+      state.subjects.forEach(function (sub) {
+        const isCurrent = (sub.code === s.subject_code);
+        const isUsedElsewhere = used[sub.code] && !isCurrent;
+        opts += '<option value="' + escAttr(sub.code) + '"' +
+                (isCurrent ? ' selected' : '') +
+                (isUsedElsewhere ? ' disabled' : '') + '>' +
+                esc(sub.display_name) + (isUsedElsewhere ? ' (used)' : '') +
+                '</option>';
+      });
+
+      const status = s.subject_code
+        ? '<span style="color:#27ae60;font-weight:700;">In use</span>'
+        : '<span style="color:#999;">empty</span>';
+
+      html += '<tr>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:700;">sub' + s.slot + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;">' +
+          '<select data-slot-select="' + s.slot + '" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ccc;">' +
+          opts +
+          '</select>' +
+        '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">' + status + '</td>' +
+      '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+
+    html += '<div style="margin-top:14px;text-align:right;">';
+    html += '<button class="btn btn-secondary" type="button" onclick="closeClassSubjects()">Cancel</button> ';
+    html += '<button class="btn btn-success" type="button" onclick="saveClassSubjects()">Save Slot Map</button>';
+    html += '</div>';
+
+    body.innerHTML = html;
+  }
+
+  async function saveClassSubjects() {
+    const state = __classSubjectsEditState;
+    if (!state) return;
+
+    // Read the current values in the UI.
+    const newSlots = [];
+    document.querySelectorAll('#classSubjectsBody [data-slot-select]').forEach(function (sel) {
+      newSlots.push({
+        slot: Number(sel.dataset.slotSelect),
+        subject_code: sel.value || ''
+      });
+    });
+
+    // Compare to the state we came in with (the save point).
+    const oldMap = {};
+    state.slots.forEach(function (s) { if (s.subject_code) oldMap[s.slot] = s.subject_code; });
+    const newMap = {};
+    newSlots.forEach(function (s) { if (s.subject_code) newMap[s.slot] = s.subject_code; });
+
+    const changes = [];
+    const allSlots = {};
+    Object.keys(oldMap).forEach(function (k) { allSlots[k] = true; });
+    Object.keys(newMap).forEach(function (k) { allSlots[k] = true; });
+    Object.keys(allSlots).forEach(function (k) {
+      const before = oldMap[k] || '';
+      const after  = newMap[k] || '';
+      if (before !== after) {
+        changes.push({ slot: Number(k), before: before, after: after });
+      }
+    });
+
+    if (changes.length === 0) { showToast('No changes to save.', 'info'); return; }
+
+    // First confirmation: describe the changes.
+    const lines = changes.map(function (c) {
+      const b = c.before ? labelForCode(state.subjects, c.before) : '(unused)';
+      const a = c.after  ? labelForCode(state.subjects, c.after)  : '(unused)';
+      return '  sub' + c.slot + ':  ' + b + '  →  ' + a;
+    }).join('\n');
+
+    const firstMsg = 'You are changing ' + changes.length + ' slot(s) for ' + state.className + ':\n\n' +
+                     lines + '\n\n' +
+                     'Existing scores already recorded under the OLD subject names are NOT changed. ' +
+                     'Only future uploads will use the new mapping.\n\nContinue?';
+    if (!confirm(firstMsg)) return;
+
+    // Second confirmation: explicit, serious.
+    const secondMsg = 'This is a deliberate change that affects future template downloads for ' + state.className + '.\n\n' +
+                      'Confirm again to save.';
+    if (!confirm(secondMsg)) { showToast('Slot map change cancelled.', 'info'); return; }
+
+    startLoader();
+    const r = await window.TIS.setClassSubjects(state.className, newSlots);
+    stopLoader();
+
+    if (!r || !r.ok) {
+      showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+      return;
+    }
+
+    showToast('Slot map saved for ' + state.className + '.', 'success');
+    closeClassSubjects();
+  }
+  window.saveClassSubjects = saveClassSubjects;
+
+  function labelForCode(subjects, code) {
+    const s = (subjects || []).find(function (x) { return x.code === code; });
+    return s ? s.display_name : code;
   }
 
   function initClassesTab() {
@@ -6646,7 +6840,7 @@
       { name: 'BEGINNERS', level: 'BEGINNERS', next_class: 'NURSERY 1' },
       { name: 'NURSERY 1', level: 'NURSERY 1', next_class: 'NURSERY 2' },
       { name: 'NURSERY 2', level: 'NURSERY 2', next_class: 'NURSERY 3' },
-      { name: 'NURSERY 3', level: 'NURSERY 3', next_class: 'PRIMARY 1' },
+      { name: 'NURSERY 3', level: 'NURSERY 3', next_class: 'BASIC 1' },
       { name: 'BASIC 1', level: 'BASIC 1', next_class: 'BASIC 2' },
       { name: 'BASIC 2', level: 'BASIC 2', next_class: 'BASIC 3' },
       { name: 'BASIC 3', level: 'BASIC 3', next_class: 'BASIC 4' },
