@@ -916,7 +916,17 @@
         });
       }
       stopLoader();
-      if (r && r.ok) {
+           if (r && r.ok) {
+        window.TIS.logAudit({
+          actor_name:  (State.profile && State.profile.name) || 'Operator',
+          actor_role:  (State.profile && State.profile.role) || '',
+          action:      'learner.update',
+          entity_type: 'learner',
+          entity_id:   (r.data && r.data[0] && r.data[0].pin) || String(id),
+          entity_name: fields.name || '',
+          before:      window.__editingLearner || null,
+          after:       (r.data && r.data[0]) || null
+        }).catch(function(){});
         showToast('Learner updated', 'success');
         closeModal();
         loadLearners();
@@ -1030,6 +1040,16 @@
       // Update the in-memory learner so the edit modal reflects the new photo.
       window.__editingLearner.photo_url = publicUrl;
 
+          window.TIS.logAudit({
+        actor_name:  (State.profile && State.profile.name) || 'Operator',
+        actor_role:  (State.profile && State.profile.role) || '',
+        action:      'learner.photo_upload',
+        entity_type: 'learner',
+        entity_id:   pin,
+        entity_name: (window.__editingLearner && window.__editingLearner.name) || '',
+        before:      { photo_url: (window.__editingLearner && window.__editingLearner.photo_url) || null },
+        after:       { photo_url: publicUrl }
+      }).catch(function(){});
       showToast('Photo updated for ' + pin, 'success');
       closeModal();
       // Reopen the edit modal to show the new photo immediately.
@@ -1212,11 +1232,22 @@
 
       const r = await window.TIS.createLearner(row);
 
-      if (r && r.ok) {
+          if (r && r.ok) {
         const assignedPin = r.data && r.data.pin ? r.data.pin : (row.pin || '(auto)');
         showToast('Learner added: ' + row.name + ' — PIN ' + assignedPin, 'success');
+        window.TIS.logAudit({
+          actor_name:  (State.profile && State.profile.name) || 'Operator',
+          actor_role:  (State.profile && State.profile.role) || '',
+          action:      'learner.create',
+          entity_type: 'learner',
+          entity_id:   assignedPin,
+          entity_name: row.name,
+          before:      null,
+          after:       r.data
+        }).catch(function(){});
         closeModal();
         loadLearners();
+      }
       } else {
         // If the DB rejected the insert for a duplicate pin (race), report it cleanly.
         const msg = (r && r.error) || 'unknown error';
@@ -1277,7 +1308,7 @@
     const r = await window.TIS.recordPartPayment(learnerId, termType, year, amount, date, mode);
     stopLoader();
 
-    if (r && r.ok) {
+     if (r && r.ok) {
       showToast('Payment recorded (slot ' + r.data.slot + ')', 'success');
       closeModal();
       const l = State.cachedLearners.find(function (x) { return x.id === learnerId; });
