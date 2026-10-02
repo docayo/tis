@@ -7,206 +7,223 @@
 <link rel="icon" href="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w64" type="image/png">
 <style>
   * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
   body {
     font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     background: #0d4d26;
     color: #1a1a1a;
-    margin: 0;
-    padding: 24px 16px;
-    line-height: 1.6;
+    min-height: 100vh;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
   }
   .shell {
-    max-width: 900px;
+    max-width: 860px;
     margin: 0 auto;
-    background: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    padding: 16px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.22);
     overflow: hidden;
   }
-  .header {
+  .card-header {
     background: linear-gradient(135deg, #0d4d26, #1a8a3a);
-    color: #ffffff;
-    padding: 24px 28px;
-  }
-  .header h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: 1px; }
-  .header .sub { font-size: 12px; opacity: 0.85; font-style: italic; }
-  .banner {
-    background: #fff3cd;
-    border-left: 4px solid #d4a017;
-    padding: 12px 20px;
-    font-size: 13px;
-    color: #7a5a00;
-  }
-  .section { padding: 22px 28px; }
-  .section h2 {
-    margin: 0 0 12px;
-    color: #0d4d26;
-    font-size: 17px;
-  }
-  .section p { font-size: 14px; color: #333; margin: 0 0 12px; }
-  .gate-box {
-    background: #f7fbf7;
-    border: 1px solid #c8e6c9;
-    border-radius: 10px;
+    color: #fff;
     padding: 20px 22px;
   }
-  .gate-box label { font-size: 12px; color: #555; display: block; margin-bottom: 6px; }
-  .gate-box input {
-    width: 100%;
-    max-width: 260px;
-    font-size: 24px;
-    font-family: "Courier New", Consolas, monospace;
-    letter-spacing: 8px;
-    text-align: center;
-    text-transform: uppercase;
-    padding: 14px 12px;
-    border: 2px solid #0d4d26;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    outline: none;
+  .card-header h1 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    letter-spacing: 0.5px;
+  }
+  .card-header .sub {
+    font-size: 12px;
+    opacity: 0.88;
+    font-style: italic;
+  }
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 22px;
+    background: #f7fbf7;
+    border-bottom: 1px solid #e0e6e2;
+    font-size: 12px;
+    color: #555;
+  }
+  .breadcrumb .step-pill {
+    background: #0d4d26;
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .breadcrumb .back-link {
+    color: #0d4d26;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+    text-decoration: none;
+    border: none;
+    background: none;
+    padding: 0;
+  }
+  .breadcrumb .back-link:hover { text-decoration: underline; }
+  .breadcrumb .back-link.hidden { visibility: hidden; }
+  .body {
+    padding: 22px;
+  }
+  .body h2 {
+    margin: 0 0 10px;
+    color: #0d4d26;
+    font-size: 19px;
+  }
+  .body p {
+    font-size: 14px;
+    color: #333;
+    margin: 0 0 14px;
+  }
+  .body p.hint {
+    font-size: 12px;
+    color: #666;
   }
   .btn {
+    display: inline-block;
     border: none;
-    border-radius: 8px;
-    padding: 12px 22px;
-    font-size: 14px;
+    border-radius: 10px;
+    padding: 14px 22px;
+    font-size: 15px;
     font-weight: 700;
     cursor: pointer;
-    margin-right: 8px;
+    margin: 4px 8px 4px 0;
+    transition: transform 0.08s;
   }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
   .btn-primary { background: #0d4d26; color: #fff; }
   .btn-secondary { background: #eaeaea; color: #333; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .status { font-size: 13px; margin-top: 8px; min-height: 20px; }
-  .status.ok { color: #0d4d26; }
-  .status.error { color: #c0392b; }
-  .status.info { color: #555; }
-  .runbook {
-    padding: 22px 28px;
-    border-top: 1px solid #e6e9f0;
+  .btn-danger { background: #c0392b; color: #fff; }
+  .btn-warn { background: #d4a017; color: #fff; }
+  .btn-block { display: block; width: 100%; text-align: center; margin-right: 0; }
+  .btn-group { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .callout {
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    margin: 12px 0;
+    line-height: 1.6;
   }
+  .callout-info { background: #eef6ff; border-left: 4px solid #1a5276; color: #1a3a52; }
+  .callout-warn { background: #fff8e1; border-left: 4px solid #d4a017; color: #7a5a00; }
+  .callout-danger { background: #fff5f5; border-left: 4px solid #c0392b; color: #7a1f15; }
+  .callout-ok { background: #e8f5e9; border-left: 4px solid #0d4d26; color: #0d4d26; }
+  .key-input {
+    width: 100%;
+    max-width: 280px;
+    font-size: 26px;
+    font-family: "Courier New", Consolas, monospace;
+    letter-spacing: 10px;
+    text-align: center;
+    text-transform: uppercase;
+    padding: 16px 12px;
+    border: 2px solid #0d4d26;
+    border-radius: 10px;
+    margin: 8px 0 14px;
+    outline: none;
+    background: #fff;
+  }
+  .key-input:focus { box-shadow: 0 0 0 3px rgba(13,77,38,0.2); }
+  .status { font-size: 13px; margin-top: 8px; min-height: 20px; }
+  .status.ok { color: #0d4d26; font-weight: 600; }
+  .status.error { color: #c0392b; font-weight: 600; }
+  .status.info { color: #555; }
+  .step-num {
+    display: inline-block;
+    background: #0d4d26;
+    color: #fff;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 26px;
+    font-weight: 700;
+    font-size: 13px;
+    margin-right: 8px;
+  }
+  .footer {
+    text-align: center;
+    padding: 12px;
+    font-size: 11px;
+    color: #aaa;
+  }
+  .hidden { display: none !important; }
+
+  /* ---- runbook content styles (same as before) ---- */
   .runbook h1, .runbook h2, .runbook h3 {
-    color: #0d4d26;
-    margin-top: 22px;
-    margin-bottom: 8px;
+    color: #0d4d26; margin-top: 22px; margin-bottom: 8px;
   }
   .runbook h1 { font-size: 21px; margin-top: 0; }
   .runbook h2 { font-size: 17px; }
   .runbook h3 { font-size: 15px; }
   .runbook p { font-size: 14px; color: #333; margin: 0 0 12px; }
-  .runbook pre, .runbook code {
-    font-family: "Courier New", Consolas, monospace;
-  }
+  .runbook pre, .runbook code { font-family: "Courier New", Consolas, monospace; }
   .runbook code {
-    background: #eef2ef;
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 13px;
-    color: #0d4d26;
+    background: #eef2ef; padding: 1px 5px; border-radius: 3px;
+    font-size: 13px; color: #0d4d26;
   }
   .runbook pre {
-    background: #f4f7f5;
-    border-left: 3px solid #0d4d26;
-    padding: 12px 14px;
-    border-radius: 4px;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
+    background: #f4f7f5; border-left: 3px solid #0d4d26;
+    padding: 12px 14px; border-radius: 4px;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-word;
     font-size: 13px;
   }
   .runbook table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    margin: 12px 0;
+    width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0;
   }
   .runbook th, .runbook td {
-    text-align: left;
-    padding: 8px 10px;
-    border-bottom: 1px solid #e0e6e2;
-    vertical-align: top;
+    text-align: left; padding: 8px 10px;
+    border-bottom: 1px solid #e0e6e2; vertical-align: top;
   }
   .runbook th { background: #e8f5e9; font-weight: 700; color: #0d4d26; }
   .runbook ul, .runbook ol { padding-left: 22px; font-size: 14px; }
   .runbook li { margin-bottom: 4px; }
   .runbook hr { border: none; border-top: 1px solid #e0e6e2; margin: 20px 0; }
   .runbook strong { color: #0d4d26; }
-  .hidden { display: none; }
-  .divider {
-    background: #f7fbf7;
-    border-top: 1px solid #e0e6e2;
-    padding: 12px 28px;
-    font-size: 12px;
-    color: #666;
-    text-align: center;
-  }
-  .footer {
-    padding: 14px 28px;
-    background: #0d4d26;
-    color: #fff;
-    font-size: 11px;
-    text-align: center;
+
+  @media (max-width: 560px) {
+    .card-header { padding: 16px 16px; }
+    .card-header h1 { font-size: 17px; }
+    .body { padding: 16px; }
+    .body h2 { font-size: 17px; }
+    .btn { padding: 13px 18px; font-size: 14px; }
+    .key-input { font-size: 22px; letter-spacing: 8px; }
+    .breadcrumb { padding: 8px 16px; font-size: 11px; }
   }
 </style>
 </head>
 <body>
 
 <div class="shell">
-  <div class="header">
-    <h1>THE IDEAL SCHOOLS — Recovery</h1>
-    <div class="sub">Emergency recovery portal</div>
-  </div>
-
-  <div class="banner">
-    <b>Read this first:</b> do not run recovery unless you have exhausted the
-    three-step check at the top of the runbook. If a specific record looks wrong,
-    use the portal's edit tools — not recovery.
-  </div>
-
-  <!-- ==================== GATE ==================== -->
-  <div id="gateSection" class="section">
-    <h2>Start a recovery</h2>
-    <p>To view the restore procedures, you must request a 6-character recovery
-    key. It will be emailed to the school inbox. The key is valid for 30 minutes
-    and can be used once.</p>
-
-    <div class="gate-box">
-      <div id="gateStep1">
-        <button id="sendKeyBtn" class="btn btn-primary" type="button">Send Recovery Key</button>
-        <div id="sendStatus" class="status"></div>
-      </div>
-
-      <div id="gateStep2" class="hidden" style="margin-top:16px;">
-        <label for="keyInput">Enter the 6-character key from the email:</label>
-        <input id="keyInput" type="text" maxlength="6" autocomplete="off" spellcheck="false" placeholder="XXXXXX">
-        <div>
-          <button id="verifyBtn" class="btn btn-primary" type="button">Verify &amp; Show Runbook</button>
-          <button id="cancelBtn" class="btn btn-secondary" type="button">Cancel</button>
-        </div>
-        <div id="verifyStatus" class="status"></div>
-      </div>
+  <div class="card">
+    <div class="card-header">
+      <h1>THE IDEAL SCHOOLS — Recovery</h1>
+      <div class="sub">Emergency recovery portal · step by step</div>
     </div>
 
-    <p style="margin-top:20px;font-size:12px;color:#666;">
-      <b>If the school inbox is unavailable:</b> retrieve the sealed envelope
-      marked <b>“TIS RECOVERY CODES”</b> from the school safe.
-      Any single code works, once.
-    </p>
-  </div>
-
-  <!-- ==================== RUNBOOK ==================== -->
-  <div id="runbookSection" class="runbook">
-    <div id="runbookBody" style="text-align:center;color:#666;padding:24px 0;">
-      Loading runbook…
+    <div class="breadcrumb">
+      <button id="backBtn" class="back-link hidden" type="button">← Back</button>
+      <span id="stepPill" class="step-pill">Step 1 of 6</span>
     </div>
-  </div>
 
-  <div class="divider">
-    This page is logged. Every key request and every verification attempt is recorded.
-  </div>
+    <div class="body" id="stageBody"></div>
 
-  <div class="footer">
-    TIS EMIS · Recovery page · If anything looks wrong here, contact Dr Ayoola · 08067071557
+    <div class="footer" id="pageFooter">
+      Every key request and verification is logged.
+    </div>
   </div>
 </div>
 
@@ -214,31 +231,462 @@
 (function () {
   'use strict';
 
+  // ================================================================
+  // State
+  // ================================================================
+  var currentStep = 1;
+  var maxSteps = 6;
+  var history = [];              // stack of steps we came from
+  var cachedRunbook = null;      // filled on first load
+
+  var SESSION_KEY = 'tis_recovery_session_v3';
   var RUNBOOK_URL = '/REC.md';
-  var RUNBOOK_CACHE_KEY = 'tis_runbook_cache_v2';
-  var SESSION_KEY = 'tis_recovery_session_v2';
+  var RUNBOOK_CACHE = 'tis_runbook_cache_v3';
+
+  // ---- if already verified this session, jump to step 4 ----
+  var alreadyVerified = false;
+  try { alreadyVerified = sessionStorage.getItem(SESSION_KEY) === 'ok'; } catch (e) {}
+
+  // ================================================================
+  // Stage rendering
+  // ================================================================
+  var stageBody = document.getElementById('stageBody');
+  var stepPill = document.getElementById('stepPill');
+  var backBtn = document.getElementById('backBtn');
+
+  function renderStep(n) {
+    currentStep = n;
+    stepPill.textContent = 'Step ' + n + ' of ' + maxSteps;
+    if (history.length === 0) backBtn.classList.add('hidden');
+    else backBtn.classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (n === 1) return renderStep1();
+    if (n === 2) return renderStep2();
+    if (n === 3) return renderStep3();
+    if (n === 4) return renderStep4();
+    if (n === 5) return renderStep5();
+    if (n === 6) return renderStep6();
+  }
+
+  function goTo(n, push) {
+    if (push !== false) history.push(currentStep);
+    renderStep(n);
+  }
+  function goBack() {
+    if (history.length === 0) return;
+    var prev = history.pop();
+    renderStep(prev);
+  }
 
   // ----------------------------------------------------------------
-  // Markdown renderer (same subset as before)
+  // Step 1 — What is wrong?
   // ----------------------------------------------------------------
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+  function renderStep1() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">1</span> What is wrong?</h2>' +
+      '<p>Answer one question so we know how to help. Take your time.</p>' +
+      '<div class="btn-group">' +
+      '  <button class="btn btn-secondary btn-block" id="optRecord" type="button">A specific record looks wrong</button>' +
+      '  <button class="btn btn-primary btn-block" id="optWhole" type="button">The whole database looks wrong or missing</button>' +
+      '</div>' +
+      '<p class="hint" style="margin-top:16px;">If the portal is slow but data is correct — that is not a recovery. Just refresh the page.</p>';
+
+    document.getElementById('optRecord').addEventListener('click', function () {
+      goTo(2);
+      // shortcut branch is handled in step 2 by a flag we set now
+      stateSpecificRecord = true;
+    });
+    document.getElementById('optWhole').addEventListener('click', function () {
+      stateSpecificRecord = false;
+      goTo(2);
+    });
   }
-  function renderInline(s) {
-    return s
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+
+  // ---- flag set on Step 1 ----
+  var stateSpecificRecord = false;
+
+  // ----------------------------------------------------------------
+  // Step 2 — Either "specific record" advice, or the 3-check flow
+  // ----------------------------------------------------------------
+  function renderStep2() {
+    if (stateSpecificRecord) {
+      stageBody.innerHTML =
+        '<h2><span class="step-num">2</span> Do NOT run recovery</h2>' +
+        '<div class="callout callout-warn">' +
+        'If a specific learner, staff member, attendance mark, or score is wrong — ' +
+        '<b>do not run recovery</b>. Recovery replaces the entire database with a backup. ' +
+        'That would undo every change made since the backup was taken, not just the one wrong record.' +
+        '</div>' +
+        '<p><b>Do this instead:</b></p>' +
+        '<ol style="font-size:14px;line-height:1.7;">' +
+        '  <li>Open the portal: <a href="https://tis-tan.vercel.app" target="_blank">tis-tan.vercel.app</a></li>' +
+        '  <li>Go to the relevant tab (Learners, Staff, Attendance…)</li>' +
+        '  <li>Use <b>Edit</b> on the specific record to correct it</li>' +
+        '  <li>If you cannot fix it with Edit, contact Dr Ayoola — 08067071557</li>' +
+        '</ol>' +
+        '<div class="btn-row" style="margin-top:16px;">' +
+        '  <button class="btn btn-secondary" id="startOver" type="button">Start over</button>' +
+        '  <a class="btn btn-primary" href="https://tis-tan.vercel.app" target="_blank" style="text-decoration:none;">Open portal</a>' +
+        '</div>';
+      document.getElementById('startOver').addEventListener('click', function () {
+        history = []; goTo(1, false);
+      });
+      return;
+    }
+
+    // The 3-step check
+    stageBody.innerHTML =
+      '<h2><span class="step-num">2</span> Before you go further — the 3-step check</h2>' +
+      '<p>Nine times out of ten, the problem is one of these three. Check them in order.</p>' +
+      '<div class="callout callout-info">' +
+      '<b>Check 1 of 3 — Is it just you?</b><br>' +
+      'Open <a href="https://tis-tan.vercel.app" target="_blank">tis-tan.vercel.app</a> in a <b>different browser</b>, ' +
+      'or on <b>your phone with mobile data</b> (not school Wi-Fi).' +
+      '</div>' +
+      '<p><b>Does it work there?</b></p>' +
+      '<div class="btn-row">' +
+      '  <button class="btn btn-secondary" id="check1Worked" type="button">Yes, it works there</button>' +
+      '  <button class="btn btn-primary" id="check1Failed" type="button">No, it is broken everywhere</button>' +
+      '</div>' +
+      '<div id="check1Result" class="status"></div>';
+
+    document.getElementById('check1Worked').addEventListener('click', function () {
+      document.getElementById('check1Result').className = 'status callout callout-ok';
+      document.getElementById('check1Result').innerHTML =
+        '<b>Good news.</b> The problem is only your device or the school network. ' +
+        'Try a different browser, then clear your cache (Ctrl+Shift+R). ' +
+        'If that fixes it — recovery is <b>not</b> needed. ' +
+        'If it does not fix it, come back here and choose the other option.';
+      document.getElementById('check1Worked').disabled = true;
+      document.getElementById('check1Failed').disabled = true;
+    });
+    document.getElementById('check1Failed').addEventListener('click', function () {
+      goTo(3);
+    });
   }
+
+  // ----------------------------------------------------------------
+  // Step 3 — Checks 2 and 3
+  // ----------------------------------------------------------------
+  function renderStep3() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">3</span> Is Supabase itself up?</h2>' +
+      '<div class="callout callout-info">' +
+      '<b>Check 2 of 3 — Supabase status</b><br>' +
+      'Open <a href="https://status.supabase.com" target="_blank">status.supabase.com</a> in a new tab. ' +
+      'Are all systems green?' +
+      '</div>' +
+      '<div class="btn-row">' +
+      '  <button class="btn btn-secondary" id="sbGreen" type="button">Yes, all green</button>' +
+      '  <button class="btn btn-danger" id="sbDown" type="button">No, Supabase shows an outage</button>' +
+      '</div>' +
+      '<div id="sbResult" class="status"></div>';
+
+    document.getElementById('sbGreen').addEventListener('click', function () {
+      goTo(4);
+    });
+    document.getElementById('sbDown').addEventListener('click', function () {
+      document.getElementById('sbResult').className = 'status callout callout-danger';
+      document.getElementById('sbResult').innerHTML =
+        '<b>Stop here. Do NOT run recovery.</b><br><br>' +
+        'If Supabase is having an outage, running a restore right now will fail and may make things worse. ' +
+        'Wait 30–60 minutes, then reload the portal. ' +
+        'If the outage continues for more than 2 hours, contact Dr Ayoola — 08067071557.';
+      document.getElementById('sbGreen').disabled = true;
+      document.getElementById('sbDown').disabled = true;
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // Step 4 — Request key
+  // ----------------------------------------------------------------
+  function renderStep4() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">4</span> Request the recovery key</h2>' +
+      '<p>A 6-character key will be emailed to the school inbox. ' +
+      'It expires in <b>30 minutes</b> and can be used <b>once</b>.</p>' +
+      '<div class="callout callout-warn">' +
+      'You must be able to read the school inbox (<b>theidealschools15@gmail.com</b>) ' +
+      'to complete this step. If not, use a sealed code from the school safe — see the note below.' +
+      '</div>' +
+      '<div id="sendBox">' +
+      '  <button class="btn btn-primary" id="sendKeyBtn" type="button">Send Recovery Key</button>' +
+      '  <div id="sendStatus" class="status"></div>' +
+      '</div>' +
+      '<div id="enterBox" class="hidden" style="margin-top:20px;">' +
+      '  <label for="keyInput" style="font-size:13px;color:#555;display:block;margin-bottom:4px;">Enter the 6-character key:</label>' +
+      '  <input class="key-input" id="keyInput" type="text" maxlength="6" autocomplete="off" spellcheck="false" placeholder="XXXXXX" inputmode="text">' +
+      '  <div class="btn-row">' +
+      '    <button class="btn btn-primary" id="verifyBtn" type="button">Verify</button>' +
+      '    <button class="btn btn-secondary" id="cancelSend" type="button">Cancel</button>' +
+      '  </div>' +
+      '  <div id="verifyStatus" class="status"></div>' +
+      '</div>' +
+      '<p class="hint" style="margin-top:20px;">' +
+      '<b>If the school inbox is unavailable:</b> use a single-use code from the sealed envelope ' +
+      'marked <b>“TIS RECOVERY CODES”</b> in the school safe. Enter it in the same box above.' +
+      '</p>';
+
+    var sendBtn = document.getElementById('sendKeyBtn');
+    var verifyBtn = document.getElementById('verifyBtn');
+    var cancelBtn = document.getElementById('cancelSend');
+    var enterBox = document.getElementById('enterBox');
+    var sendStatus = document.getElementById('sendStatus');
+    var verifyStatus = document.getElementById('verifyStatus');
+    var keyInput = document.getElementById('keyInput');
+
+    sendBtn.addEventListener('click', function () {
+      sendBtn.disabled = true;
+      sendStatus.textContent = 'Sending…';
+      sendStatus.className = 'status info';
+
+      fetch('/api/send-recovery-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+        .then(function (r) { return r.json().then(function (j) { return { s: r.status, b: j }; }); })
+        .then(function (res) {
+          if (res.s !== 200 || !res.b || res.b.ok !== true) {
+            sendStatus.textContent = 'Could not send: ' + ((res.b && res.b.error) || 'unknown');
+            sendStatus.className = 'status error';
+            sendBtn.disabled = false;
+            return;
+          }
+          sendStatus.textContent = 'Key sent to the school inbox. It expires in 30 minutes.';
+          sendStatus.className = 'status ok';
+          enterBox.classList.remove('hidden');
+          keyInput.focus();
+        })
+        .catch(function (err) {
+          sendStatus.textContent = 'Network error: ' + err.message;
+          sendStatus.className = 'status error';
+          sendBtn.disabled = false;
+        });
+    });
+
+    verifyBtn.addEventListener('click', function () {
+      var key = (keyInput.value || '').trim().toUpperCase();
+      if (key.length !== 6) {
+        verifyStatus.textContent = 'Enter the full 6-character key.';
+        verifyStatus.className = 'status error';
+        return;
+      }
+      verifyBtn.disabled = true;
+      verifyStatus.textContent = 'Verifying…';
+      verifyStatus.className = 'status info';
+
+      fetch('/api/verify-recovery-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key }),
+      })
+        .then(function (r) { return r.json().then(function (j) { return { s: r.status, b: j }; }); })
+        .then(function (res) {
+          if (res.s !== 200 || !res.b || res.b.ok !== true) {
+            verifyStatus.textContent = (res.b && res.b.error) || 'Invalid key';
+            verifyStatus.className = 'status error';
+            verifyBtn.disabled = false;
+            return;
+          }
+          try { sessionStorage.setItem(SESSION_KEY, 'ok'); } catch (e) {}
+          goTo(5);
+        })
+        .catch(function (err) {
+          verifyStatus.textContent = 'Network error: ' + err.message;
+          verifyStatus.className = 'status error';
+          verifyBtn.disabled = false;
+        });
+    });
+
+    cancelBtn.addEventListener('click', function () {
+      enterBox.classList.add('hidden');
+      keyInput.value = '';
+      verifyStatus.textContent = '';
+      sendStatus.textContent = '';
+      sendBtn.disabled = false;
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // Step 5 — Choose what to restore
+  // ----------------------------------------------------------------
+  function renderStep5() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">5</span> What needs to be restored?</h2>' +
+      '<div class="callout callout-ok">' +
+      '<b>Key verified.</b> You can now view the restore procedures. Take your time — read each step before running it.' +
+      '</div>' +
+      '<div class="btn-group">' +
+      '  <button class="btn btn-primary btn-block" id="optDb" type="button">Restore the database</button>' +
+      '  <button class="btn btn-primary btn-block" id="optStorage" type="button">Restore storage (photos)</button>' +
+      '  <button class="btn btn-primary btn-block" id="optRepoint" type="button">Point the portal at a new Supabase project</button>' +
+      '  <button class="btn btn-secondary btn-block" id="optFull" type="button">Show the full runbook</button>' +
+      '</div>';
+
+    document.getElementById('optDb').addEventListener('click', function () { renderProcedure('db'); });
+    document.getElementById('optStorage').addEventListener('click', function () { renderProcedure('storage'); });
+    document.getElementById('optRepoint').addEventListener('click', function () { renderProcedure('repoint'); });
+    document.getElementById('optFull').addEventListener('click', function () { renderProcedure('full'); });
+  }
+
+  // ----------------------------------------------------------------
+  // Procedures
+  // ----------------------------------------------------------------
+  function renderProcedure(which) {
+    if (which === 'db')      return renderDbRestore();
+    if (which === 'storage') return renderStorageRestore();
+    if (which === 'repoint') return renderRepoint();
+    if (which === 'full')    return renderFullRunbook();
+  }
+
+  function renderDbRestore() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">5</span> Restore the database</h2>' +
+      '<div class="callout callout-danger"><b>Read all steps before running anything.</b> Do not skip.</div>' +
+      '<ol style="font-size:14px;line-height:1.9;">' +
+      '  <li>Open the Supabase dashboard → SQL Editor.</li>' +
+      '  <li>First, take a snapshot of the <b>current</b> (broken) state so it is not lost:<br>' +
+      '      <code>Supabase Dashboard → Database → Backups → Create backup now</code></li>' +
+      '  <li>Download the latest backup from the <b>tis-backups</b> repo (or Drive folder).<br>' +
+      '      Unzip it. Find the <code>.sql</code> file inside.</li>' +
+      '  <li>Open the <code>.sql</code> file in a text editor. <b>Read the first 20 lines.</b><br>' +
+      '      Confirm it mentions <code>learners</code>, <code>staff</code>, <code>attendance_learner</code>.<br>' +
+      '      If it looks like someone else\'s data — stop.</li>' +
+      '  <li>In Supabase → SQL Editor, open a <b>new tab</b>, paste the entire file, click <b>Run</b>.<br>' +
+      '      This may take several minutes. If it errors on a line, stop and note which line.</li>' +
+      '  <li>Verify:<br>' +
+      '      <code>select count(*) from learners;</code><br>' +
+      '      <code>select count(*) from staff;</code><br>' +
+      '      Compare against what you expect.</li>' +
+      '  <li>Open the portal in incognito. Log in. Confirm the learners list loads.</li>' +
+      '</ol>' +
+      '<div class="btn-row" style="margin-top:20px;">' +
+      '  <button class="btn btn-secondary" id="backTo5" type="button">← Choose a different restore</button>' +
+      '  <button class="btn btn-primary" id="nextTo6" type="button">Next — after recovery →</button>' +
+      '</div>';
+    document.getElementById('backTo5').addEventListener('click', function () { renderStep5(); });
+    document.getElementById('nextTo6').addEventListener('click', function () { goTo(6); });
+  }
+
+  function renderStorageRestore() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">5</span> Restore storage (photos)</h2>' +
+      '<div class="callout callout-info">Storage backup files are a folder of images — one file per learner/staff.</div>' +
+      '<ol style="font-size:14px;line-height:1.9;">' +
+      '  <li>Open the backup ZIP from <b>tis-backups</b>. Find the <code>storage/</code> folder.</li>' +
+      '  <li>Open Supabase → Storage → <code>TISAssets</code>.</li>' +
+      '  <li><b>Do NOT delete anything yet.</b> Note what is currently there.</li>' +
+      '  <li>For each subfolder (<code>learners/</code>, <code>staff/</code>):<br>' +
+      '      Drag the matching backup files into the Supabase folder.<br>' +
+      '      Files with the same name will be replaced. Files that do not exist will be added.</li>' +
+      '  <li>Verify: open the portal → Learners → any learner → check their photo appears.</li>' +
+      '</ol>' +
+      '<div class="btn-row" style="margin-top:20px;">' +
+      '  <button class="btn btn-secondary" id="backTo5" type="button">← Choose a different restore</button>' +
+      '  <button class="btn btn-primary" id="nextTo6" type="button">Next — after recovery →</button>' +
+      '</div>';
+    document.getElementById('backTo5').addEventListener('click', function () { renderStep5(); });
+    document.getElementById('nextTo6').addEventListener('click', function () { goTo(6); });
+  }
+
+  function renderRepoint() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">5</span> Point the portal at a new Supabase project</h2>' +
+      '<div class="callout callout-warn">Only needed if the original project is irrecoverable and you have created a fresh one.</div>' +
+      '<ol style="font-size:14px;line-height:1.9;">' +
+      '  <li>In <a href="https://github.com/docayo/tis" target="_blank">github.com/docayo/tis</a>, open <code>supabase-client.js</code>.</li>' +
+      '  <li>Near the top, find:<br>' +
+      '      <code>const SUPABASE_URL = \'https://ndsroviwrfjbgaucajri.supabase.co\';</code><br>' +
+      '      <code>const SUPABASE_ANON_KEY = \'sb_publishable_...\';</code></li>' +
+      '  <li>Replace <code>SUPABASE_URL</code> with the new project URL.</li>' +
+      '  <li>Replace <code>SUPABASE_ANON_KEY</code> with the new anon key (Project Settings → API).</li>' +
+      '  <li>Commit. Vercel redeploys in ~30 seconds.</li>' +
+      '  <li>Open the portal in incognito. Log in. Verify.</li>' +
+      '</ol>' +
+      '<div class="callout callout-danger"><b>Do not delete the old project yet.</b> Keep it for at least 24 hours after verifying the new one works.</div>' +
+      '<div class="btn-row" style="margin-top:20px;">' +
+      '  <button class="btn btn-secondary" id="backTo5" type="button">← Choose a different restore</button>' +
+      '  <button class="btn btn-primary" id="nextTo6" type="button">Next — after recovery →</button>' +
+      '</div>';
+    document.getElementById('backTo5').addEventListener('click', function () { renderStep5(); });
+    document.getElementById('nextTo6').addEventListener('click', function () { goTo(6); });
+  }
+
+  function renderFullRunbook() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">5</span> Full runbook</h2>' +
+      '<div class="runbook" id="runbookBody"><div style="text-align:center;color:#666;padding:20px 0;">Loading…</div></div>' +
+      '<div class="btn-row" style="margin-top:20px;">' +
+      '  <button class="btn btn-secondary" id="backTo5" type="button">← Choose a different restore</button>' +
+      '  <button class="btn btn-primary" id="nextTo6" type="button">Next — after recovery →</button>' +
+      '</div>';
+    document.getElementById('backTo5').addEventListener('click', function () { renderStep5(); });
+    document.getElementById('nextTo6').addEventListener('click', function () { goTo(6); });
+    loadRunbookInto('runbookBody');
+  }
+
+  // ----------------------------------------------------------------
+  // Step 6 — After recovery
+  // ----------------------------------------------------------------
+  function renderStep6() {
+    stageBody.innerHTML =
+      '<h2><span class="step-num">6</span> After recovery</h2>' +
+      '<div class="callout callout-ok"><b>You have completed the recovery steps.</b> Now verify the portal fully works.</div>' +
+      '<p><b>Verification checklist</b></p>' +
+      '<ul style="font-size:14px;line-height:1.9;">' +
+      '  <li>Portal loads at <code>tis-tan.vercel.app</code></li>' +
+      '  <li>Login works for all four operators</li>' +
+      '  <li>Learners tab shows expected number of learners</li>' +
+      '  <li>Staff tab shows expected number of staff</li>' +
+      '  <li>Attendance register loads for one class</li>' +
+      '  <li>ID Cards tab loads</li>' +
+      '  <li>Scan a learner card (<code>/s/&lt;PIN&gt;</code>) records attendance</li>' +
+      '  <li>QR tab generates a fresh token</li>' +
+      '</ul>' +
+      '<div class="callout callout-danger">' +
+      '<b>Do NOT do these things in a panic:</b>' +
+      '<ul style="margin:8px 0 0;padding-left:20px;">' +
+      '  <li>Do not delete the old Supabase project for 24 hours.</li>' +
+      '  <li>Do not run UPDATE or DELETE SQL without a WHERE clause.</li>' +
+      '  <li>Do not push to GitHub main while recovery is in progress.</li>' +
+      '  <li>Do not share the recovery key.</li>' +
+      '</ul>' +
+      '</div>' +
+      '<p><b>Send a post-recovery report</b> to <code>ayonio@gmail.com</code> and <code>oseyemio3@gmail.com</code>: date, what broke, what you restored, anything not restored.</p>' +
+      '<div class="btn-row" style="margin-top:20px;">' +
+      '  <button class="btn btn-secondary" id="backTo5" type="button">← Back</button>' +
+      '  <button class="btn btn-primary" id="doneBtn" type="button">I am done — close</button>' +
+      '</div>';
+    document.getElementById('backTo5').addEventListener('click', function () { renderStep5(); });
+    document.getElementById('doneBtn').addEventListener('click', function () {
+      try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+      stageBody.innerHTML =
+        '<h2 style="color:#0d4d26;">Recovery session ended</h2>' +
+        '<p>You can close this tab. If another recovery is needed, reload this page.</p>';
+      stepPill.textContent = '';
+      backBtn.classList.add('hidden');
+    });
+  }
+
+  // ================================================================
+  // Runbook loader (used for full runbook view)
+  // ================================================================
   function renderMarkdown(md) {
     var lines = String(md).split(/\r?\n/);
     var out = [];
     var i = 0;
     var inCode = false, inList = false, inTable = false, tableRows = [];
 
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function renderInline(s) {
+      return s.replace(/`([^`]+)`/g, '<code>$1</code>')
+              .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+              .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+    }
     function flushTable() {
       if (!inTable) return;
       if (tableRows.length === 0) { inTable = false; return; }
@@ -259,7 +707,6 @@
       if (!inList) return;
       out.push('</ul>'); inList = false;
     }
-
     while (i < lines.length) {
       var line = lines[i];
       if (line.indexOf('```') === 0) {
@@ -268,13 +715,11 @@
         i++; continue;
       }
       if (inCode) { out.push(escapeHtml(line)); i++; continue; }
-
       if (line.indexOf('|') === 0 && line.lastIndexOf('|') > 0) {
         flushList();
         var cells = line.split('|').slice(1, -1);
         tableRows.push(cells); inTable = true; i++; continue;
       } else { flushTable(); }
-
       if (/^### /.test(line)) { flushList(); out.push('<h3>' + renderInline(escapeHtml(line.slice(4))) + '</h3>'); i++; continue; }
       if (/^## /.test(line))  { flushList(); out.push('<h2>' + renderInline(escapeHtml(line.slice(3))) + '</h2>'); i++; continue; }
       if (/^# /.test(line))   { flushList(); out.push('<h1>' + renderInline(escapeHtml(line.slice(2))) + '</h1>'); i++; continue; }
@@ -292,133 +737,38 @@
     return out.join('\n');
   }
 
-  // ----------------------------------------------------------------
-  // Load runbook
-  // ----------------------------------------------------------------
-  function loadRunbook() {
-    var box = document.getElementById('runbookBody');
+  function loadRunbookInto(targetId) {
+    var box = document.getElementById(targetId);
+    if (!box) return;
     var cached = null;
-    try { cached = localStorage.getItem(RUNBOOK_CACHE_KEY); } catch (e) {}
+    try { cached = localStorage.getItem(RUNBOOK_CACHE); } catch (e) {}
     if (cached) box.innerHTML = renderMarkdown(cached);
 
     fetch(RUNBOOK_URL, { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
       .then(function (md) {
-        try { localStorage.setItem(RUNBOOK_CACHE_KEY, md); } catch (e) {}
+        try { localStorage.setItem(RUNBOOK_CACHE, md); } catch (e) {}
         box.innerHTML = renderMarkdown(md);
       })
       .catch(function (err) {
-        if (!cached) {
-          box.innerHTML = '<div style="background:#fff5f5;border-left:4px solid #c0392b;padding:14px 18px;border-radius:4px;text-align:left;color:#7a1f15;">' +
-            '<b>Could not load the runbook.</b><br>' + escapeHtml(err.message) +
-            '<br><br><b>Fallback:</b> open <code>github.com/docayo/tis/blob/main/REC.md</code>.</div>';
-        }
+        if (!cached) box.innerHTML =
+          '<div class="callout callout-danger"><b>Could not load the runbook.</b><br>' +
+          escapeHtml(err.message) + '<br><br>' +
+          '<b>Fallback:</b> <a href="https://github.com/docayo/tis/blob/main/REC.md" target="_blank">' +
+          'github.com/docayo/tis/blob/main/REC.md</a></div>';
       });
   }
 
-  // ----------------------------------------------------------------
-  // Gate state
-  // ----------------------------------------------------------------
-  function setStatus(id, msg, cls) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = msg || '';
-    el.className = 'status ' + (cls || '');
-  }
+  // ================================================================
+  // Back button
+  // ================================================================
+  backBtn.addEventListener('click', goBack);
 
-  function showVerified() {
-    document.getElementById('gateSection').classList.add('hidden');
-    document.getElementById('runbookSection').classList.remove('hidden');
-  }
-  function showGate() {
-    document.getElementById('gateSection').classList.remove('hidden');
-    document.getElementById('runbookSection').classList.add('hidden');
-  }
-
-  // On load: if this browser already verified a key this session, show content.
-  var verified = false;
-  try { verified = sessionStorage.getItem(SESSION_KEY) === 'ok'; } catch (e) {}
-  if (verified) showVerified(); else showGate();
-
-  // Always load the runbook content (cached or fetched) so it's ready.
-  loadRunbook();
-
-  // ----------------------------------------------------------------
-  // Send key
-  // ----------------------------------------------------------------
-  var sendBtn = document.getElementById('sendKeyBtn');
-  if (sendBtn) sendBtn.addEventListener('click', function () {
-    sendBtn.disabled = true;
-    setStatus('sendStatus', 'Sending…', 'info');
-
-    fetch('/api/send-recovery-key', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
-      .then(function (res) {
-        if (res.status !== 200 || !res.body || res.body.ok !== true) {
-          setStatus('sendStatus', 'Could not send: ' + ((res.body && res.body.error) || 'unknown'), 'error');
-          sendBtn.disabled = false;
-          return;
-        }
-        setStatus('sendStatus', 'Key sent to the school inbox. It expires in 30 minutes.', 'ok');
-        document.getElementById('gateStep2').classList.remove('hidden');
-        document.getElementById('keyInput').focus();
-      })
-      .catch(function (err) {
-        setStatus('sendStatus', 'Network error: ' + err.message, 'error');
-        sendBtn.disabled = false;
-      });
-  });
-
-  // ----------------------------------------------------------------
-  // Verify key
-  // ----------------------------------------------------------------
-  var verifyBtn = document.getElementById('verifyBtn');
-  if (verifyBtn) verifyBtn.addEventListener('click', function () {
-    var input = document.getElementById('keyInput');
-    var key = (input.value || '').trim().toUpperCase();
-    if (key.length !== 6) { setStatus('verifyStatus', 'Enter the full 6-character key.', 'error'); return; }
-
-    verifyBtn.disabled = true;
-    setStatus('verifyStatus', 'Verifying…', 'info');
-
-    fetch('/api/verify-recovery-key', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: key }),
-    })
-      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
-      .then(function (res) {
-        if (res.status !== 200 || !res.body || res.body.ok !== true) {
-          setStatus('verifyStatus', (res.body && res.body.error) || 'Invalid key', 'error');
-          verifyBtn.disabled = false;
-          return;
-        }
-        try { sessionStorage.setItem(SESSION_KEY, 'ok'); } catch (e) {}
-        showVerified();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      })
-      .catch(function (err) {
-        setStatus('verifyStatus', 'Network error: ' + err.message, 'error');
-        verifyBtn.disabled = false;
-      });
-  });
-
-  // ----------------------------------------------------------------
-  // Cancel
-  // ----------------------------------------------------------------
-  var cancelBtn = document.getElementById('cancelBtn');
-  if (cancelBtn) cancelBtn.addEventListener('click', function () {
-    document.getElementById('gateStep2').classList.add('hidden');
-    document.getElementById('keyInput').value = '';
-    setStatus('verifyStatus', '', '');
-    setStatus('sendStatus', '', '');
-    var sb = document.getElementById('sendKeyBtn');
-    if (sb) sb.disabled = false;
-  });
+  // ================================================================
+  // Boot
+  // ================================================================
+  if (alreadyVerified) goTo(5, false);
+  else renderStep(1);
 })();
 </script>
 
