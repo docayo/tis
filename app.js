@@ -3228,11 +3228,12 @@
   async function populateAttendanceClassList() {
     const sel = document.getElementById('attendanceClass');
     if (!sel) return;
-    const r = await window.TIS.listLearners();
+    const r = await window.TIS.listClasses();
     if (!r || !r.ok) return;
-    const classes = {};
-    (r.data || []).forEach(function (l) { if (l.class_name) classes[l.class_name] = true; });
-    const names = Object.keys(classes).sort();
+    const names = (r.data || [])
+      .filter(function (c) { return c.is_active !== false; })
+      .sort(function (a, b) { return (a.sort_order || 9999) - (b.sort_order || 9999); })
+      .map(function (c) { return c.name; });
     sel.innerHTML = '<option value="">-- Select Class --</option>' +
       names.map(function (n) { return '<option value="' + escAttr(n) + '">' + esc(n) + '</option>'; }).join('');
   }
