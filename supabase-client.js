@@ -1850,7 +1850,7 @@
   // ================================================================
   // [SCORES] — read and write the CBT scores table
   // ================================================================
-  TIS.getScoresForLearners = async function (learnerIds, termType, year) {
+   TIS.getScoresForLearners = async function (learnerIds, termType, year) {
     try {
       if (!learnerIds || learnerIds.length === 0) return ok({});
       const sb = await loadSdk();
@@ -1870,6 +1870,30 @@
         });
       }
       return ok(map);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertScore = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('scores')
+        .upsert(row, { onConflict: 'learner_id,subject_code,term_type,year' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listClassAliases = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('class_aliases')
+        .select('upload_code, canonical_name');
+      if (error) return fail(error.message);
+      return ok(data || []);
     } catch (err) { return fail(err); }
   };
 
