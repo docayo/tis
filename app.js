@@ -7112,11 +7112,11 @@
       stopLoader();
       if (!payload.ok) { bsSetFeedback(payload.error || 'Could not build template.', 'error'); return; }
 
-      const wb = XLSX.utils.book_new();
+         const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(payload.rows);
-      // Lock the identity columns A-E by marking the sheet protected
-      // (Excel's default UI honours this; the portal re-verifies anyway).
-      ws['!protect'] = { password: 'tis', selectLockedCells: true, selectUnlockedCells: true };
+      // No sheet protection — Excel's cell-locking model is too coarse
+      // for "lock A-E, unlock F+". We rely on convention + server-side
+      // verification on import instead (see Delivery 2.2c).
       XLSX.utils.book_append_sheet(wb, ws, 'Scores');
 
       // Second sheet: legend (which subN maps to which subject per class).
@@ -7143,10 +7143,25 @@
   async function bsBuildTemplatePayload(opts) {
     try {
       // 1. Get learners in scope.
-      const learners = await bsFetchLearnersInScope(opts);
+           const learners = await bsFetchLearnersInScope(opts);
       if (!learners || learners.length === 0) return { ok: false, error: 'No learners matched the scope.' };
 
-      // 2. Group by class so we can consult class_subjects.
+      // 2a. Get the canonical class order so we can sort learners
+      //     by class structure (CRECHE → STARTERS → ... → SS 3 BUSINESS),
+      //     then by name within class.
+      const classR = await window.TIS.listClasses();
+      const classOrder = {};
+      (classR && classR.ok ? classR.data : []).forEach(function (c) {
+        classOrder[c.name] = c.sort_order || 9999;
+      });
+      learners.sort(function (a, b) {
+        const ao = classOrder[a.class_name] || 9999;
+        const bo = classOrder[b.class_name] || 9999;
+        if (ao !== bo) return ao - bo;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      // 2b. Group by class so we can consult class_subjects.
       const byClass = {};
       learners.forEach(function (l) {
         const c = l.class_name || '';
@@ -7154,7 +7169,6 @@
         if (!byClass[c]) byClass[c] = [];
         byClass[c].push(l);
       });
-
       // 3. Load class_subjects per class.
       const legend = {};
       for (const className of Object.keys(byClass)) {
