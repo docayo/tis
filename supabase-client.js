@@ -1834,7 +1834,6 @@
       return ok({ class_name: className, count: rows.length });
     } catch (err) { return fail(err); }
   };
-
   TIS.listSubjects = async function () {
     try {
       const sb = await loadSdk();
@@ -1845,6 +1844,32 @@
         .order('display_name', { ascending: true });
       if (error) return fail(error.message);
       return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [SCORES] — read and write the CBT scores table
+  // ================================================================
+  TIS.getScoresForLearners = async function (learnerIds, termType, year) {
+    try {
+      if (!learnerIds || learnerIds.length === 0) return ok({});
+      const sb = await loadSdk();
+      const map = {};
+      const CHUNK = 200;
+      for (let i = 0; i < learnerIds.length; i += CHUNK) {
+        const slice = learnerIds.slice(i, i + CHUNK);
+        const { data, error } = await sb
+          .from('scores')
+          .select('learner_id, subject_code, test1, test2, exam, total, grade, remark')
+          .eq('term_type', termType)
+          .eq('year', year)
+          .in('learner_id', slice);
+        if (error) return fail(error.message);
+        (data || []).forEach(function (row) {
+          map[row.learner_id + '|' + row.subject_code] = row;
+        });
+      }
+      return ok(map);
     } catch (err) { return fail(err); }
   };
 
