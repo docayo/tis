@@ -443,6 +443,68 @@
       return ok({ logged: true });
     } catch (err) { return ok({ skipped: true, reason: String(err) }); }
   };
+  
+  // ================================================================
+  // [AUDIT LOG] — record every operator write, with before/after
+  //   snapshots so changes can be reviewed and (if safe) reversed.
+  //   Best-effort: never blocks the underlying operation.
+  // ================================================================
+  TIS.logAudit = async function (entry) {
+    try {
+      const sb = await loadSdk();
+
+      // Who is doing this? Read from the current auth user + State.profile
+      // (the caller passes what they know; we fill what we can).
+      let actor_id = entry.actor_id || null;
+      let actor_name = entry.actor_name || '';
+      let actor_role = entry.actor_role || '';
+
+      if (!actor_id) {
+        try {
+          const { data } = await sb.auth.getUser();
+          if (data && data.user) actor_id = data.user.id;
+        } catch (_) {}
+      }
+
+      // Determine the current term so the log can be grouped by term.
+      let term_type = entry.term_type || null;
+      let year      = entry.year || null;
+      if (!term_type || !year) {
+        try {
+          const t = await TIS.getActiveTerm();
+          if (t && t.ok && t.data) {
+            term_type = term_type || t.data.term_type;
+            year      = year      || t.data.year;
+          }
+        } catch (_) {}
+      }
+
+      const payload = {
+        actor_id:    actor_id,
+        actor_name:  String(actor_name || ''),
+        actor_role:  String(actor_role || ''),
+        action:      String(entry.action || '').trim(),
+        entity_type: String(entry.entity_type || '').trim(),
+        entity_id:   entry.entity_id != null ? String(entry.entity_id) : null,
+        entity_name: String(entry.entity_name || '').slice(0, 200),
+        before:      entry.before || null,
+        after:       entry.after  || null,
+        notes:       entry.notes ? String(entry.notes).slice(0, 500) : null,
+        term_type:   term_type,
+        year:        year
+      };
+
+      if (!payload.action || !payload.entity_type) {
+        return ok({ skipped: true, reason: 'action and entity_type required' });
+      }
+
+      const r = await sb.from('audit_log').insert(payload).select().single();
+      if (r.error) return ok({ skipped: true, reason: r.error.message });
+      return ok({ logged: true, id: r.data.id });
+    } catch (err) {
+      return ok({ skipped: true, reason: String(err) });
+    }
+  };
   // ================================================================
   // [LEARNER_TERMS]
   // ================================================================
