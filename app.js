@@ -7026,14 +7026,312 @@
     const rf = $('btnRefreshUsers');
     if (rf) rf.addEventListener('click', loadUsers);
   }
+   // ================================================================
+  // [S18] BROAD SHEET — Scores console (template + harvest)
   // ================================================================
-  // [S18] PLACEHOLDERS
-  // ================================================================
-  function initBroadSheetTab() {
-    const r1 = $('btnLoadBroadSheet'); if (r1) r1.addEventListener('click', () => showToast('Broad sheet data coming with the API layer', 'info'));
-    const r2 = $('btnPopulateBroadSheet'); if (r2) r2.addEventListener('click', () => showToast('Populate coming with the API layer', 'info'));
+  const BS_SLOT_LIMIT = 18;
+
+  function bsSetFeedback(msg, type) {
+    const el = $('bsFeedback');
+    if (!el) return;
+    el.style.color = (type === 'error') ? '#c0392b' : (type === 'ok' ? '#0d4d26' : '#666');
+    el.textContent = msg || '';
   }
 
+  async function bsPopulatePickers() {
+    // Populate the Class dropdown from the canonical class list.
+    const classSel = $('bsClass');
+    if (classSel) {
+      const r = await window.TIS.listClasses();
+      const classes = (r && r.ok ? r.data : [])
+        .filter(function (c) { return c.is_active !== false; })
+        .sort(function (a, b) { return (a.sort_order || 9999) - (b.sort_order || 9999); });
+      classSel.innerHTML = '<option value="">-- Select --</option>' +
+        classes.map(function (c) { return '<option value="' + escAttr(c.name) + '">' + esc(c.name) + '</option>'; }).join('');
+    }
+    // Populate the Subject dropdown from the master list.
+    const subjSel = $('bsSubject');
+    if (subjSel) {
+      const r2 = await window.TIS.listSubjects();
+      const subjects = (r2 && r2.ok ? r2.data : []);
+      subjSel.innerHTML = '<option value="">-- Select --</option>' +
+        subjects.map(function (s) { return '<option value="' + escAttr(s.code) + '">' + esc(s.display_name) + '</option>'; }).join('');
+    }
+    // Default term to active.
+    const termSel = $('bsTerm');
+    const yearEl  = $('bsYear');
+    try {
+      const at = await window.TIS.getActiveTerm();
+      if (at && at.ok && at.data) {
+        if (termSel) termSel.value = at.data.term_type || '1st';
+        if (yearEl)  yearEl.value  = String(at.data.year || new Date().getFullYear());
+      }
+    } catch (e) { /* silent */ }
+  }
+
+  function bsToggleScopeFields() {
+    const scope = ($('bsScope') ? $('bsScope').value : 'class');
+    const cg = $('bsClassGroup');
+    const sg = $('bsSubjectGroup');
+    const stg = $('bsStudentGroup');
+    if (cg)  cg.classList.toggle('hidden', !(scope === 'class'));
+    if (sg)  sg.classList.toggle('hidden', !(scope === 'subject'));
+    if (stg) stg.classList.toggle('hidden', !(scope === 'student'));
+  }
+
+  // ---------------- Download template ----------------
+  async function bsDownloadTemplate() {
+    if (typeof XLSX === 'undefined') { bsSetFeedback('Excel library not loaded.', 'error'); return; }
+    const scope = $('bsScope') ? $('bsScope').value : 'class';
+    const term  = $('bsTerm') ? $('bsTerm').value : '';
+    const year  = $('bsYear') ? parseInt($('bsYear').value, 10) : 0;
+    if (!term || !year) { bsSetFeedback('Pick a term and year.', 'error'); return; }
+
+    let classFilter = null;
+    let subjectFilter = null;
+    let singlePin = null;
+
+    if (scope === 'class') {
+      classFilter = $('bsClass') ? $('bsClass').value : '';
+      if (!classFilter) { bsSetFeedback('Pick a class.', 'error'); return; }
+    } else if (scope === 'subject') {
+      subjectFilter = $('bsSubject') ? $('bsSubject').value : '';
+      if (!subjectFilter) { bsSetFeedback('Pick a subject.', 'error'); return; }
+    } else if (scope === 'student') {
+      singlePin = ($('bsStudentQuery') ? $('bsStudentQuery').value : '').trim();
+      if (!singlePin) { bsSetFeedback('Enter a PIN or name.', 'error'); return; }
+    }
+
+    bsSetFeedback('Building file…');
+    startLoader();
+    try {
+      const payload = await bsBuildTemplatePayload({
+        scope: scope, term: term, year: year,
+        classFilter: classFilter, subjectFilter: subjectFilter, singlePin: singlePin
+      });
+      stopLoader();
+      if (!payload.ok) { bsSetFeedback(payload.error || 'Could not build template.', 'error'); return; }
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(payload.rows);
+      // Lock the identity columns A-E by marking the sheet protected
+      // (Excel's default UI honours this; the portal re-verifies anyway).
+      ws['!protect'] = { password: 'tis', selectLockedCells: true, selectUnlockedCells: true };
+      XLSX.utils.book_append_sheet(wb, ws, 'Scores');
+
+      // Second sheet: legend (which subN maps to which subject per class).
+      const legendRows = [['Class', 'Slot', 'Subject Code', 'Subject Name']];
+      Object.keys(payload.legend).sort().forEach(function (cn) {
+        payload.legend[cn].forEach(function (row) {
+          legendRows.push([cn, 'sub' + row.slot, row.subject_code, row.display_name]);
+        });
+      });
+      const wsLegend = XLSX.utils.aoa_to_sheet(legendRows);
+      XLSX.utils.book_append_sheet(wb, wsLegend, 'Legend');
+
+      const fname = 'TIS_Scores_' + (classFilter || subjectFilter || scope) + '_' +
+                    term.toUpperCase() + '_' + year + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+      XLSX.writeFile(wb, fname);
+      bsSetFeedback('Template downloaded: ' + fname, 'ok');
+      showToast('Template downloaded.', 'success');
+    } catch (err) {
+      stopLoader();
+      bsSetFeedback('Unexpected: ' + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
+  async function bsBuildTemplatePayload(opts) {
+    try {
+      // 1. Get learners in scope.
+      const learners = await bsFetchLearnersInScope(opts);
+      if (!learners || learners.length === 0) return { ok: false, error: 'No learners matched the scope.' };
+
+      // 2. Group by class so we can consult class_subjects.
+      const byClass = {};
+      learners.forEach(function (l) {
+        const c = l.class_name || '';
+        if (!c) return;
+        if (!byClass[c]) byClass[c] = [];
+        byClass[c].push(l);
+      });
+
+      // 3. Load class_subjects per class.
+      const legend = {};
+      for (const className of Object.keys(byClass)) {
+        const r = await window.TIS.getClassSubjects(className);
+        if (r && r.ok) legend[className] = r.data || [];
+      }
+
+      // 4. Load all subjects for name lookup.
+      const subjR = await window.TIS.listSubjects();
+      const subjLookup = {};
+      (subjR && subjR.ok ? subjR.data : []).forEach(function (s) { subjLookup[s.code] = s.display_name; });
+      Object.keys(legend).forEach(function (cn) {
+        legend[cn].forEach(function (row) { row.display_name = subjLookup[row.subject_code] || row.subject_code; });
+      });
+
+      // 5. Load existing scores for the term/year in scope.
+      const learnerIds = learners.map(function (l) { return l.id; });
+      const scoreMap = await bsFetchExistingScores(learnerIds, opts.term, opts.year);
+
+      // 6. Build the header row.
+      const header = ['stud_pin','stud_name','stud_gender','stud_class','times_pre'];
+      for (let i = 1; i <= BS_SLOT_LIMIT; i++) {
+        header.push('sub' + i + '_test1_score');
+        header.push('sub' + i + '_test2_score');
+        header.push('sub' + i + '_exam_score');
+      }
+
+      // 7. Build one row per learner.
+      const rows = [header];
+      learners.forEach(function (l) {
+        const row = [
+          l.pin || '',
+          l.name || '',
+          l.gender || '',
+          l.class_name || '',
+          ''   // times_pre — filled from attendance register later
+        ];
+        const classLegend = legend[l.class_name] || [];
+        for (let i = 1; i <= BS_SLOT_LIMIT; i++) {
+          const mapping = classLegend.find(function (x) { return Number(x.slot) === i; });
+          if (!mapping) {
+            row.push('', '', '');
+            continue;
+          }
+          const key = l.id + '|' + mapping.subject_code;
+          const existing = scoreMap[key] || {};
+          row.push(existing.test1 != null ? existing.test1 : '');
+          row.push(existing.test2 != null ? existing.test2 : '');
+          row.push(existing.exam  != null ? existing.exam  : '');
+        }
+        rows.push(row);
+      });
+
+      return { ok: true, rows: rows, legend: legend, learnerCount: learners.length };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message || err) };
+    }
+  }
+
+  async function bsFetchLearnersInScope(opts) {
+    const r = await window.TIS.listLearners();
+    if (!r || !r.ok) return [];
+    let list = (r.data || []).filter(function (l) {
+      const w = (l.date_of_withdrawal || '').toString().trim();
+      return !(w && w !== '' && w !== 'N/A');
+    });
+    if (opts.scope === 'class' && opts.classFilter) {
+      list = list.filter(function (l) { return l.class_name === opts.classFilter; });
+    } else if (opts.scope === 'student' && opts.singlePin) {
+      const q = opts.singlePin.toUpperCase();
+      list = list.filter(function (l) {
+        return (l.pin || '').toUpperCase() === q ||
+               (l.name || '').toUpperCase().indexOf(q) !== -1;
+      });
+    } else if (opts.scope === 'subject' && opts.subjectFilter) {
+      // Filter to learners whose class has this subject assigned.
+      const kept = [];
+      const classCache = {};
+      for (const l of list) {
+        const c = l.class_name || '';
+        if (!c) continue;
+        if (!classCache[c]) {
+          const cs = await window.TIS.getClassSubjects(c);
+          classCache[c] = (cs && cs.ok ? cs.data : []).map(function (x) { return x.subject_code; });
+        }
+        if (classCache[c].indexOf(opts.subjectFilter) !== -1) kept.push(l);
+      }
+      list = kept;
+    }
+    return list;
+  }
+
+  async function bsFetchExistingScores(learnerIds, term, year) {
+    // We use a filtered select against `scores`. Split into chunks of 100.
+    try {
+      const sb = window.supabase;
+      // We don't have a direct SDK handle in app.js; use TIS method.
+      if (typeof window.TIS.getScoresForLearners === 'function') {
+        const r = await window.TIS.getScoresForLearners(learnerIds, term, year);
+        return (r && r.ok && r.data) ? r.data : {};
+      }
+      return {};
+    } catch (e) { return {}; }
+  }
+
+  // ---------------- Harvest ----------------
+  async function bsHarvestScores() {
+    if (typeof XLSX === 'undefined') { bsSetFeedback('Excel library not loaded.', 'error'); return; }
+    const scope = $('bsScope') ? $('bsScope').value : 'class';
+    const term  = $('bsTerm') ? $('bsTerm').value : '';
+    const year  = $('bsYear') ? parseInt($('bsYear').value, 10) : 0;
+    if (!term || !year) { bsSetFeedback('Pick a term and year.', 'error'); return; }
+
+    let classFilter = null, subjectFilter = null, singlePin = null;
+    if (scope === 'class')       { classFilter   = $('bsClass') ? $('bsClass').value : '';   if (!classFilter) { bsSetFeedback('Pick a class.', 'error'); return; } }
+    if (scope === 'subject')     { subjectFilter = $('bsSubject') ? $('bsSubject').value : ''; if (!subjectFilter) { bsSetFeedback('Pick a subject.', 'error'); return; } }
+    if (scope === 'student')     { singlePin     = ($('bsStudentQuery') ? $('bsStudentQuery').value : '').trim(); if (!singlePin) { bsSetFeedback('Enter a PIN or name.', 'error'); return; } }
+
+    bsSetFeedback('Building harvest…');
+    startLoader();
+    try {
+      const payload = await bsBuildTemplatePayload({
+        scope: scope, term: term, year: year,
+        classFilter: classFilter, subjectFilter: subjectFilter, singlePin: singlePin
+      });
+      stopLoader();
+      if (!payload.ok) { bsSetFeedback(payload.error, 'error'); return; }
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(payload.rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Scores');
+      const fname = 'TIS_Harvest_' + (classFilter || subjectFilter || scope) + '_' +
+                    term.toUpperCase() + '_' + year + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+      XLSX.writeFile(wb, fname);
+      bsSetFeedback('Harvest downloaded: ' + fname, 'ok');
+      showToast('Harvest downloaded.', 'success');
+    } catch (err) {
+      stopLoader();
+      bsSetFeedback('Unexpected: ' + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
+  // ---------------- Tab init ----------------
+  async function initBroadSheetTab() {
+    await bsPopulatePickers();
+
+    const scopeSel = $('bsScope');
+    if (scopeSel && !scopeSel.__wired) {
+      scopeSel.addEventListener('change', bsToggleScopeFields);
+      scopeSel.__wired = true;
+    }
+    bsToggleScopeFields();
+
+    const d = $('btnDownloadScoresTemplate');
+    if (d && !d.__wired) { d.addEventListener('click', bsDownloadTemplate); d.__wired = true; }
+
+    const h = $('btnHarvestScores');
+    if (h && !h.__wired) { h.addEventListener('click', bsHarvestScores); h.__wired = true; }
+
+    const u = $('btnUploadScoresFile');
+    const fi = $('bsUploadInput');
+    if (u && fi && !u.__wired) {
+      u.addEventListener('click', function () { fi.click(); });
+      fi.addEventListener('change', function () {
+        if (fi.files && fi.files[0]) {
+          showToast('Importer coming next — file ready: ' + fi.files[0].name, 'info');
+          bsSetFeedback('File picked: ' + fi.files[0].name + ' — importer is Delivery 2.2c.', 'info');
+        }
+        fi.value = '';
+      });
+      u.__wired = true;
+    }
+
+    // Legacy buttons from the old Broad Sheet tab (removed from HTML, guard anyway).
+    const r1 = $('btnLoadBroadSheet'); if (r1) r1.addEventListener('click', () => showToast('Use the Scores console above.', 'info'));
+    const r2 = $('btnPopulateBroadSheet'); if (r2) r2.addEventListener('click', () => showToast('Use the Scores console above.', 'info'));
+  }
   // ================================================================
   // [S19] WIRE + BOOT
   // ================================================================
