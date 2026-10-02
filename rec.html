@@ -28,16 +28,8 @@
     color: #ffffff;
     padding: 24px 28px;
   }
-  .header h1 {
-    margin: 0 0 4px;
-    font-size: 22px;
-    letter-spacing: 1px;
-  }
-  .header .sub {
-    font-size: 12px;
-    opacity: 0.85;
-    font-style: italic;
-  }
+  .header h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: 1px; }
+  .header .sub { font-size: 12px; opacity: 0.85; font-style: italic; }
   .banner {
     background: #fff3cd;
     border-left: 4px solid #d4a017;
@@ -45,33 +37,74 @@
     font-size: 13px;
     color: #7a5a00;
   }
-  .content {
-    padding: 24px 28px;
-  }
-  .content h1, .content h2, .content h3 {
+  .section { padding: 22px 28px; }
+  .section h2 {
+    margin: 0 0 12px;
     color: #0d4d26;
-    margin-top: 24px;
+    font-size: 17px;
+  }
+  .section p { font-size: 14px; color: #333; margin: 0 0 12px; }
+  .gate-box {
+    background: #f7fbf7;
+    border: 1px solid #c8e6c9;
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .gate-box label { font-size: 12px; color: #555; display: block; margin-bottom: 6px; }
+  .gate-box input {
+    width: 100%;
+    max-width: 260px;
+    font-size: 24px;
+    font-family: "Courier New", Consolas, monospace;
+    letter-spacing: 8px;
+    text-align: center;
+    text-transform: uppercase;
+    padding: 14px 12px;
+    border: 2px solid #0d4d26;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    outline: none;
+  }
+  .btn {
+    border: none;
+    border-radius: 8px;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-right: 8px;
+  }
+  .btn-primary { background: #0d4d26; color: #fff; }
+  .btn-secondary { background: #eaeaea; color: #333; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status { font-size: 13px; margin-top: 8px; min-height: 20px; }
+  .status.ok { color: #0d4d26; }
+  .status.error { color: #c0392b; }
+  .status.info { color: #555; }
+  .runbook {
+    padding: 22px 28px;
+    border-top: 1px solid #e6e9f0;
+  }
+  .runbook h1, .runbook h2, .runbook h3 {
+    color: #0d4d26;
+    margin-top: 22px;
     margin-bottom: 8px;
   }
-  .content h1 { font-size: 22px; margin-top: 0; }
-  .content h2 { font-size: 18px; }
-  .content h3 { font-size: 16px; }
-  .content p {
-    font-size: 14px;
-    color: #333;
-    margin: 0 0 12px;
-  }
-  .content pre, .content code {
+  .runbook h1 { font-size: 21px; margin-top: 0; }
+  .runbook h2 { font-size: 17px; }
+  .runbook h3 { font-size: 15px; }
+  .runbook p { font-size: 14px; color: #333; margin: 0 0 12px; }
+  .runbook pre, .runbook code {
     font-family: "Courier New", Consolas, monospace;
   }
-  .content code {
+  .runbook code {
     background: #eef2ef;
     padding: 1px 5px;
     border-radius: 3px;
     font-size: 13px;
     color: #0d4d26;
   }
-  .content pre {
+  .runbook pre {
     background: #f4f7f5;
     border-left: 3px solid #0d4d26;
     padding: 12px 14px;
@@ -80,57 +113,39 @@
     white-space: pre-wrap;
     word-break: break-word;
     font-size: 13px;
-    color: #1a1a1a;
   }
-  .content table {
+  .runbook table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
     margin: 12px 0;
   }
-  .content th, .content td {
+  .runbook th, .runbook td {
     text-align: left;
     padding: 8px 10px;
     border-bottom: 1px solid #e0e6e2;
     vertical-align: top;
   }
-  .content th {
-    background: #e8f5e9;
-    font-weight: 700;
-    color: #0d4d26;
-  }
-  .content ul, .content ol {
-    padding-left: 22px;
-    font-size: 14px;
-  }
-  .content li { margin-bottom: 4px; }
-  .content hr {
-    border: none;
+  .runbook th { background: #e8f5e9; font-weight: 700; color: #0d4d26; }
+  .runbook ul, .runbook ol { padding-left: 22px; font-size: 14px; }
+  .runbook li { margin-bottom: 4px; }
+  .runbook hr { border: none; border-top: 1px solid #e0e6e2; margin: 20px 0; }
+  .runbook strong { color: #0d4d26; }
+  .hidden { display: none; }
+  .divider {
+    background: #f7fbf7;
     border-top: 1px solid #e0e6e2;
-    margin: 20px 0;
+    padding: 12px 28px;
+    font-size: 12px;
+    color: #666;
+    text-align: center;
   }
-  .content strong { color: #0d4d26; }
   .footer {
-    padding: 16px 28px;
-    border-top: 1px solid #e6e9f0;
+    padding: 14px 28px;
+    background: #0d4d26;
+    color: #fff;
     font-size: 11px;
-    color: #666;
     text-align: center;
-  }
-  .loader {
-    text-align: center;
-    padding: 40px 20px;
-    color: #666;
-    font-size: 14px;
-  }
-  .error-box {
-    background: #fff5f5;
-    border-left: 4px solid #c0392b;
-    padding: 14px 18px;
-    border-radius: 4px;
-    margin: 12px 0;
-    color: #7a1f15;
-    font-size: 13px;
   }
 </style>
 </head>
@@ -139,20 +154,59 @@
 <div class="shell">
   <div class="header">
     <h1>THE IDEAL SCHOOLS — Recovery</h1>
-    <div class="sub">Emergency recovery runbook</div>
+    <div class="sub">Emergency recovery portal</div>
   </div>
 
   <div class="banner">
-    <b>Read first:</b> do not run recovery unless you have exhausted the 3-step check at the top of the runbook.
-    If a specific record looks wrong, use the portal's edit tools — not recovery.
+    <b>Read this first:</b> do not run recovery unless you have exhausted the
+    three-step check at the top of the runbook. If a specific record looks wrong,
+    use the portal's edit tools — not recovery.
   </div>
 
-  <div id="content" class="content">
-    <div class="loader">Loading runbook…</div>
+  <!-- ==================== GATE ==================== -->
+  <div id="gateSection" class="section">
+    <h2>Start a recovery</h2>
+    <p>To view the restore procedures, you must request a 6-character recovery
+    key. It will be emailed to the school inbox. The key is valid for 30 minutes
+    and can be used once.</p>
+
+    <div class="gate-box">
+      <div id="gateStep1">
+        <button id="sendKeyBtn" class="btn btn-primary" type="button">Send Recovery Key</button>
+        <div id="sendStatus" class="status"></div>
+      </div>
+
+      <div id="gateStep2" class="hidden" style="margin-top:16px;">
+        <label for="keyInput">Enter the 6-character key from the email:</label>
+        <input id="keyInput" type="text" maxlength="6" autocomplete="off" spellcheck="false" placeholder="XXXXXX">
+        <div>
+          <button id="verifyBtn" class="btn btn-primary" type="button">Verify &amp; Show Runbook</button>
+          <button id="cancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+        </div>
+        <div id="verifyStatus" class="status"></div>
+      </div>
+    </div>
+
+    <p style="margin-top:20px;font-size:12px;color:#666;">
+      <b>If the school inbox is unavailable:</b> retrieve the sealed envelope
+      marked <b>“TIS RECOVERY CODES”</b> from the school safe.
+      Any single code works, once.
+    </p>
+  </div>
+
+  <!-- ==================== RUNBOOK ==================== -->
+  <div id="runbookSection" class="runbook">
+    <div id="runbookBody" style="text-align:center;color:#666;padding:24px 0;">
+      Loading runbook…
+    </div>
+  </div>
+
+  <div class="divider">
+    This page is logged. Every key request and every verification attempt is recorded.
   </div>
 
   <div class="footer">
-    TIS EMIS · Recovery page · If this page looks wrong, contact Dr Ayoola · 08067071557
+    TIS EMIS · Recovery page · If anything looks wrong here, contact Dr Ayoola · 08067071557
   </div>
 </div>
 
@@ -161,31 +215,29 @@
   'use strict';
 
   var RUNBOOK_URL = '/REC.md';
-  var RUNBOOK_CACHE_KEY = 'tis_runbook_cache_v1';
+  var RUNBOOK_CACHE_KEY = 'tis_runbook_cache_v2';
+  var SESSION_KEY = 'tis_recovery_session_v2';
 
-  // ------- tiny markdown renderer (subset used by REC.md) -------
+  // ----------------------------------------------------------------
+  // Markdown renderer (same subset as before)
+  // ----------------------------------------------------------------
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
   }
-
   function renderInline(s) {
     return s
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
   }
-
   function renderMarkdown(md) {
     var lines = String(md).split(/\r?\n/);
     var out = [];
     var i = 0;
-    var inCode = false;
-    var inList = false;
-    var inTable = false;
-    var tableRows = [];
+    var inCode = false, inList = false, inTable = false, tableRows = [];
 
     function flushTable() {
       if (!inTable) return;
@@ -201,19 +253,15 @@
         out.push('</tr>');
       });
       out.push('</tbody></table>');
-      tableRows = [];
-      inTable = false;
+      tableRows = []; inTable = false;
     }
-
     function flushList() {
       if (!inList) return;
-      out.push('</ul>');
-      inList = false;
+      out.push('</ul>'); inList = false;
     }
 
     while (i < lines.length) {
       var line = lines[i];
-
       if (line.indexOf('```') === 0) {
         if (inCode) { out.push('</pre>'); inCode = false; }
         else { flushTable(); flushList(); out.push('<pre>'); inCode = true; }
@@ -224,69 +272,153 @@
       if (line.indexOf('|') === 0 && line.lastIndexOf('|') > 0) {
         flushList();
         var cells = line.split('|').slice(1, -1);
-        tableRows.push(cells);
-        inTable = true;
-        i++; continue;
-      } else {
-        flushTable();
-      }
+        tableRows.push(cells); inTable = true; i++; continue;
+      } else { flushTable(); }
 
       if (/^### /.test(line)) { flushList(); out.push('<h3>' + renderInline(escapeHtml(line.slice(4))) + '</h3>'); i++; continue; }
       if (/^## /.test(line))  { flushList(); out.push('<h2>' + renderInline(escapeHtml(line.slice(3))) + '</h2>'); i++; continue; }
       if (/^# /.test(line))   { flushList(); out.push('<h1>' + renderInline(escapeHtml(line.slice(2))) + '</h1>'); i++; continue; }
-
       if (/^-{3,}\s*$/.test(line)) { flushList(); out.push('<hr>'); i++; continue; }
-
       if (/^[-*] /.test(line)) {
         if (!inList) { out.push('<ul>'); inList = true; }
-        out.push('<li>' + renderInline(escapeHtml(line.slice(2))) + '</li>');
-        i++; continue;
-      } else {
-        flushList();
-      }
-
+        out.push('<li>' + renderInline(escapeHtml(line.slice(2))) + '</li>'); i++; continue;
+      } else { flushList(); }
       if (/^\s*$/.test(line)) { i++; continue; }
-
       out.push('<p>' + renderInline(escapeHtml(line)) + '</p>');
       i++;
     }
     if (inCode) out.push('</pre>');
-    flushTable();
-    flushList();
+    flushTable(); flushList();
     return out.join('\n');
   }
 
-  function showError(msg, detail) {
-    var box = document.getElementById('content');
-    var html = '<div class="error-box"><b>Could not load the runbook.</b><br>' +
-               escapeHtml(msg) + '</div>';
-    if (detail) html += '<p style="font-size:13px;color:#666;">' + escapeHtml(detail) + '</p>';
-    html += '<p style="font-size:13px;"><b>Fallback:</b> open ' +
-            '<code>github.com/docayo/tis/blob/main/REC.md</code> in a browser with GitHub access.</p>';
-    box.innerHTML = html;
-  }
-
+  // ----------------------------------------------------------------
+  // Load runbook
+  // ----------------------------------------------------------------
   function loadRunbook() {
-    var box = document.getElementById('content');
+    var box = document.getElementById('runbookBody');
     var cached = null;
     try { cached = localStorage.getItem(RUNBOOK_CACHE_KEY); } catch (e) {}
     if (cached) box.innerHTML = renderMarkdown(cached);
 
     fetch(RUNBOOK_URL, { cache: 'no-store' })
-      .then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.text();
-      })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
       .then(function (md) {
         try { localStorage.setItem(RUNBOOK_CACHE_KEY, md); } catch (e) {}
         box.innerHTML = renderMarkdown(md);
       })
       .catch(function (err) {
-        if (!cached) showError('The file REC.md could not be fetched from the server.', err.message);
+        if (!cached) {
+          box.innerHTML = '<div style="background:#fff5f5;border-left:4px solid #c0392b;padding:14px 18px;border-radius:4px;text-align:left;color:#7a1f15;">' +
+            '<b>Could not load the runbook.</b><br>' + escapeHtml(err.message) +
+            '<br><br><b>Fallback:</b> open <code>github.com/docayo/tis/blob/main/REC.md</code>.</div>';
+        }
       });
   }
 
+  // ----------------------------------------------------------------
+  // Gate state
+  // ----------------------------------------------------------------
+  function setStatus(id, msg, cls) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'status ' + (cls || '');
+  }
+
+  function showVerified() {
+    document.getElementById('gateSection').classList.add('hidden');
+    document.getElementById('runbookSection').classList.remove('hidden');
+  }
+  function showGate() {
+    document.getElementById('gateSection').classList.remove('hidden');
+    document.getElementById('runbookSection').classList.add('hidden');
+  }
+
+  // On load: if this browser already verified a key this session, show content.
+  var verified = false;
+  try { verified = sessionStorage.getItem(SESSION_KEY) === 'ok'; } catch (e) {}
+  if (verified) showVerified(); else showGate();
+
+  // Always load the runbook content (cached or fetched) so it's ready.
   loadRunbook();
+
+  // ----------------------------------------------------------------
+  // Send key
+  // ----------------------------------------------------------------
+  var sendBtn = document.getElementById('sendKeyBtn');
+  if (sendBtn) sendBtn.addEventListener('click', function () {
+    sendBtn.disabled = true;
+    setStatus('sendStatus', 'Sending…', 'info');
+
+    fetch('/api/send-recovery-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+      .then(function (res) {
+        if (res.status !== 200 || !res.body || res.body.ok !== true) {
+          setStatus('sendStatus', 'Could not send: ' + ((res.body && res.body.error) || 'unknown'), 'error');
+          sendBtn.disabled = false;
+          return;
+        }
+        setStatus('sendStatus', 'Key sent to the school inbox. It expires in 30 minutes.', 'ok');
+        document.getElementById('gateStep2').classList.remove('hidden');
+        document.getElementById('keyInput').focus();
+      })
+      .catch(function (err) {
+        setStatus('sendStatus', 'Network error: ' + err.message, 'error');
+        sendBtn.disabled = false;
+      });
+  });
+
+  // ----------------------------------------------------------------
+  // Verify key
+  // ----------------------------------------------------------------
+  var verifyBtn = document.getElementById('verifyBtn');
+  if (verifyBtn) verifyBtn.addEventListener('click', function () {
+    var input = document.getElementById('keyInput');
+    var key = (input.value || '').trim().toUpperCase();
+    if (key.length !== 6) { setStatus('verifyStatus', 'Enter the full 6-character key.', 'error'); return; }
+
+    verifyBtn.disabled = true;
+    setStatus('verifyStatus', 'Verifying…', 'info');
+
+    fetch('/api/verify-recovery-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: key }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+      .then(function (res) {
+        if (res.status !== 200 || !res.body || res.body.ok !== true) {
+          setStatus('verifyStatus', (res.body && res.body.error) || 'Invalid key', 'error');
+          verifyBtn.disabled = false;
+          return;
+        }
+        try { sessionStorage.setItem(SESSION_KEY, 'ok'); } catch (e) {}
+        showVerified();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      })
+      .catch(function (err) {
+        setStatus('verifyStatus', 'Network error: ' + err.message, 'error');
+        verifyBtn.disabled = false;
+      });
+  });
+
+  // ----------------------------------------------------------------
+  // Cancel
+  // ----------------------------------------------------------------
+  var cancelBtn = document.getElementById('cancelBtn');
+  if (cancelBtn) cancelBtn.addEventListener('click', function () {
+    document.getElementById('gateStep2').classList.add('hidden');
+    document.getElementById('keyInput').value = '';
+    setStatus('verifyStatus', '', '');
+    setStatus('sendStatus', '', '');
+    var sb = document.getElementById('sendKeyBtn');
+    if (sb) sb.disabled = false;
+  });
 })();
 </script>
 
