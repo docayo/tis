@@ -1787,6 +1787,68 @@
   };
 
   // ================================================================
+  // [CLASS_SUBJECTS] — read and write the slot map per class
+  //   Slot numbers 1..18 (extendable). A slot can be empty (unused)
+  //   or bound to one subject_code.
+  // ================================================================
+  TIS.getClassSubjects = async function (className) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('class_subjects')
+        .select('slot, subject_code')
+        .eq('class_name', className)
+        .order('slot', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.setClassSubjects = async function (className, mappings) {
+    try {
+      const sb = await loadSdk();
+
+      // 1. Delete all current mappings for this class.
+      const del = await sb
+        .from('class_subjects')
+        .delete()
+        .eq('class_name', className);
+      if (del.error) return fail(del.error.message);
+
+      // 2. Insert the new set (skipping any empty slots).
+      const rows = (mappings || [])
+        .filter(function (m) { return m && m.slot && m.subject_code; })
+        .map(function (m) {
+          return {
+            class_name:   className,
+            slot:         Number(m.slot),
+            subject_code: String(m.subject_code).toUpperCase()
+          };
+        });
+
+      if (rows.length === 0) return ok({ class_name: className, count: 0 });
+
+      const ins = await sb.from('class_subjects').insert(rows);
+      if (ins.error) return fail(ins.error.message);
+
+      return ok({ class_name: className, count: rows.length });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listSubjects = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('subjects')
+        .select('code, display_name, is_active')
+        .eq('is_active', true)
+        .order('display_name', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
   // [CALENDAR]
   // ================================================================
   TIS.getCalendar = async function () {
