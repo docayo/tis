@@ -480,46 +480,72 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
 </div>
 </div>
 
-<!-- ============ BROADSHEET ============ -->
+<!-- ============ BROADSHEET / SCORES ============ -->
 <div class="module-view hidden" id="module-broadsheet">
-<div class="module-title"><i class="fas fa-file-alt"></i> Broad Sheet</div>
-<div class="module-subtitle">Term-wide subject scores by class</div>
+<div class="module-title"><i class="fas fa-file-alt"></i> Broad Sheet &amp; Scores</div>
+<div class="module-subtitle">Download templates, upload scores, harvest results</div>
 
-<div class="card-bg">
-<div class="form-row">
-<div class="form-group">
-<label>Term</label>
-<select id="bsTerm">
-<option value="1st">1st Term</option>
-<option value="2nd">2nd Term</option>
-<option value="3rd" selected>3rd Term</option>
-</select>
-</div>
-<div class="form-group">
-<label>Year</label>
-<input type="text" id="bsYear" value="2025">
-</div>
-<div class="form-group">
-<label>Class</label>
-<select id="bsClass"><option value="">-- All --</option></select>
-</div>
-</div>
-<div class="form-row">
-<div class="form-group">
-<button class="btn btn-primary" id="btnLoadBroadSheet" type="button">Load</button>
-</div>
-<div class="form-group">
-<button class="btn btn-warning" id="btnPopulateBroadSheet" type="button" data-perm="write_broadsheet">
-<i class="fas fa-sync-alt"></i> Populate
-</button>
-</div>
-</div>
-<div id="bsFeedback" style="margin-top:8px;font-size:12px;"></div>
+<div class="card-bg" style="border-left:4px solid #d4a017;">
+  <div style="font-weight:800;color:#0d4d26;font-size:15px;margin-bottom:6px;">
+    <i class="fas fa-file-arrow-down"></i> Download Scores Template
+  </div>
+  <p style="font-size:12px;color:#555;margin:0 0 10px;">
+    Generate an Excel file with PIN, name, and existing scores pre-filled. Fill in scores offline and upload below.
+  </p>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Term</label>
+      <select id="bsTerm">
+        <option value="1st">1st Term</option>
+        <option value="2nd">2nd Term</option>
+        <option value="3rd">3rd Term</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Year</label>
+      <input type="text" id="bsYear" value="2026">
+    </div>
+    <div class="form-group">
+      <label>Scope</label>
+      <select id="bsScope">
+        <option value="class">Class</option>
+        <option value="subject">Subject (all classes)</option>
+        <option value="school">Whole school</option>
+        <option value="student">Single student</option>
+      </select>
+    </div>
+    <div class="form-group" id="bsClassGroup">
+      <label>Class</label>
+      <select id="bsClass"><option value="">-- Select --</option></select>
+    </div>
+    <div class="form-group hidden" id="bsSubjectGroup">
+      <label>Subject</label>
+      <select id="bsSubject"><option value="">-- Select --</option></select>
+    </div>
+    <div class="form-group hidden" id="bsStudentGroup">
+      <label>Student PIN or Name</label>
+      <input type="text" id="bsStudentQuery" placeholder="Type a PIN or name">
+    </div>
+  </div>
+
+  <div style="margin-top:10px;">
+    <button class="btn btn-primary" id="btnDownloadScoresTemplate" type="button" data-perm="read_broadsheet">
+      <i class="fas fa-download"></i> Download Template
+    </button>
+    <button class="btn btn-warning" id="btnUploadScoresFile" type="button" data-perm="write_broadsheet">
+      <i class="fas fa-upload"></i> Upload Filled File
+    </button>
+    <button class="btn btn-gold" id="btnHarvestScores" type="button" data-perm="print_broadsheet">
+      <i class="fas fa-file-export"></i> Harvest to Excel
+    </button>
+    <input type="file" id="bsUploadInput" accept=".xlsx,.xls" style="display:none">
+  </div>
+  <div id="bsFeedback" style="margin-top:10px;font-size:12px;"></div>
 </div>
 
 <div id="bsContent" style="overflow-x:auto;"></div>
 </div>
-
 <!-- ============ ACADEMIC CALENDAR ============ -->
 <div class="module-view hidden" id="module-calendar">
 <div class="module-title"><i class="fas fa-calendar"></i> Academic Calendar</div>
