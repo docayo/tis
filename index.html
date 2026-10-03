@@ -682,6 +682,74 @@ Generate PDF
 </div>
 </div>
 
+<!-- ============ RESULTS ============ -->
+<div class="module-view hidden" id="module-results">
+<div class="module-title"><i class="fas fa-file-lines"></i> Results</div>
+<div class="module-subtitle">Termly and sessional report cards — by student PIN</div>
+
+<div class="card-bg" style="border-left:4px solid #d4a017;">
+  <div style="font-weight:800;color:#0d4d26;font-size:15px;margin-bottom:6px;">
+    <i class="fas fa-magnifying-glass"></i> Find a Student
+  </div>
+  <p style="font-size:12px;color:#555;margin:0 0 10px;">
+    Enter a student's PIN to view their report card. Pick a term and year below.
+  </p>
+
+  <div class="form-row">
+    <div class="form-group" style="flex:2;">
+      <label>Student PIN</label>
+      <input type="text" id="resultsPin" placeholder="e.g. TIS0241" autocomplete="off" spellcheck="false" style="text-transform:uppercase;">
+    </div>
+    <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+      <button class="btn btn-primary" id="btnResultsLoad" type="button">
+        <i class="fas fa-eye"></i> Load Report
+      </button>
+    </div>
+  </div>
+
+  <div id="resultsLearnerBanner" style="display:none;background:#e8f5e9;border-left:4px solid #0d4d26;padding:10px 14px;border-radius:6px;margin-top:12px;">
+    <div style="font-size:13px;color:#333;">
+      Selected: <b id="resultsLearnerName">—</b>
+      <span style="color:#666;">·</span>
+      <span id="resultsLearnerClass">—</span>
+      <span style="color:#666;">·</span>
+      PIN: <span id="resultsLearnerPin">—</span>
+    </div>
+  </div>
+
+  <div class="form-row" style="margin-top:14px;">
+    <div class="form-group">
+      <label>Term</label>
+      <select id="resultsTerm">
+        <option value="1st">1st Term</option>
+        <option value="2nd">2nd Term</option>
+        <option value="3rd">3rd Term</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Year</label>
+      <input type="text" id="resultsYear" value="2026">
+    </div>
+    <div class="form-group">
+      <label>Report Type</label>
+      <select id="resultsType">
+        <option value="termly">Termly (this term only)</option>
+        <option value="sessional">Sessional (all three terms)</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+      <button class="btn btn-gold" id="btnResultsPrint" type="button">
+        <i class="fas fa-print"></i> Print
+      </button>
+    </div>
+  </div>
+
+  <div id="resultsFeedback" style="margin-top:8px;font-size:12px;color:#666;"></div>
+</div>
+
+<div id="resultsContent" style="margin-top:14px;"></div>
+</div>
+
 <!-- ============ CLASSES ============ -->
 <div class="module-view hidden" id="module-classes">
 <div class="module-title"><i class="fas fa-layer-group"></i> Classes</div>
