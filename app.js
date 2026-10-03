@@ -8835,7 +8835,55 @@
   window.idcToggleClass          = idcToggleClass;
   window.idcSelectAllLearners    = idcSelectAllLearners;
   window.idcGenerateLearnerCards = idcGenerateLearnerCards;
-  window.idcGenerateVisitorCards = idcGenerateVisitorCards;
+    window.idcGenerateVisitorCards = idcGenerateVisitorCards;
+
+  // ================================================================
+  // [S22] RESULTS — internal report card viewer (stub for A-1)
+  //   Full renderer lands in Delivery A-2.
+  // ================================================================
+  function initResultsTab() {
+    const banner = $('resultsLearnerBanner');
+    const btn    = $('btnResultsLoad');
+    const printB = $('btnResultsPrint');
+    const pinEl  = $('resultsPin');
+
+    if (btn && !btn.__wired) {
+      btn.addEventListener('click', function () {
+        showToast('Report renderer coming in Delivery A-2.', 'info');
+      });
+      btn.__wired = true;
+    }
+    if (printB && !printB.__wired) {
+      printB.addEventListener('click', function () {
+        showToast('Report renderer coming in Delivery A-2.', 'info');
+      });
+      printB.__wired = true;
+    }
+    if (pinEl && !pinEl.__wired) {
+      pinEl.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') btn && btn.click();
+      });
+      pinEl.__wired = true;
+    }
+
+    // Default term/year to the active term if available.
+    (async function () {
+      try {
+        const at = await window.TIS.getActiveTerm();
+        if (at && at.ok && at.data) {
+          const t = $('resultsTerm'); if (t) t.value = at.data.term_type || '1st';
+          const y = $('resultsYear'); if (y) y.value = String(at.data.year || new Date().getFullYear());
+        }
+      } catch (e) { /* silent */ }
+    })();
+  }
+
+  window.initResultsTab = initResultsTab;
+
+})();
+// ================================================================
+// END OF app.js
+// ================================================================
 
 })();
 // ================================================================
