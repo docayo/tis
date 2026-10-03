@@ -41,9 +41,9 @@
     cachedClasses: []
   };
 
-   const ALL_MODULES = [
+    const ALL_MODULES = [
     'learners', 'staff', 'terms', 'attendance', 'staffatt',
-    'broadsheet', 'calendar', 'qr', 'reports',
+    'broadsheet', 'calendar', 'qr', 'reports', 'results',
     'classes', 'users', 'idcards'
   ];
 
@@ -325,6 +325,7 @@
       else if (name === 'classes') loadClasses();
       else if (name === 'users') loadUsers();
       else if (name === 'idcards') initIDCardsTab();
+      else if (name === 'results') initResultsTab();
     } catch (err) {
       console.error('[switchTab]', name, err);
     }
@@ -7819,17 +7820,17 @@
     document.querySelectorAll('.nav-tab').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
-    initLearnersTab();
+       initLearnersTab();
     initStaffTab();
     initTermsWiring();
     initCalendarTab();
     initCalendarImportTab();
     initQRTab();
     initReportsTab();
+    initResultsTab();
     initClassesTab();
     initUsersTab();
   }
-
   function safetySweep() {
     const ls = $('loadingScreen');
     if (ls) ls.classList.add('hidden');
