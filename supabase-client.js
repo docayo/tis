@@ -2009,7 +2009,6 @@
       return ok(data || []);
     } catch (err) { return fail(err); }
   };
-
   TIS.getLearnerTermRecord = async function (learnerId, termType, year) {
     try {
       const sb = await loadSdk();
@@ -2025,6 +2024,125 @@
     } catch (err) { return fail(err); }
   };
 
+  // ================================================================
+  // [REPORT_RATINGS] — psychomotor + comments per learner × term
+  // ================================================================
+  TIS.getReportRatings = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('report_ratings')
+        .select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertReportRating = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = Object.assign({}, row, { updated_at: new Date().toISOString() });
+      const { data, error } = await sb
+        .from('report_ratings')
+        .upsert(payload, { onConflict: 'learner_id,term_type,year' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [COMMENT_BANK] — read and pick
+  // ================================================================
+  TIS.getCommentBank = async function (field, band) {
+    try {
+      const sb = await loadSdk();
+      let q = sb
+        .from('comment_bank')
+        .select('id, field, band, category, text')
+        .eq('is_active', true);
+      if (field) q = q.eq('field', field);
+      if (band)  q = q.eq('band', band);
+      const { data, error } = await q;
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listCommentBank = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('comment_bank')
+        .select('id, field, band, category, text, is_active, created_at')
+        .order('field', { ascending: true })
+        .order('band', { ascending: true })
+        .order('category', { ascending: true })
+        .order('id', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createCommentBank = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('comment_bank')
+        .insert({
+          field:    String(row.field || '').trim(),
+          band:     String(row.band  || '').trim(),
+          category: String(row.category || 'general').trim(),
+          text:     String(row.text || '').trim(),
+          is_active: row.is_active !== false
+        })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.updateCommentBank = async function (id, patch) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('comment_bank')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteCommentBank = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('comment_bank').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({ id: id });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [RATINGS] — helper that maps a score band to a descriptive band
+  //   Used by both auto-assign and the renderer.
+  // ================================================================
+  TIS.bandForAverage = function (average) {
+    if (average >= 80) return 'excellent';
+    if (average >= 70) return 'very_good';
+    if (average >= 60) return 'good';
+    if (average >= 50) return 'average';
+    if (average >= 40) return 'fair';
+    return 'poor';
+  };
   // ================================================================
   // [CALENDAR]
   // ================================================================
