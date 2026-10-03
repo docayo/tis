@@ -6569,16 +6569,168 @@
       if (c) c.addEventListener('click', function () { resolve(''); });
     });
   }
+   // ================================================================
+  // [S15] REPORTS — Workshop
+  //   Edit psychomotor ratings and comments for every learner in a
+  //   class. Auto-assign (from Delivery 3) already fills values when
+  //   scores are uploaded; this tab lets humans override them.
   // ================================================================
-  // [S15] REPORTS
-  // ================================================================
+  const WS_RATING_FIELDS = [
+    { key: 'leadership',   label: 'Leadership' },
+    { key: 'hardwork',     label: 'Hardwork' },
+    { key: 'neatness',     label: 'Neatness' },
+    { key: 'politeness',   label: 'Politeness' },
+    { key: 'punctuality',  label: 'Punctuality' },
+    { key: 'interaction',  label: 'Interaction' },
+    { key: 'honesty',      label: 'Honesty' },
+    { key: 'communication',label: 'Communication' },
+    { key: 'reading_club', label: 'Reading Club' },
+    { key: 'perseverance', label: 'Perseverance' }
+  ];
+
+  const WS_RATING_VALUES = ['EXCELLENT','V.GOOD','GOOD','AVERAGE','FAIR','POOR'];
+
+  let wsState = {
+    className: null,
+    term: null,
+    year: null,
+    learners: [],
+    ratings: {},          // learnerId → report_ratings row (or null)
+    averages: {},         // learnerId → average from scores this term
+    dirty: {},            // learnerId → true if row has unsaved changes
+    loaded: false
+  };
+
   function initReportsTab() {
-    const btn = $('btnGenerateReport');
-    if (btn) btn.addEventListener('click', () => {
-      showToast('PDF generation will be handled by the Apps Script bridge.', 'info');
-      setText('reportFeedback', 'PDF export will be wired to the Apps Script bridge.');
-    });
+    const btn   = $('btnWsLoad');
+    const saveA = $('btnWsSaveAll');
+
+    if (btn && !btn.__wired) {
+      btn.addEventListener('click', wsLoadClass);
+      btn.__wired = true;
+    }
+    if (saveA && !saveA.__wired) {
+      saveA.addEventListener('click', wsSaveAllChanged);
+      saveA.__wired = true;
+    }
+
+    // Populate class picker and default term/year.
+    wsPopulateClassPicker();
   }
+  window.initReportsTab = initReportsTab;
+
+  async function wsPopulateClassPicker() {
+    const sel = $('wsClass');
+    if (!sel) return;
+    const r = await window.TIS.listClasses();
+    const classes = (r && r.ok ? r.data : [])
+      .filter(function (c) { return c.is_active !== false; })
+      .sort(function (a, b) { return (a.sort_order || 9999) - (b.sort_order || 9999); });
+    sel.innerHTML = '<option value="">-- Select --</option>' +
+      classes.map(function (c) {
+        return '<option value="' + escAttr(c.name) + '">' + esc(c.name) + '</option>';
+      }).join('');
+
+    // Default to active term.
+    try {
+      const at = await window.TIS.getActiveTerm();
+      if (at && at.ok && at.data) {
+        const t = $('wsTerm'); if (t) t.value = at.data.term_type || '1st';
+        const y = $('wsYear'); if (y) y.value = String(at.data.year || new Date().getFullYear());
+      }
+    } catch (e) { /* silent */ }
+  }
+
+  async function wsLoadClass() {
+    const clsEl  = $('wsClass');
+    const termEl = $('wsTerm');
+    const yearEl = $('wsYear');
+    const feed   = $('wsFeedback');
+
+    const cls  = clsEl  ? clsEl.value  : '';
+    const term = termEl ? termEl.value : '';
+    const year = yearEl ? parseInt(yearEl.value, 10) : 0;
+
+    if (!cls)  { if (feed) { feed.style.color = '#c0392b'; feed.textContent = 'Pick a class.'; } return; }
+    if (!term || !year) { if (feed) { feed.style.color = '#c0392b'; feed.textContent = 'Pick a term and year.'; } return; }
+
+    if (feed) { feed.style.color = '#666'; feed.textContent = 'Loading ' + cls + ' …'; }
+    setHTML('wsContent', pageLoaderHTML('Loading class…'));
+    startLoader();
+
+    try {
+      // 1. Learners in this class.
+      const learnersR = await window.TIS.listLearners();
+      const learners = (learnersR && learnersR.ok ? learnersR.data : [])
+        .filter(function (l) {
+          const w = (l.date_of_withdrawal || '').toString().trim();
+          if (w && w !== '' && w !== 'N/A') return false;
+          return l.class_name === cls;
+        })
+        .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+      if (learners.length === 0) {
+        stopLoader();
+        setHTML('wsContent', emptyHTML('fa-users', 'No learners in ' + cls));
+        if (feed) feed.textContent = '';
+        return;
+      }
+
+      // 2. Existing report_ratings rows for these learners.
+      const ratingsR = await Promise.all(
+        learners.map(function (l) {
+          return window.TIS.getReportRatings(l.id, term, year);
+        })
+      );
+      const ratingsMap = {};
+      learners.forEach(function (l, i) {
+        const r = ratingsR[i];
+        ratingsMap[l.id] = (r && r.ok) ? r.data : null;
+      });
+
+      // 3. Averages from scores — used to show the "band" per learner.
+      const scoresR = await window.TIS.getScoresForLearners(
+        learners.map(function (l) { return l.id; }), term, year
+      );
+      const scoresMap = (scoresR && scoresR.ok && scoresR.data) ? scoresR.data : {};
+
+      const averages = {};
+      learners.forEach(function (l) {
+        let total = 0, n = 0;
+        Object.keys(scoresMap).forEach(function (k) {
+          const parts = k.split('|');
+          if (Number(parts[0]) !== l.id) return;
+          const row = scoresMap[k];
+          if (row && row.total != null) { total += Number(row.total); n++; }
+        });
+        averages[l.id] = n > 0 ? total / n : null;
+      });
+
+      stopLoader();
+
+      wsState.className = cls;
+      wsState.term = term;
+      wsState.year = year;
+      wsState.learners = learners;
+      wsState.ratings = ratingsMap;
+      wsState.averages = averages;
+      wsState.dirty = {};
+      wsState.loaded = true;
+
+      wsRenderTable();
+
+      if (feed) {
+        feed.style.color = '#0d4d26';
+        feed.textContent = learners.length + ' learner(s) loaded · ' + term.toUpperCase() + ' TERM ' + year;
+      }
+    } catch (err) {
+      stopLoader();
+      const msg = err && err.message ? err.message : String(err);
+      if (feed) { feed.style.color = '#c0392b'; feed.textContent = 'Could not load class: ' + msg; }
+      setHTML('wsContent', errorHTML('Could not load class', msg));
+    }
+  }
+  window.wsLoadClass = wsLoadClass;
 
     // ================================================================
   // [S16] CLASSES
