@@ -1899,6 +1899,133 @@
   };
 
   // ================================================================
+  // [RESULTS HELPERS]
+  // ================================================================
+  TIS.getClassPopulation = async function (className) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learners')
+        .select('id, date_of_withdrawal')
+        .eq('class_name', className);
+      if (error) return fail(error.message);
+      const active = (data || []).filter(function (l) {
+        const w = (l.date_of_withdrawal || '').toString().trim();
+        return !(w && w !== '' && w !== 'N/A');
+      });
+      return ok(active.length);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getAttendanceSummaryForTerm = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('attendance_learner')
+        .select('mark')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (error) return fail(error.message);
+
+      let present = 0;
+      (data || []).forEach(function (r) {
+        const m = r.mark;
+        if (m === '\\') present += 1;
+        else if (m === '/') present += 1;
+        else if (m === '\\ /') present += 2;
+      });
+
+      // "Times opened" — count school days in the term from the calendar.
+      let opened = 0;
+      try {
+        const termQ = await sb
+          .from('terms')
+          .select('start_date, end_date')
+          .eq('term_type', termType)
+          .eq('year', year)
+          .maybeSingle();
+        if (!termQ.error && termQ.data && termQ.data.start_date && termQ.data.end_date) {
+          const start = new Date(termQ.data.start_date + 'T00:00:00');
+          const end   = new Date(termQ.data.end_date   + 'T00:00:00');
+          // Count weekdays between start and end, excluding holidays.
+          const holQ = await sb
+            .from('academic_calendar')
+            .select('event_date, is_holiday, event_type')
+            .eq('term_type', termType)
+            .gte('event_date', termQ.data.start_date)
+            .lte('event_date', termQ.data.end_date);
+          const holSet = {};
+          (holQ && holQ.data ? holQ.data : []).forEach(function (h) {
+            if (h.is_holiday || h.event_type === 'Holiday') holSet[h.event_date] = true;
+          });
+          let cur = new Date(start.getTime());
+          while (cur <= end) {
+            const dow = cur.getDay();
+            if (dow >= 1 && dow <= 5) {
+              const iso = cur.toISOString().slice(0, 10);
+              if (!holSet[iso]) opened += 2;   // M + A slots per day
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+      } catch (e) { /* non-fatal */ }
+
+      const absent = Math.max(0, opened - present);
+      return ok({ opened: opened, present: present, absent: absent });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getResumptionDate = async function (termType, year) {
+    try {
+      const sb = await loadSdk();
+      // Find the next term after (termType, year).
+      let nextTermType, nextYear;
+      if (termType === '1st')      { nextTermType = '2nd'; nextYear = year; }
+      else if (termType === '2nd') { nextTermType = '3rd'; nextYear = year; }
+      else                          { nextTermType = '1st'; nextYear = year + 1; }
+
+      const { data, error } = await sb
+        .from('terms')
+        .select('start_date, label')
+        .eq('term_type', nextTermType)
+        .eq('year', nextYear)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data ? data.start_date : null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getScoresForTerm = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('scores')
+        .select('subject_code, test1, test2, exam, total, grade, remark')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getLearnerTermRecord = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('learner_terms')
+        .select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
   // [CALENDAR]
   // ================================================================
   TIS.getCalendar = async function () {
