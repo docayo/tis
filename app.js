@@ -6732,6 +6732,268 @@
   }
   window.wsLoadClass = wsLoadClass;
 
+  function wsRenderTable() {
+    if (!wsState.loaded) return;
+    const learners = wsState.learners;
+    const termLabel = wsState.term.toUpperCase() + ' TERM ' + wsState.year;
+
+    let html = '<div class="card-bg" style="padding:0;overflow-x:auto;">';
+    html += '<div style="padding:10px 14px;background:#0d4d26;color:#fff;font-weight:700;font-size:13px;">' +
+            esc(wsState.className) + ' — ' + esc(termLabel) + '</div>';
+    html += '<table class="ws-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:1600px;">';
+
+    // Header
+    html += '<thead>';
+    html += '<tr style="background:#e8f5e9;">';
+    html += '<th style="text-align:left;padding:8px 6px;position:sticky;left:0;background:#e8f5e9;z-index:2;min-width:70px;">PIN</th>';
+    html += '<th style="text-align:left;padding:8px 6px;position:sticky;left:70px;background:#e8f5e9;z-index:2;min-width:200px;">Name</th>';
+    html += '<th style="padding:8px 6px;min-width:60px;">Avg</th>';
+    html += '<th style="padding:8px 6px;min-width:80px;">Band</th>';
+    WS_RATING_FIELDS.forEach(function (f) {
+      html += '<th style="padding:8px 4px;min-width:90px;font-size:10px;">' + esc(f.label) + '</th>';
+    });
+    html += '<th style="text-align:left;padding:8px 6px;min-width:280px;">Teacher Comment</th>';
+    html += '<th style="text-align:left;padding:8px 6px;min-width:280px;">Principal Comment</th>';
+    html += '<th style="padding:8px 6px;min-width:70px;">State</th>';
+    html += '<th style="padding:8px 6px;min-width:80px;">Save</th>';
+    html += '</tr></thead><tbody>';
+
+    // Rows
+    learners.forEach(function (l) {
+      const rating = wsState.ratings[l.id];
+      const avg = wsState.averages[l.id];
+      const band = (avg != null) ? window.TIS.bandForAverage(avg) : '—';
+      const bandLabel = band === '—' ? '—' :
+                        band.replace('_', ' ').toUpperCase();
+
+      // Pre-fill ratings
+      const r = (rating && rating.ratings) ? rating.ratings : {};
+      const teacherEdited   = rating && rating.teacher_edited;
+      const principalEdited = rating && rating.principal_edited;
+
+      // Row background: green if there's a ratings row, grey if not.
+      const rowBg = rating ? '#f7fbf7' : '#fafafa';
+
+      html += '<tr data-learner-row="' + l.id + '" style="background:' + rowBg + ';">';
+      html += '<td style="padding:6px;border-bottom:1px solid #eee;position:sticky;left:0;background:' + rowBg + ';z-index:1;">' + esc(l.pin || '') + '</td>';
+      html += '<td style="padding:6px;border-bottom:1px solid #eee;position:sticky;left:70px;background:' + rowBg + ';z-index:1;font-weight:600;">' + esc(l.name || '') + '</td>';
+      html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;font-weight:700;">' +
+              (avg != null ? avg.toFixed(1) : '—') + '</td>';
+      html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;font-size:10px;">' +
+              esc(bandLabel) + '</td>';
+
+      WS_RATING_FIELDS.forEach(function (f) {
+        const v = r[f.key] || 'AVERAGE';
+        html += '<td style="padding:4px;border-bottom:1px solid #eee;text-align:center;">';
+        html += '<select class="ws-rating" data-learner-id="' + l.id + '" data-field="' + f.key +
+                '" onchange="wsMarkDirty(' + l.id + ')" style="width:100%;font-size:11px;padding:3px;border:1px solid #ccc;border-radius:4px;">';
+        WS_RATING_VALUES.forEach(function (val) {
+          html += '<option value="' + val + '"' + (val === v ? ' selected' : '') + '>' + val + '</option>';
+        });
+        html += '</select>';
+        html += '</td>';
+      });
+
+      // Teacher comment
+      html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
+      html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
+              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'style="width:100%;font-size:11px;padding:4px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">' +
+              esc((rating && rating.teacher_comment) || '') + '</textarea>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
+              'onclick="wsOpenCommentBank(\'teacher\', \'' + (band === '—' ? 'average' : band) + '\', ' + l.id + ', \'teacher_comment\')">' +
+              'Pick from bank</button>';
+      html += '</td>';
+
+      // Principal comment
+      html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
+      html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="principal_comment" ' +
+              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'style="width:100%;font-size:11px;padding:4px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">' +
+              esc((rating && rating.principal_comment) || '') + '</textarea>';
+      html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
+              'onclick="wsOpenCommentBank(\'principal\', \'' + (band === '—' ? 'average' : band) + '\', ' + l.id + ', \'principal_comment\')">' +
+              'Pick from bank</button>';
+      html += '</td>';
+
+      // State chip
+      let chip = '<span style="color:#999;font-size:10px;">—</span>';
+      if (teacherEdited || principalEdited) {
+        chip = '<span style="background:#d4a017;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">EDITED</span>';
+      } else if (rating) {
+        chip = '<span style="background:#e0e0e0;color:#333;font-size:10px;padding:2px 6px;border-radius:4px;">AUTO</span>';
+      }
+      html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;" data-state-chip="' + l.id + '">' + chip + '</td>';
+
+      // Save button
+      html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;">';
+      html += '<button type="button" class="btn btn-sm btn-success" onclick="wsSaveRow(' + l.id + ')" style="font-size:10px;padding:4px 8px;">Save</button>';
+      html += '</td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    setHTML('wsContent', html);
+  }
+
+  function wsMarkDirty(learnerId) {
+    wsState.dirty[learnerId] = true;
+    // Visual cue: highlight the state chip.
+    const chip = document.querySelector('[data-state-chip="' + learnerId + '"]');
+    if (chip) chip.innerHTML = '<span style="background:#c0392b;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">UNSAVED</span>';
+  }
+  window.wsMarkDirty = wsMarkDirty;
+
+  function wsCollectRow(learnerId) {
+    const ratings = {};
+    WS_RATING_FIELDS.forEach(function (f) {
+      const sel = document.querySelector('.ws-rating[data-learner-id="' + learnerId + '"][data-field="' + f.key + '"]');
+      ratings[f.key] = sel ? sel.value : 'AVERAGE';
+    });
+    const tEl = document.querySelector('.ws-comment[data-learner-id="' + learnerId + '"][data-field="teacher_comment"]');
+    const pEl = document.querySelector('.ws-comment[data-learner-id="' + learnerId + '"][data-field="principal_comment"]');
+    return {
+      ratings: ratings,
+      teacher_comment: tEl ? tEl.value.trim() : '',
+      principal_comment: pEl ? pEl.value.trim() : ''
+    };
+  }
+
+  async function wsSaveRow(learnerId) {
+    const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
+    if (!learner) return;
+
+    // Detect which fields changed relative to the last saved snapshot.
+    const prior = wsState.ratings[learnerId] || {};
+    const row = wsCollectRow(learnerId);
+
+    // Consider a field "edited by human" if it differs from the auto-assigned
+    // snapshot OR if we already had an edited flag.
+    const teacherEdited   = (!!prior.teacher_edited)   || (prior.teacher_comment   !== row.teacher_comment);
+    const principalEdited = (!!prior.principal_edited) || (prior.principal_comment !== row.principal_comment);
+
+    startLoader();
+    const r = await window.TIS.upsertReportRating({
+      learner_id: learnerId,
+      term_type:  wsState.term,
+      year:       wsState.year,
+      ratings:    row.ratings,
+      teacher_comment:   row.teacher_comment,
+      principal_comment: row.principal_comment,
+      teacher_edited:    teacherEdited,
+      principal_edited:  principalEdited,
+      updated_by: (State.profile && State.profile.name) || 'Workshop'
+    });
+    stopLoader();
+
+    if (!r || !r.ok) {
+      showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+      return;
+    }
+
+    wsState.ratings[learnerId] = r.data;
+    delete wsState.dirty[learnerId];
+
+    // Update the state chip on-screen without re-rendering the whole table.
+    const chip = document.querySelector('[data-state-chip="' + learnerId + '"]');
+    if (chip) {
+      chip.innerHTML = '<span style="background:#d4a017;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">EDITED</span>';
+    }
+
+    showToast('Saved ' + (learner.name || '') + '.', 'success');
+  }
+  window.wsSaveRow = wsSaveRow;
+
+  async function wsSaveAllChanged() {
+    const dirty = Object.keys(wsState.dirty);
+    if (dirty.length === 0) { showToast('No changes to save.', 'info'); return; }
+    if (!confirm('Save ' + dirty.length + ' changed row(s)?')) return;
+
+    let okCount = 0, failCount = 0;
+    for (let i = 0; i < dirty.length; i++) {
+      const id = parseInt(dirty[i], 10);
+      const learner = wsState.learners.find(function (l) { return l.id === id; });
+      if (!learner) continue;
+
+      const prior = wsState.ratings[id] || {};
+      const row = wsCollectRow(id);
+      const teacherEdited   = (!!prior.teacher_edited)   || (prior.teacher_comment   !== row.teacher_comment);
+      const principalEdited = (!!prior.principal_edited) || (prior.principal_comment !== row.principal_comment);
+
+      const r = await window.TIS.upsertReportRating({
+        learner_id: id,
+        term_type:  wsState.term,
+        year:       wsState.year,
+        ratings:    row.ratings,
+        teacher_comment:   row.teacher_comment,
+        principal_comment: row.principal_comment,
+        teacher_edited:    teacherEdited,
+        principal_edited:  principalEdited,
+        updated_by: (State.profile && State.profile.name) || 'Workshop'
+      });
+      if (r && r.ok) {
+        okCount++;
+        wsState.ratings[id] = r.data;
+        delete wsState.dirty[id];
+        const chip = document.querySelector('[data-state-chip="' + id + '"]');
+        if (chip) chip.innerHTML = '<span style="background:#d4a017;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">EDITED</span>';
+      } else {
+        failCount++;
+      }
+    }
+    showToast('Saved ' + okCount + ' row(s)' + (failCount ? ', ' + failCount + ' failed' : '') + '.', failCount ? 'warning' : 'success');
+  }
+  window.wsSaveAllChanged = wsSaveAllChanged;
+
+  // ----------------------------------------------------------------
+  // Comment bank picker
+  // ----------------------------------------------------------------
+  async function wsOpenCommentBank(field, band, learnerId, targetField) {
+    startLoader();
+    const r = await window.TIS.getCommentBank(field, band);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Could not load comment bank.', 'error'); return; }
+
+    const comments = (r.data || []).filter(function (c) { return c.is_active !== false; });
+    if (comments.length === 0) { showToast('No comments in the bank for that band.', 'info'); return; }
+
+    const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
+    const fullName = learner ? (learner.name || '') : '';
+    const firstName = firstNameOf(fullName);
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box wide" style="max-width:720px;max-height:80vh;overflow-y:auto;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Comment bank — ' + esc(field === 'teacher' ? "Teacher" : "Principal") + ' · ' + esc(band.replace('_', ' ')) + '</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">Click a comment to place it in the ' +
+            esc(field === 'teacher' ? "Teacher's" : "Principal's") + ' field for <b>' + esc(fullName) + '</b>.</p>';
+    html += '<div style="display:grid;grid-template-columns:1fr;gap:6px;">';
+    comments.forEach(function (c) {
+      const text = fillCommentTemplate(c.text, {
+        first: firstName,
+        strong1: '',
+        weak1: ''
+      });
+      html += '<div style="border:1px solid #e0e6e2;border-radius:8px;padding:10px;cursor:pointer;background:#f7fbf7;" ' +
+              'onclick="wsApplyComment(' + learnerId + ', \'' + escAttr(targetField) + '\', \'' + escAttr(text) + '\')">' +
+              '<div style="font-size:12px;color:#333;">' + esc(text) + '</div>' +
+              '<div style="font-size:10px;color:#999;margin-top:4px;">' + esc(c.category || 'general') + '</div>' +
+              '</div>';
+    });
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+  }
+  window.wsOpenCommentBank = wsOpenCommentBank;
+
+  function wsApplyComment(learnerId, targetField, text) {
+    const el = document.querySelector('.ws-comment[data-learner-id="' + learnerId + '"][data-field="' + targetField + '"]');
+    if (el) {
+      el.value = text;
+      wsMarkDirty(learnerId);
+    }
+    closeModal();
+  }
+  window.wsApplyComment = wsApplyComment;
     // ================================================================
   // [S16] CLASSES
   // ================================================================
