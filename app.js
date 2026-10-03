@@ -7189,15 +7189,36 @@
       const learnerIds = learners.map(function (l) { return l.id; });
       const scoreMap = await bsFetchExistingScores(learnerIds, opts.term, opts.year);
 
-      // 6. Build the header row.
+           // 6. Determine which slot numbers to include.
+      //    - scope 'subject': only the slots that match the chosen subject_code,
+      //      per class. A row that has no matching slot for its class still
+      //      gets the three columns, left blank.
+      //    - other scopes: all 18 slots.
+      const includeSlotSet = {};   // { slotNumber: true }
+      if (opts.scope === 'subject' && opts.subjectFilter) {
+        Object.keys(legend).forEach(function (cn) {
+          (legend[cn] || []).forEach(function (row) {
+            if (row.subject_code === opts.subjectFilter) {
+              includeSlotSet[Number(row.slot)] = true;
+            }
+          });
+        });
+      } else {
+        for (let i = 1; i <= BS_SLOT_LIMIT; i++) includeSlotSet[i] = true;
+      }
+      const includeSlots = Object.keys(includeSlotSet)
+        .map(Number)
+        .sort(function (a, b) { return a - b; });
+
+      // 7. Build the header row.
       const header = ['stud_pin','stud_name','stud_gender','stud_class','times_pre'];
-      for (let i = 1; i <= BS_SLOT_LIMIT; i++) {
+      includeSlots.forEach(function (i) {
         header.push('sub' + i + '_test1_score');
         header.push('sub' + i + '_test2_score');
         header.push('sub' + i + '_exam_score');
-      }
+      });
 
-      // 7. Build one row per learner.
+      // 8. Build one row per learner.
       const rows = [header];
       learners.forEach(function (l) {
         const row = [
@@ -7208,22 +7229,28 @@
           ''   // times_pre — filled from attendance register later
         ];
         const classLegend = legend[l.class_name] || [];
-        for (let i = 1; i <= BS_SLOT_LIMIT; i++) {
-          const mapping = classLegend.find(function (x) { return Number(x.slot) === i; });
+        includeSlots.forEach(function (slotNum) {
+          const mapping = classLegend.find(function (x) { return Number(x.slot) === slotNum; });
           if (!mapping) {
             row.push('', '', '');
-            continue;
+            return;
           }
           const key = l.id + '|' + mapping.subject_code;
           const existing = scoreMap[key] || {};
           row.push(existing.test1 != null ? existing.test1 : '');
           row.push(existing.test2 != null ? existing.test2 : '');
           row.push(existing.exam  != null ? existing.exam  : '');
-        }
+        });
         rows.push(row);
       });
 
-      return { ok: true, rows: rows, legend: legend, learnerCount: learners.length };
+      return {
+        ok: true,
+        rows: rows,
+        legend: legend,
+        learnerCount: learners.length,
+        includeSlots: includeSlots
+      };
     } catch (err) {
       return { ok: false, error: String(err && err.message || err) };
     }
