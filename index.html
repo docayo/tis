@@ -657,31 +657,51 @@ Show Active
 <div id="qrContent"></div>
 </div>
 
-<!-- ============ REPORTS ============ -->
+<!-- ============ REPORTS — Workshop ============ -->
 <div class="module-view hidden" id="module-reports">
-<div class="module-title"><i class="fas fa-file-pdf"></i> Reports</div>
-<div class="module-subtitle">Generate PDF reports for any date range</div>
+<div class="module-title"><i class="fas fa-pen-to-square"></i> Reports Workshop</div>
+<div class="module-subtitle">Fill in psychomotor ratings and comments. Scores feed in automatically.</div>
 
-<div class="card-bg">
-<div class="form-row">
-<div class="form-group">
-<label>From</label>
-<input type="date" id="reportFrom">
-</div>
-<div class="form-group">
-<label>To</label>
-<input type="date" id="reportTo">
-</div>
-<div class="form-group" style="flex:0 0 auto;">
-<button class="btn btn-primary" id="btnGenerateReport" type="button" data-perm="print_reports">
-Generate PDF
-</button>
-</div>
-</div>
-<div id="reportFeedback" style="margin-top:8px;font-size:12px;"></div>
-</div>
+<div class="card-bg" style="border-left:4px solid #d4a017;">
+  <div class="form-row">
+    <div class="form-group">
+      <label>Class</label>
+      <select id="wsClass"><option value="">-- Select --</option></select>
+    </div>
+    <div class="form-group">
+      <label>Term</label>
+      <select id="wsTerm">
+        <option value="1st">1st Term</option>
+        <option value="2nd">2nd Term</option>
+        <option value="3rd">3rd Term</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Year</label>
+      <input type="text" id="wsYear" value="2026">
+    </div>
+    <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+      <button class="btn btn-primary" id="btnWsLoad" type="button">
+        <i class="fas fa-sync-alt"></i> Load Class
+      </button>
+    </div>
+    <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+      <button class="btn btn-gold" id="btnWsSaveAll" type="button">
+        <i class="fas fa-save"></i> Save All Changed
+      </button>
+    </div>
+  </div>
+  <div id="wsFeedback" style="margin-top:8px;font-size:12px;color:#666;"></div>
+  <div style="margin-top:10px;font-size:11px;color:#666;line-height:1.6;">
+    <b>How this works:</b> Ratings default to <b>AVERAGE</b>. When scores are uploaded
+    for a term, the system auto-assigns ratings and comments based on the learner's
+    performance. You can override any value here. Once you save a row, it is marked
+    <b>EDITED</b> and will not be overwritten by future uploads.
+  </div>
 </div>
 
+<div id="wsContent" style="margin-top:12px;"></div>
+</div>
 <!-- ============ RESULTS ============ -->
 <div class="module-view hidden" id="module-results">
 <div class="module-title"><i class="fas fa-file-lines"></i> Results</div>
