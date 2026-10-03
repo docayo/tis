@@ -9572,8 +9572,7 @@
       '.rc-stamp-cell { color: #aaa; font-style: italic; }' +
       '.rc-scroll { overflow-x: auto; }' +
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } }' +
-    '</style>';
-  }
+    '</style>'
 
 })();
 // ================================================================
