@@ -7135,9 +7135,23 @@
       XLSX.writeFile(wb, fname);
       bsSetFeedback('Template downloaded: ' + fname, 'ok');
       showToast('Template downloaded.', 'success');
-    } catch (err) {
+      } catch (err) {
       stopLoader();
-      bsSetFeedback('Unexpected: ' + (err && err.message ? err.message : err), 'error');
+      var msg = (err && err.message) ? err.message : String(err);
+
+      // Turn common errors into operator-friendly language.
+      if (/is not defined/i.test(msg)) {
+        msg = 'A required function is missing on the server. Please reload the page (Ctrl+Shift+R) and try again. If the problem persists, contact Dr Ayoola. Technical detail: ' + msg;
+      } else if (/Failed to fetch|NetworkError/i.test(msg)) {
+        msg = 'The network dropped while reading the file. Please try again. Technical detail: ' + msg;
+      } else if (/Unexpected token|SyntaxError/i.test(msg)) {
+        msg = 'The uploaded file could not be read. Please ensure it is an .xlsx file downloaded from this portal. Technical detail: ' + msg;
+      } else if (/duplicate key/i.test(msg)) {
+        msg = 'A conflict was detected on a row that was already ticked. Please retry. Technical detail: ' + msg;
+      }
+
+      bsSetFeedback(msg, 'error');
+      console.error('[bsImportScoresFile]', err);
     }
   }
 
