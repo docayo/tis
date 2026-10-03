@@ -7746,7 +7746,7 @@
       else failed.push({ row: p.rowNumber, pin: p.pin, subject: p.subject_code, error: (r && r.error) || 'unknown' });
     }
 
-    stopLoader();
+        stopLoader();
 
     const msg = 'Imported ' + written.length + ' row(s)';
     if (failed.length) bsSetFeedback(msg + ' — ' + failed.length + ' failed. See console.', 'error');
@@ -7757,15 +7757,235 @@
 
     bsImportState = null;
     closeModal();
+
+    // Auto-assign psychomotor ratings and comments for the learners
+    // we just wrote scores for.
+    if (written.length > 0) {
+      startLoader();
+      bsSetFeedback('Auto-assigning ratings and comments…', 'info');
+      try {
+        await autoAssignRatings(written);
+      } catch (e) {
+        console.warn('[autoAssign after import]', e);
+      }
+      stopLoader();
+      bsSetFeedback(msg + ' · ratings & comments assigned.', 'ok');
+    }
+
+  // ================================================================
+  // [S18c] AUTO-ASSIGN — psychomotor ratings and comments
+  //   Runs after a scores upload completes. Fills in the non-
+  //   academic side of the report card using weighted random
+  //   picks based on the learner's average this term.
+  // ================================================================
+  const AUTO_RATING_FIELDS = [
+    'leadership', 'hardwork', 'neatness', 'politeness', 'punctuality',
+    'interaction', 'honesty', 'communication', 'reading_club', 'perseverance'
+  ];
+
+  const AUTO_RATING_VALUES = ['EXCELLENT', 'V.GOOD', 'GOOD', 'AVERAGE', 'FAIR', 'POOR'];
+
+  // Weighted distribution per band. Highest-probability value first.
+  const AUTO_RATING_WEIGHTS = {
+    excellent: ['EXCELLENT', 'EXCELLENT', 'EXCELLENT', 'V.GOOD', 'GOOD'],
+    very_good: ['V.GOOD',    'V.GOOD',    'V.GOOD',    'GOOD',   'EXCELLENT'],
+    good:      ['GOOD',      'GOOD',      'GOOD',      'V.GOOD', 'AVERAGE'],
+    average:   ['AVERAGE',   'AVERAGE',   'AVERAGE',   'GOOD',   'FAIR'],
+    fair:      ['FAIR',      'FAIR',      'FAIR',      'AVERAGE','POOR'],
+    poor:      ['POOR',      'POOR',      'POOR',      'FAIR',   'AVERAGE']
+  };
+
+  function pickWeighted(values) {
+    return values[Math.floor(Math.random() * values.length)];
   }
 
-  function gradeForScore(total) {
-    if (total >= 80) return { grade: 'A', remark: 'EXCELLENT' };
-    if (total >= 70) return { grade: 'B', remark: 'VERY GOOD' };
-    if (total >= 60) return { grade: 'C', remark: 'GOOD' };
-    if (total >= 50) return { grade: 'D', remark: 'FAIR' };
-    if (total >= 40) return { grade: 'E', remark: 'POOR' };
-    return { grade: 'F', remark: 'FAIL' };
+  function buildRatingsForBand(band) {
+    const weights = AUTO_RATING_WEIGHTS[band] || AUTO_RATING_WEIGHTS.average;
+    const out = {};
+    AUTO_RATING_FIELDS.forEach(function (f) {
+      out[f] = pickWeighted(weights);
+    });
+    return out;
+  }
+
+  // Extract the first name from a full name like "ADEGOKE ADEWUNMI JOY" -> "Adewunmi".
+  function firstNameOf(fullName) {
+    if (!fullName) return '';
+    const parts = String(fullName).trim().split(/\s+/);
+    if (parts.length === 0) return '';
+    if (parts.length === 1) {
+      // Only one word — use as-is, capitalised.
+      return parts[0].charAt(0).toUpperCase() + parts[0].slice(1).toLowerCase();
+    }
+    const second = parts[1];
+    return second.charAt(0).toUpperCase() + second.slice(1).toLowerCase();
+  }
+
+  // Fill {first}, {strong1}, {weak1} placeholders.
+  function fillCommentTemplate(text, ctx) {
+    return String(text || '')
+      .replace(/\{first\}/g,  ctx.first || '')
+      .replace(/\{strong1\}/g, ctx.strong1 || 'your strongest subject')
+      .replace(/\{weak1\}/g,   ctx.weak1 || 'your weakest subject');
+  }
+
+  // Compute a learner's average and top/bottom subject for the batch.
+  function computeScoresSummary(plannedForLearner) {
+    const bySubject = {};
+    plannedForLearner.forEach(function (p) {
+      const t = (p.test1 || 0) + (p.test2 || 0) + (p.exam || 0);
+      bySubject[p.subject_code] = (bySubject[p.subject_code] || 0) + t;
+    });
+    const entries = Object.keys(bySubject).map(function (k) {
+      return { code: k, total: bySubject[k] };
+    }).filter(function (e) { return e.total > 0; });
+    if (entries.length === 0) return null;
+    entries.sort(function (a, b) { return b.total - a.total; });
+    const sum = entries.reduce(function (s, e) { return s + e.total; }, 0);
+    const average = sum / entries.length;
+    const strong1 = entries[0].code;
+    const weak1 = entries[entries.length - 1].code;
+    return { average: average, strong1: strong1, weak1: weak1, subjectCount: entries.length };
+  }
+
+  // Choose a comment from the bank that hasn't already been used in this class.
+  // Prefers subject_strong_weak. Falls back to general or subject_strong.
+  function pickCommentFromBank(bank, field, band, preferCategory, usedIds) {
+    const candidates = bank.filter(function (c) {
+      return c.field === field && c.band === band && c.is_active !== false;
+    });
+    if (candidates.length === 0) return null;
+
+    const byCategory = function (cat) {
+      return candidates.filter(function (c) { return c.category === cat; });
+    };
+
+    const prefOrder = preferCategory
+      ? [preferCategory, 'subject_strong_weak', 'subject_strong', 'general']
+      : ['general', 'subject_strong_weak', 'subject_strong'];
+
+    for (let i = 0; i < prefOrder.length; i++) {
+      const pool = byCategory(prefOrder[i]).filter(function (c) { return !usedIds[c.id]; });
+      if (pool.length > 0) return pool[Math.floor(Math.random() * pool.length)];
+    }
+    // Fallback: any unused comment in the band.
+    const anyUnused = candidates.filter(function (c) { return !usedIds[c.id]; });
+    if (anyUnused.length > 0) return anyUnused[Math.floor(Math.random() * anyUnused.length)];
+    // Fallback: reset the used set and pick any from this band.
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  // Main auto-assign entry point. Called after bsCommitImport succeeds.
+  async function autoAssignRatings(plannedRows) {
+    try {
+      if (!plannedRows || plannedRows.length === 0) return;
+
+      // Load subject display names for filling {strong1} and {weak1}.
+      const subsR = await window.TIS.listSubjects();
+      const subjectNames = {};
+      (subsR && subsR.ok ? subsR.data : []).forEach(function (s) {
+        subjectNames[s.code] = s.display_name;
+      });
+
+      // Load the entire active comment bank once.
+      const bankR = await window.TIS.listCommentBank();
+      const bank = (bankR && bankR.ok ? bankR.data : []).filter(function (c) { return c.is_active !== false; });
+      if (bank.length === 0) return;
+
+      // Group planned rows by learner (only rows that were successfully written).
+      const byLearner = {};
+      plannedRows.forEach(function (p) {
+        const key = p.learner_id + '|' + p.term_type + '|' + p.year;
+        if (!byLearner[key]) byLearner[key] = [];
+        byLearner[key].push(p);
+      });
+
+      // Track comment usage per class, so no two learners share a comment in one term.
+      const usedByClassTeacher   = {};
+      const usedByClassPrincipal = {};
+
+      for (const key of Object.keys(byLearner)) {
+        const parts = key.split('|');
+        const learnerId = parseInt(parts[0], 10);
+        const termType  = parts[1];
+        const year      = parseInt(parts[2], 10);
+        const rows      = byLearner[key];
+        const cls       = rows[0].class_name;
+        const learnerName = rows[0].learner_name || '';
+
+        if (!usedByClassTeacher[cls])   usedByClassTeacher[cls]   = {};
+        if (!usedByClassPrincipal[cls]) usedByClassPrincipal[cls] = {};
+
+        const summary = computeScoresSummary(rows);
+        if (!summary) continue;
+
+        const band = window.TIS.bandForAverage(summary.average);
+
+        // Check for an existing row. If human-edited, do not overwrite.
+        const existingR = await window.TIS.getReportRatings(learnerId, termType, year);
+        const existing = (existingR && existingR.ok) ? existingR.data : null;
+        const teacherEdited   = !!(existing && existing.teacher_edited);
+        const principalEdited = !!(existing && existing.principal_edited);
+
+        // Build ratings. If a human has never edited, replace wholesale.
+        let ratings = (existing && existing.ratings) ? Object.assign({}, existing.ratings) : {};
+        if (!teacherEdited) {
+          const fresh = buildRatingsForBand(band);
+          AUTO_RATING_FIELDS.forEach(function (f) {
+            if (ratings[f] === undefined || ratings[f] === 'AVERAGE') {
+              ratings[f] = fresh[f];
+            }
+          });
+        }
+
+        // Build the comment context.
+        const ctx = {
+          first:   firstNameOf(learnerName),
+          strong1: subjectNames[summary.strong1] || summary.strong1,
+          weak1:   subjectNames[summary.weak1]   || summary.weak1
+        };
+
+        let teacherComment   = (existing && existing.teacher_comment)   || '';
+        let principalComment = (existing && existing.principal_comment) || '';
+
+        if (!teacherEdited) {
+          const pick = pickCommentFromBank(
+            bank, 'teacher', band, 'subject_strong_weak',
+            usedByClassTeacher[cls]
+          );
+          if (pick) {
+            teacherComment = fillCommentTemplate(pick.text, ctx);
+            usedByClassTeacher[cls][pick.id] = true;
+          }
+        }
+        if (!principalEdited) {
+          const pick = pickCommentFromBank(
+            bank, 'principal', band, 'subject_strong_weak',
+            usedByClassPrincipal[cls]
+          );
+          if (pick) {
+            principalComment = fillCommentTemplate(pick.text, ctx);
+            usedByClassPrincipal[cls][pick.id] = true;
+          }
+        }
+
+        // Persist.
+        await window.TIS.upsertReportRating({
+          learner_id:        learnerId,
+          term_type:         termType,
+          year:              year,
+          ratings:           ratings,
+          teacher_comment:   teacherComment,
+          principal_comment: principalComment,
+          teacher_edited:    teacherEdited,
+          principal_edited:  principalEdited,
+          auto_assigned_at:  new Date().toISOString(),
+          updated_by:        'auto'
+        });
+      }
+    } catch (err) {
+      console.warn('[autoAssignRatings]', err);
+    }
   }
   // ---------------- Tab init ----------------
   async function initBroadSheetTab() {
