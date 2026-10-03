@@ -34,13 +34,14 @@
   const SDK_URL           = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
   const OPERATOR_EMAIL_SUFFIX = '@tis.local';
 
-  const PERMISSION_MODULES = [
+    const PERMISSION_MODULES = [
     { key: 'learners',         label: 'Learners',            defaultReadAll: false },
     { key: 'staff',            label: 'Staff',               defaultReadAll: false },
     { key: 'attendance',       label: 'Student Attendance',  defaultReadAll: true  },
     { key: 'staff_attendance', label: 'Staff Attendance',    defaultReadAll: true  },
     { key: 'broadsheet',       label: 'Broad Sheet',         defaultReadAll: false },
     { key: 'reports',          label: 'Reports',             defaultReadAll: false },
+    { key: 'results',          label: 'Results',             defaultReadAll: true  },
     { key: 'calendar',         label: 'Calendar',            defaultReadAll: false },
     { key: 'classes',          label: 'Classes',             defaultReadAll: false },
     { key: 'terms',            label: 'Terms & Promotion',   defaultReadAll: false },
@@ -2045,13 +2046,14 @@
   };
 
    function roleDefaults(role) {
-    const superAdmin = {
+        const superAdmin = {
       learners: { read: true, write: true, print: true },
       staff: { read: true, write: true, print: true },
       attendance: { read: true, write: true, print: true },
       staff_attendance: { read: true, write: true, print: true },
       broadsheet: { read: true, write: true, print: true },
       reports: { read: true, write: true, print: true },
+      results: { read: true, write: true, print: true },
       calendar: { read: true, write: true, print: true },
       classes: { read: true, write: true, print: true },
       terms: { read: true, write: true, print: true },
@@ -2065,6 +2067,7 @@
       staff_attendance: { read: true, write: true, print: true },
       broadsheet: { read: true, write: true, print: true },
       reports: { read: true, write: true, print: true },
+      results: { read: true, write: true, print: true },
       calendar: { read: true, write: true, print: true },
       classes: { read: true, write: false, print: true },
       terms: { read: true, write: true, print: true },
@@ -2078,6 +2081,7 @@
       staff_attendance: { read: true, write: false, print: false },
       broadsheet: { read: true, write: true, print: false },
       reports: { read: true, write: false, print: false },
+      results: { read: true, write: false, print: false },
       calendar: { read: true, write: false, print: false },
       classes: { read: true, write: false, print: false },
       terms: { read: true, write: false, print: false },
@@ -2091,6 +2095,7 @@
       staff_attendance: { read: true, write: true, print: true },
       broadsheet: { read: true, write: false, print: true },
       reports: { read: true, write: false, print: true },
+      results: { read: true, write: false, print: true },
       calendar: { read: true, write: false, print: false },
       classes: { read: true, write: false, print: false },
       terms: { read: true, write: false, print: false },
