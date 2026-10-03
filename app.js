@@ -7771,7 +7771,7 @@
       stopLoader();
       bsSetFeedback(msg + ' · ratings & comments assigned.', 'ok');
     }
-
+ }
   // ================================================================
   // [S18c] AUTO-ASSIGN — psychomotor ratings and comments
   //   Runs after a scores upload completes. Fills in the non-
