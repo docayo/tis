@@ -7555,11 +7555,20 @@
     }
   }
 
-  function parseFloatOrNull(v) {
+    function parseFloatOrNull(v) {
     if (v === '' || v === null || v === undefined) return null;
     const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
     if (isNaN(n)) return null;
     return n;
+  }
+
+  function gradeForScore(total) {
+    if (total >= 80) return { grade: 'A', remark: 'EXCELLENT' };
+    if (total >= 70) return { grade: 'B', remark: 'VERY GOOD' };
+    if (total >= 60) return { grade: 'C', remark: 'GOOD' };
+    if (total >= 50) return { grade: 'D', remark: 'FAIR' };
+    if (total >= 40) return { grade: 'E', remark: 'POOR' };
+    return { grade: 'F', remark: 'FAIL' };
   }
 
   async function sbLoadClassAliases() {
