@@ -1,4 +1,10 @@
 // ================================================================
+// BEFORE YOU TOUCH THIS FILE:
+//   Read HANDOVER.md (repo root) or /handover (live URL).
+//   Every method here is exposed on window.TIS.
+//   Return shape: { ok: true, data } or { ok: false, error }.
+//   Never throw. Never return raw Supabase responses.
+// ================================================================
 // TIS EMIS — SUPABASE CLIENT
 // File: supabase-client.js
 // ================================================================
