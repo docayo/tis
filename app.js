@@ -1,4 +1,10 @@
 // ================================================================
+// BEFORE YOU TOUCH THIS FILE:
+//   Read HANDOVER.md (repo root) or /handover (live URL).
+//   It is the master reference for state, rules, and conventions.
+//   Section map: [S01] STATE through [S22] RESULTS.
+//   Sections [S01]–[S14], [S19], [S20], [S21] are frozen production.
+// ================================================================
 // TIS EMIS — APPLICATION LOGIC
 // File: app.js
 // ================================================================
