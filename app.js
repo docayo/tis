@@ -5641,17 +5641,38 @@
     if (el) el.innerHTML = html;
   }
 
-  function qrScanShowFatal(title, body) {
+   function qrScanShowFatal(title, body) {
     qrScanSetStage('');
     qrScanSetBody(
       '<h2 style="color:#c0392b;margin:0 0 10px;font-size:20px;">' + esc(title) + '</h2>' +
       '<p style="font-size:14px;color:#333;line-height:1.6;">' + esc(body) + '</p>' +
-      '<button onclick="location.href=\'/\'" ' +
-        'style="margin-top:20px;padding:12px 28px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">' +
-        'Close</button>'
+      '<div style="margin-top:24px;padding:14px;background:#e8f5e9;border-radius:10px;color:#0d4d26;font-size:13px;font-weight:700;line-height:1.6;">' +
+      'Thanks, Dr AYOOLA G O FCIA, NIIA.<br>Appreciate.' +
+      '</div>' +
+      '<div style="margin-top:14px;font-size:12px;color:#999;">' +
+      'This page will close in <span id="qrScanCountdown">7</span> seconds…' +
+      '</div>'
     );
-  }
 
+    let remaining = 7;
+    const cdEl = document.getElementById('qrScanCountdown');
+    const timer = setInterval(function () {
+      remaining--;
+      if (cdEl) cdEl.textContent = String(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        try { window.close(); } catch (e) { /* browser may block */ }
+        document.body.innerHTML =
+          '<div style="min-height:100vh;background:linear-gradient(135deg,#0d4d26,#1a8a3a);' +
+          'display:flex;align-items:center;justify-content:center;padding:20px;color:#fff;' +
+          'font-family:Arial,sans-serif;text-align:center;">' +
+          '<div>' +
+          '<div style="font-size:22px;font-weight:900;letter-spacing:1px;">THE IDEAL SCHOOLS</div>' +
+          '<div style="font-size:12px;margin-top:8px;opacity:.9;">You can now close this tab.</div>' +
+          '</div></div>';
+      }
+    }, 1000);
+  }
   function qrScanShowSuccess(title, lines) {
     qrScanSetStage('');
     let html = '<h2 style="color:#0d4d26;margin:0 0 10px;font-size:20px;">' + esc(title) + '</h2>';
@@ -5660,10 +5681,34 @@
       lines.forEach(function (l) { html += '<div>' + l + '</div>'; });
       html += '</div>';
     }
-    html += '<button onclick="location.href=\'/\'" ' +
-      'style="margin-top:20px;padding:12px 28px;font-size:14px;background:#0d4d26;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">' +
-      'Done</button>';
+    html += '<div style="margin-top:24px;padding:14px;background:#e8f5e9;border-radius:10px;color:#0d4d26;font-size:13px;font-weight:700;line-height:1.6;">' +
+            'Thanks, Dr AYOOLA G O FCIA, NIIA.<br>Appreciate.' +
+            '</div>';
+    html += '<div style="margin-top:14px;font-size:12px;color:#999;" id="qrScanAutoClose">' +
+            'This page will close in <span id="qrScanCountdown">7</span> seconds…' +
+            '</div>';
     qrScanSetBody(html);
+
+    // Countdown and auto-close. No button that leads back to the portal.
+    let remaining = 7;
+    const cdEl = document.getElementById('qrScanCountdown');
+    const timer = setInterval(function () {
+      remaining--;
+      if (cdEl) cdEl.textContent = String(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        try { window.close(); } catch (e) { /* browser may block */ }
+        // Fallback: blank the page so the login can never be reached from here.
+        document.body.innerHTML =
+          '<div style="min-height:100vh;background:linear-gradient(135deg,#0d4d26,#1a8a3a);' +
+          'display:flex;align-items:center;justify-content:center;padding:20px;color:#fff;' +
+          'font-family:Arial,sans-serif;text-align:center;">' +
+          '<div>' +
+          '<div style="font-size:22px;font-weight:900;letter-spacing:1px;">THE IDEAL SCHOOLS</div>' +
+          '<div style="font-size:12px;margin-top:8px;opacity:.9;">You can now close this tab.</div>' +
+          '</div></div>';
+      }
+    }, 1000);
   }
 
   // ----------------------------------------------------------------
