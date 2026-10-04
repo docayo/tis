@@ -1,5 +1,5 @@
 # TIS EMIS — RECOVERY RUNBOOK
-
+For project state and rules, see HANDOVER.md or /handover.
 **Version:** 1.0
 **Date:** 1 October 2026
 **Owner:** Dr Ayoola Gabriel Ololade FCIA. NIIA
