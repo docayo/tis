@@ -342,7 +342,9 @@
   //   • live search + keyboard shortcuts
   // ================================================================
 
-  // ---------- Module-scope constants ----------
+   // ---------- Module-scope constants ----------
+  let __learnersShowInactive = false;   // toggled by the toolbar button
+
   const CONTACT_LABELS  = { father: 'Father', mother: 'Mother', guardian: 'Guardian' };
   const RELIGION_OPTIONS = ['Christianity', 'Islam', 'Traditionalist'];
   const EXIT_REASONS = [
@@ -458,14 +460,13 @@
   // ================================================================
   // Load & render the grid
   // ================================================================
-   async function loadLearners() {
+  async function loadLearners() {
     // Fast path: if we already fetched in the last 10 minutes,
     // just re-render from cache. No network call.
     const now = Date.now();
     if (State.cachedLearners && State.cachedLearners.length > 0 &&
         State.learnersFetchedAt && (now - State.learnersFetchedAt) < 10 * 60 * 1000) {
-      renderLearners(State.cachedLearners);
-      renderLearnerStats(State.cachedLearners);
+      applyLearnerFilter();
       return;
     }
 
@@ -479,9 +480,22 @@
     }
     State.cachedLearners = r.data || [];
     State.learnersFetchedAt = now;
-    renderLearners(State.cachedLearners);
-    renderLearnerStats(State.cachedLearners);
+    applyLearnerFilter();
   }
+
+  // Filter the cached learners based on the "show inactive" flag and
+  // hand off to the renderer.
+  function applyLearnerFilter() {
+    const all = State.cachedLearners || [];
+    const inactive = function (l) {
+      const w = (l.date_of_withdrawal || '').toString().trim();
+      return (w && w !== '' && w !== 'N/A');
+    };
+    const filtered = __learnersShowInactive ? all : all.filter(function (l) { return !inactive(l); });
+    renderLearners(filtered);
+    renderLearnerStats(all);
+  }
+  window.applyLearnerFilter = applyLearnerFilter;
 
   function renderLearners(rows) {
     if (!rows || rows.length === 0) {
@@ -529,7 +543,7 @@
     });
   }
 
-  function renderLearnerStats(rows) {
+    function renderLearnerStats(rows) {
     const total = rows.length;
     let exited = 0;
     rows.forEach(function (r) {
@@ -538,8 +552,8 @@
     });
     setHTML('learnerStats',
       '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div>' +
-      '<div class="stat-card red"><div class="stat-label">Exited</div><div class="stat-value">' + exited + '</div></div>' +
-      '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value">' + (total - exited) + '</div></div>');
+      '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value gold">' + (total - exited) + '</div></div>' +
+      '<div class="stat-card red"><div class="stat-label">Inactive</div><div class="stat-value red">' + exited + '</div></div>');
   }
 
   // ================================================================
@@ -1549,8 +1563,19 @@
       upBtn.__wired = true;
     }
 
-    const add = document.getElementById('btnAddLearner');
+        const add = document.getElementById('btnAddLearner');
     if (add && !add.__wired) { add.addEventListener('click', function (e) { e.preventDefault(); openAddLearnerModal(); }); add.__wired = true; }
+
+    const toggle = document.getElementById('btnToggleInactiveLearners');
+    if (toggle && !toggle.__wired) {
+      toggle.addEventListener('click', function () {
+        __learnersShowInactive = !__learnersShowInactive;
+        const lbl = document.getElementById('btnToggleInactiveLearnersLabel');
+        if (lbl) lbl.textContent = __learnersShowInactive ? 'Hide Inactive' : 'Show Inactive';
+        applyLearnerFilter();
+      });
+      toggle.__wired = true;
+    }
   }
     const bulk = document.getElementById('btnBulkLearnerPhotos');
     if (bulk && !bulk.__wired) {
@@ -1953,6 +1978,8 @@
   //   • photo upload (base64 today; move to Storage later)
   //   • print single card + whole list
   // ================================================================
+    let __staffShowInactive = false;   // toggled by the toolbar button
+
   const STAFF_SCHOOLS = [
     'The Ideal Secondary School',
     'Hope and Faith Nur & Pry School'
@@ -1960,16 +1987,16 @@
   const STAFF_DEPARTMENTS = ['Teaching', 'Admin', 'Support'];
   const STAFF_STATUSES    = ['Active', 'Inactive'];
 
-  async function loadStaff() {
+   async function loadStaff() {
     // Fast path: if we already fetched in the last 10 minutes,
     // just re-render from cache. No network call.
     const now = Date.now();
     if (State.cachedStaff && State.cachedStaff.length > 0 &&
         State.staffFetchedAt && (now - State.staffFetchedAt) < 10 * 60 * 1000) {
-      renderStaff(State.cachedStaff);
-      renderStaffStats(State.cachedStaff);
+      applyStaffFilter();
       return;
-   }   
+    }
+
     setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
     startLoader();
     const r = await window.TIS.listStaff();
@@ -1979,9 +2006,19 @@
       return;
     }
     State.cachedStaff = r.data || [];
-    renderStaff(State.cachedStaff);
-    renderStaffStats(State.cachedStaff);
+    State.staffFetchedAt = now;
+    applyStaffFilter();
   }
+
+  function applyStaffFilter() {
+    const all = State.cachedStaff || [];
+    const filtered = __staffShowInactive
+      ? all
+      : all.filter(function (s) { return (s.status || 'Active') === 'Active'; });
+    renderStaff(filtered);
+    renderStaffStats(all);
+  }
+  window.applyStaffFilter = applyStaffFilter;
 
   function staffName(s) {
     if (!s) return '';
@@ -2525,13 +2562,24 @@
       });
       rf.__wired = true;
     }
-    const pr  = $('btnPrintStaff');
+       const pr  = $('btnPrintStaff');
     if (pr  && !pr.__wired)  {
       pr.addEventListener('click', function () {
         if (State.cachedStaff && State.cachedStaff.length) printStaffList();
         else showToast('Load the list first', 'warning');
       });
       pr.__wired = true;
+    }
+
+    const toggle = $('btnToggleInactiveStaff');
+    if (toggle && !toggle.__wired) {
+      toggle.addEventListener('click', function () {
+        __staffShowInactive = !__staffShowInactive;
+        const lbl = $('btnToggleInactiveStaffLabel');
+        if (lbl) lbl.textContent = __staffShowInactive ? 'Hide Inactive' : 'Show Inactive';
+        applyStaffFilter();
+      });
+      toggle.__wired = true;
     }
   }
 
@@ -4673,13 +4721,26 @@
   // Month tables — one Word-grid-styled table per day
   // ----------------------------------------------------------------
   function renderStaffMonthTables() {
-    const days = staffAttState.days || [];
-    if (days.length === 0) {
+    const allDays = staffAttState.days || [];
+    if (allDays.length === 0) {
       setHTML('staffAttMonthBody', emptyHTML('fa-calendar', 'No days in this month'));
       return;
     }
+
+    // Show only days that have already arrived (or today).
+    // Future days are hidden entirely — no scroll-through placeholders.
+    const arrived = allDays.filter(function (d) { return d.arrived; });
+    if (arrived.length === 0) {
+      setHTML('staffAttMonthBody', emptyHTML(
+        'fa-calendar-day',
+        'No days have arrived in this month yet',
+        'Come back once the month has begun.'
+      ));
+      return;
+    }
+
     // Newest day at top.
-    const ordered = days.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    const ordered = arrived.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     let html = '';
     ordered.forEach(function (day, idx) {
       html += staffRenderDayTable(day, idx);
@@ -4693,7 +4754,6 @@
         const dateIso = tr.getAttribute('data-staff-date');
         staffAttState.selectedStaffId = staffId ? parseInt(staffId, 10) : null;
         staffAttState.selectedDate    = dateIso || null;
-        // Visual highlight.
         document.querySelectorAll('[data-staff-row]').forEach(function (r) {
           r.style.outline = '';
         });
@@ -4702,7 +4762,6 @@
       });
     });
   }
-
   function staffRenderDayTable(day, paletteIndex) {
     const pal = staffDayPalette(paletteIndex);
     const dateLabel = staffFormatDay(day.date);
