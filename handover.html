@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TIS EMIS — Master Handover</title>
+<link rel="icon" href="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w64" type="image/png">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #0d4d26;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 24px 16px;
+    line-height: 1.6;
+  }
+  .shell {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #0d4d26, #1a8a3a);
+    color: #ffffff;
+    padding: 24px 28px;
+  }
+  .header h1 {
+    margin: 0 0 4px;
+    font-size: 22px;
+    letter-spacing: 1px;
+  }
+  .header .sub {
+    font-size: 12px;
+    opacity: 0.85;
+    font-style: italic;
+  }
+  .header .meta {
+    margin-top: 10px;
+    font-size: 11px;
+    opacity: 0.9;
+    line-height: 1.7;
+  }
+  .actions {
+    padding: 10px 28px;
+    background: #f7fbf7;
+    border-bottom: 1px solid #e0e6e2;
+    font-size: 12px;
+    color: #555;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .actions a {
+    color: #0d4d26;
+    text-decoration: none;
+    font-weight: 700;
+    margin-right: 12px;
+  }
+  .actions a:hover { text-decoration: underline; }
+  .content {
+    padding: 24px 28px;
+  }
+  .content h1, .content h2, .content h3 {
+    color: #0d4d26;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+  .content h1 { font-size: 24px; margin-top: 0; border-bottom: 2px solid #0d4d26; padding-bottom: 6px; }
+  .content h2 { font-size: 19px; }
+  .content h3 { font-size: 16px; }
+  .content p {
+    font-size: 14px;
+    color: #333;
+    margin: 0 0 12px;
+  }
+  .content pre, .content code {
+    font-family: "Courier New", Consolas, monospace;
+  }
+  .content code {
+    background: #eef2ef;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 13px;
+    color: #0d4d26;
+  }
+  .content pre {
+    background: #f4f7f5;
+    border-left: 3px solid #0d4d26;
+    padding: 12px 14px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+  }
+  .content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  .content th, .content td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid #e0e6e2;
+    vertical-align: top;
+  }
+  .content th {
+    background: #e8f5e9;
+    font-weight: 700;
+    color: #0d4d26;
+  }
+  .content ul, .content ol {
+    padding-left: 22px;
+    font-size: 14px;
+  }
+  .content li { margin-bottom: 4px; }
+  .content hr {
+    border: none;
+    border-top: 1px solid #e0e6e2;
+    margin: 20px 0;
+  }
+  .content strong { color: #0d4d26; }
+  .content blockquote {
+    border-left: 4px solid #d4a017;
+    background: #fffdf5;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 13px;
+    color: #555;
+  }
+  .footer {
+    padding: 16px 28px;
+    border-top: 1px solid #e6e9f0;
+    font-size: 11px;
+    color: #666;
+    text-align: center;
+  }
+  .error-box {
+    background: #fff5f5;
+    border-left: 4px solid #c0392b;
+    padding: 14px 18px;
+    border-radius: 4px;
+    margin: 12px 0;
+    color: #7a1f15;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="header">
+    <h1>THE IDEAL SCHOOLS — Master Handover</h1>
+    <div class="sub">TIS EMIS — Operational Portal &amp; Databank</div>
+    <div class="meta" id="handoverMeta">
+      <span id="handoverDate">Loading…</span>
+    </div>
+  </div>
+
+  <div class="actions">
+    <div>
+      <a href="/" title="Open the portal">← Portal</a>
+      <a href="/rec" title="Recovery runbook">Recovery</a>
+      <a href="https://github.com/docayo/tis/blob/main/HANDOVER.md" target="_blank" rel="noopener">Edit on GitHub</a>
+    </div>
+    <div style="font-size:11px;color:#888;">
+      If this page looks stale, append <code style="background:#fff;padding:1px 4px;">?v=<span id="dynTs">0</span></code> to the URL.
+    </div>
+  </div>
+
+  <div class="content" id="handoverContent">
+    <p style="color:#666;">Loading handover document…</p>
+  </div>
+
+  <div class="footer">
+    Live handover · Rendered from <code>HANDOVER.md</code> in the repo root
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var RUNBOOK_URL = '/HANDOVER.md';
+  var CACHE_KEY = 'tis_handover_cache_v1';
+
+  // Set dynamic timestamp in the hint
+  var tsEl = document.getElementById('dynTs');
+  if (tsEl) tsEl.textContent = String(Date.now());
+
+  // ---- tiny markdown renderer (same shape as /rec) ----
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+  function renderInline(s) {
+    return s
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  }
+  function renderMarkdown(md) {
+    var lines = String(md).split(/\r?\n/);
+    var out = [];
+    var i = 0;
+    var inCode = false, inList = false, inTable = false, inQuote = false, tableRows = [];
+
+    function flushTable() {
+      if (!inTable) return;
+      if (tableRows.length === 0) { inTable = false; return; }
+      var head = tableRows[0];
+      var body = tableRows.length > 2 ? tableRows.slice(2) : [];
+      out.push('<table><thead><tr>');
+      head.forEach(function (c) { out.push('<th>' + renderInline(escapeHtml(c.trim())) + '</th>'); });
+      out.push('</tr></thead><tbody>');
+      body.forEach(function (row) {
+        out.push('<tr>');
+        row.forEach(function (c) { out.push('<td>' + renderInline(escapeHtml(c.trim())) + '</td>'); });
+        out.push('</tr>');
+      });
+      out.push('</tbody></table>');
+      tableRows = []; inTable = false;
+    }
+    function flushList() {
+      if (!inList) return;
+      out.push('</ul>'); inList = false;
+    }
+    function flushQuote() {
+      if (!inQuote) return;
+      out.push('</blockquote>'); inQuote = false;
+    }
+
+    while (i < lines.length) {
+      var line = lines[i];
+
+      if (line.indexOf('```') === 0) {
+        if (inCode) { out.push('</pre>'); inCode = false; }
+        else { flushTable(); flushList(); flushQuote(); out.push('<pre>'); inCode = true; }
+        i++; continue;
+      }
+      if (inCode) { out.push(escapeHtml(line)); i++; continue; }
+
+      if (line.indexOf('|') === 0 && line.lastIndexOf('|') > 0) {
+        flushList(); flushQuote();
+        var cells = line.split('|').slice(1, -1);
+        tableRows.push(cells); inTable = true; i++; continue;
+      } else { flushTable(); }
+
+      if (/^### /.test(line)) { flushList(); flushQuote(); out.push('<h3>' + renderInline(escapeHtml(line.slice(4))) + '</h3>'); i++; continue; }
+      if (/^## /.test(line))  { flushList(); flushQuote(); out.push('<h2>' + renderInline(escapeHtml(line.slice(3))) + '</h2>'); i++; continue; }
+      if (/^# /.test(line))   { flushList(); flushQuote(); out.push('<h1>' + renderInline(escapeHtml(line.slice(2))) + '</h1>'); i++; continue; }
+
+      if (/^>\s?/.test(line)) {
+        flushList();
+        if (!inQuote) { out.push('<blockquote>'); inQuote = true; }
+        out.push('<p>' + renderInline(escapeHtml(line.replace(/^>\s?/, ''))) + '</p>');
+        i++; continue;
+      } else { flushQuote(); }
+
+      if (/^-{3,}\s*$/.test(line)) { flushList(); out.push('<hr>'); i++; continue; }
+
+      if (/^[-*] /.test(line)) {
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push('<li>' + renderInline(escapeHtml(line.slice(2))) + '</li>'); i++; continue;
+      } else { flushList(); }
+
+      if (/^\s*$/.test(line)) { i++; continue; }
+
+      out.push('<p>' + renderInline(escapeHtml(line)) + '</p>');
+      i++;
+    }
+    if (inCode) out.push('</pre>');
+    flushTable(); flushList(); flushQuote();
+    return out.join('\n');
+  }
+
+  function showError(msg, detail) {
+    var box = document.getElementById('handoverContent');
+    var html = '<div class="error-box"><b>Could not load the handover document.</b><br>' +
+               escapeHtml(msg) + '</div>';
+    if (detail) html += '<p style="font-size:13px;color:#666;">' + escapeHtml(detail) + '</p>';
+    html += '<p style="font-size:13px;"><b>Fallback:</b> open ' +
+            '<a href="https://github.com/docayo/tis/blob/main/HANDOVER.md">' +
+            'github.com/docayo/tis/blob/main/HANDOVER.md</a> in a browser with GitHub access.</p>';
+    box.innerHTML = html;
+  }
+
+  function loadHandover() {
+    var box = document.getElementById('handoverContent');
+    var cached = null;
+    try { cached = localStorage.getItem(CACHE_KEY); } catch (e) {}
+    if (cached) box.innerHTML = renderMarkdown(cached);
+
+    fetch(RUNBOOK_URL, { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (md) {
+        try { localStorage.setItem(CACHE_KEY, md); } catch (e) {}
+        box.innerHTML = renderMarkdown(md);
+
+        // Attempt to pull the date line out of the document for the header.
+        var m = md.match(/\*\*Date:\*\*\s*([0-9]+\s+\w+\s+[0-9]{4})/);
+        var dateEl = document.getElementById('handoverDate');
+        if (dateEl && m) dateEl.textContent = 'Last updated: ' + m[1];
+      })
+      .catch(function (err) {
+        if (!cached) showError('The file HANDOVER.md could not be fetched from the server.', err.message);
+      });
+  }
+
+  loadHandover();
+})();
+</script>
+
+</body>
+</html>
