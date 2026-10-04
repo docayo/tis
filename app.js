@@ -3196,6 +3196,17 @@
   // ----------------------------------------------------------------
   async function initLearnerAttendanceTab() {
     await populateAttendanceClassList();
+    await defaultAttendanceTermYear();
+      async function defaultAttendanceTermYear() {
+    try {
+      const at = await window.TIS.getActiveTerm();
+      if (!at || !at.ok || !at.data) return;
+      const termEl = document.getElementById('attendanceTerm');
+      const yearEl = document.getElementById('attendanceYear');
+      if (termEl) termEl.value = at.data.term_type || '1st';
+      if (yearEl) yearEl.value = String(at.data.year || new Date().getFullYear());
+    } catch (e) { /* silent */ }
+  }
 
     const loadBtn = document.getElementById('btnLoadAttendance');
     if (loadBtn && !loadBtn.__wired) {
