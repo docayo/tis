@@ -23,7 +23,7 @@
     el.textContent = msg || '';
   }
 
-   function pinFromUrl() {
+  function pinFromUrl() {
     const m = window.location.pathname.match(/^\/r\/([^\/?#]+)/i);
     if (m && m[1]) return decodeURIComponent(m[1]).toUpperCase();
     return '';
@@ -48,6 +48,66 @@
     '</div>';
   }
 
+  // ----------------------------------------------------------------
+  // Fee breakdown — the same computation as the internal Results tab.
+  //   Reads the class bill from fee_schedule, the learner adjustment
+  //   from fee_adjustments, and the previous term carry-forward from
+  //   learner_terms. Returns the eight figures the renderer needs.
+  // ----------------------------------------------------------------
+  async function buildFeeBreakdown(learner, term, year) {
+    try {
+      const [schedR, adjR] = await Promise.all([
+        window.TIS.getFeeScheduleRow(learner.class_name, term, year),
+        window.TIS.getFeeAdjustment(learner.id, term, year)
+      ]);
+
+      const sched = (schedR && schedR.ok) ? schedR.data : null;
+      const adj   = (adjR   && adjR.ok)   ? adjR.data   : null;
+
+      const tuition     = Number(sched && sched.tuition           || 0);
+      const otherMajor  = Number(sched && sched.other_bills_major || 0);
+      const otherMinor  = Number(sched && sched.other_bills_minor || 0);
+      const books       = Number(sched && sched.books             || 0);
+      const scholarship = Number(adj   && adj.deductions          || 0);
+      const additions   = Number(adj   && adj.additions           || 0);
+
+      let prevBf = 0;
+      try {
+        let prevTerm = null;
+        let prevYear = year;
+        if (term === '2nd') { prevTerm = '1st'; prevYear = year; }
+        else if (term === '3rd') { prevTerm = '2nd'; prevYear = year; }
+        else if (term === '1st') { prevTerm = '3rd'; prevYear = year - 1; }
+        if (prevTerm) {
+          const pR = await window.TIS.getLearnerTermFor(learner.id, prevTerm, prevYear);
+          if (pR && pR.ok && pR.data) {
+            prevBf = Number(String(pR.data.balance_cf || 0).replace(/[^0-9.\-]/g, '')) || 0;
+          }
+        }
+      } catch (e) { prevBf = 0; }
+
+      const adjustedTuition = tuition - scholarship;
+      const balanceCd = adjustedTuition + otherMajor + otherMinor + books + additions + prevBf;
+
+      return {
+        prevBf:          prevBf,
+        tuition:         tuition,
+        scholarship:     scholarship,
+        adjustedTuition: adjustedTuition,
+        otherMajor:      otherMajor,
+        otherMinor:      otherMinor,
+        books:           books,
+        additions:       additions,
+        balanceCd:       balanceCd
+      };
+    } catch (err) {
+      return {
+        prevBf: 0, tuition: 0, scholarship: 0, adjustedTuition: 0,
+        otherMajor: 0, otherMinor: 0, books: 0, additions: 0, balanceCd: 0
+      };
+    }
+  }
+
   function logView(entry) {
     try {
       if (typeof window.TIS.logResultsView === 'function') {
@@ -55,6 +115,7 @@
       }
     } catch (e) { /* silent */ }
   }
+
   async function buildTermly(learner, term, year) {
     const [popR, attR, scoresR, termR, resumeR, subsR, ratingsR, nextClassR] = await Promise.all([
       window.TIS.getClassPopulation(learner.class_name),
@@ -155,14 +216,13 @@
     const maxAggregate = rowCount * 100;
     const pct = maxAggregate > 0 ? (aggregate / maxAggregate * 100).toFixed(2) : '0.00';
 
-    const feeText = window.TISReport.buildFeeText(termRec);
-
     if (coverScores) {
       bodyRows = bodyRows.replace(/<td class="rc-num">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>')
                          .replace(/<td class="rc-num rc-total">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>');
     }
 
     const safeChartRows = coverScores ? [] : chartRows;
+    const feeBreakdown = await buildFeeBreakdown(learner, term, year);
 
     const html = '' +
       '<div class="results-preview">' +
@@ -211,6 +271,7 @@
           '</div>' +
           '<div class="rc-body-side">' +
             window.TISReport.resultsPsychomotorBlock(ratings) +
+            window.TISReport.resultsFeeBreakdownBlock(feeBreakdown) +
           '</div>' +
         '</div>' +
         window.TISReport.resultsStatsBlock({
@@ -225,7 +286,7 @@
         window.TISReport.resultsCommentsBlock(
           learner,
           resume,
-          coverScores ? '' : feeText,
+          '',
           ratings,
           promotedTo,
           learner.pin
@@ -364,6 +425,7 @@
     const lowestPctStr  = (lowestPct  === null) ? '—' : String(lowestPct);
 
     const safeChartRows = coverScores ? [] : chartRows;
+    const feeBreakdown = await buildFeeBreakdown(learner, '3rd', year);
 
     const html = '' +
       '<div class="results-preview">' +
@@ -412,6 +474,7 @@
           '</div>' +
           '<div class="rc-body-side">' +
             window.TISReport.resultsPsychomotorBlock(ratings) +
+            window.TISReport.resultsFeeBreakdownBlock(feeBreakdown) +
           '</div>' +
         '</div>' +
         window.TISReport.resultsStatsBlock({
@@ -452,7 +515,7 @@
     setTimeout(function () { w.print(); }, 350);
   }
 
-   async function printReport() {
+  async function printReport() {
     const pinEl  = $('rPin');
     const termEl = $('rTerm');
     const yearEl = $('rYear');
@@ -540,6 +603,7 @@
       if (printBtn) printBtn.disabled = false;
     }
   }
+
   function printAgain() {
     if (!__current) { setFeedback('Load a result first.', 'error'); return; }
     openPrintWindow(__current.learner && __current.learner.name, __current.html);
