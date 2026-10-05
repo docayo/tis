@@ -9874,7 +9874,7 @@
             '</tfoot>' +
           '</table>' +
           '</div>' +
-          replace with  window.TISReport.resultsStatsBlock(totalCA, totalExam, aggregate, maxAggregate, pct) +
+          window.TISReport.resultsStatsBlock(totalCA, totalExam, aggregate, maxAggregate, pct) +
           window.TISReport.resultsCommentsBlock(learner, resume, feeText) +
         '</div>';
 
@@ -10000,7 +10000,7 @@
           '</table>' +
           '</div>' +
           window.TISReport.resultsSessionalStats(sumTerm, sessionalTotal, maxSessional, sessionalPct) +
-          resultsCommentsBlock(learner, resume, '') +
+          window.TISReport.resultsCommentsBlock(learner, resume, '') +
         '</div>';
 
       return { ok: true, html: html };
