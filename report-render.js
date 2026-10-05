@@ -15,12 +15,6 @@
 
   const SCHOOL_LOGO_URL = 'https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200';
 
-  // ----------------------------------------------------------------
-  // Header band
-  //   Title lines are inline SVG with real linearGradient fills, so
-  //   they print identically in Chrome, Firefox, Edge, Safari and any
-  //   other renderer. No reliance on background-clip: text.
-  // ----------------------------------------------------------------
   function resultsHeaderHtml(title, learner) {
     const photo = learner && learner.photo_url ? learner.photo_url : '';
     const initial = learner && learner.name ? learner.name.charAt(0) : '?';
@@ -28,11 +22,6 @@
       ? '<div class="rc-photo"><img src="' + esc(photo) + '" alt=""></div>'
       : '<div class="rc-photo rc-photo-empty"><span>' + esc(initial) + '</span></div>';
 
-    // ---------------------------------------------------------------
-    // Line 1: THE IDEAL SCHOOLS
-    //   viewBox width 900, height 60, big bold text, gradient
-    //   green → green → gold → red → blue.
-    // ---------------------------------------------------------------
     const title1Svg =
       '<svg class="rc-title-1-svg" viewBox="0 0 900 60" preserveAspectRatio="xMidYMid meet" ' +
         'xmlns="http://www.w3.org/2000/svg" aria-label="THE IDEAL SCHOOLS">' +
@@ -50,11 +39,6 @@
           'letter-spacing="3" fill="url(#tisTitleGrad)">THE IDEAL SCHOOLS</text>' +
       '</svg>';
 
-    // ---------------------------------------------------------------
-    // Line 2: The Ideal Secondary School — The Ideal Kiddies School
-    //   viewBox width 900, height 26, sits tight under line 1.
-    //   Gradient blue → green → gold → red for contrast against line 1.
-    // ---------------------------------------------------------------
     const title2Svg =
       '<svg class="rc-title-2-svg" viewBox="0 0 900 26" preserveAspectRatio="xMidYMid meet" ' +
         'xmlns="http://www.w3.org/2000/svg" aria-label="The Ideal Secondary School - The Ideal Kiddies School">' +
@@ -88,9 +72,6 @@
       '</div>';
   }
 
-  // ----------------------------------------------------------------
-  // Student detail bar
-  // ----------------------------------------------------------------
   function resultsStudentBar(learner, pop, term, year, att) {
     return '' +
       '<table class="rc-details">' +
@@ -114,13 +95,9 @@
       '</table>';
   }
 
-  // ----------------------------------------------------------------
-  // Stats block
-  // ----------------------------------------------------------------
   function resultsStatsBlock(args) {
     const a = args || {};
     const sessional = !!a.sessional;
-
     if (sessional) {
       const sumTerm = a.sumTerm || [0, 0, 0];
       return '' +
@@ -139,7 +116,6 @@
           '</tr>' +
         '</table>';
     }
-
     return '' +
       '<table class="rc-stats">' +
         '<tr>' +
@@ -168,9 +144,6 @@
       '</table>';
   }
 
-  // ----------------------------------------------------------------
-  // Psychomotor ratings block
-  // ----------------------------------------------------------------
   const PSYCHOMOTOR_FIELDS = [
     { key: 'leadership',    label: 'LEADERSHIP' },
     { key: 'hardwork',      label: 'HARDWORK' },
@@ -204,9 +177,6 @@
       '</table>';
   }
 
-  // ----------------------------------------------------------------
-  // Comments, fee notice, PROMOTED TO, LIN, RESUMPTION DATE.
-  // ----------------------------------------------------------------
   function resultsCommentsBlock(learner, resume, feeText, ratings, promotedTo, lin) {
     const teacherComment   = (ratings && ratings.teacher_comment)   || '—';
     const principalComment = (ratings && ratings.principal_comment) || '—';
@@ -245,9 +215,6 @@
       '</table>';
   }
 
-  // ----------------------------------------------------------------
-  // Bottom row
-  // ----------------------------------------------------------------
   function resultsStampBlock() {
     return '' +
       '<div class="rc-bottom-cell">' +
@@ -269,7 +236,6 @@
           '<div class="rc-bottom-body rc-bottom-chart"><div class="rc-chart-empty">No scores yet</div></div>' +
         '</div>';
     }
-
     const maxTotal = 100;
     let bars = '';
     rows.forEach(function (row) {
@@ -292,7 +258,6 @@
         '<div class="rc-chart-val">' + (total || 0) + '</div>' +
       '</div>';
     });
-
     return '' +
       '<div class="rc-bottom-cell">' +
         '<div class="rc-bottom-title">PERFORMANCE CHART</div>' +
@@ -302,7 +267,7 @@
 
   function resultsQRCode(pin) {
     const pinUp = String(pin || '').toUpperCase();
-    const url   = window.location.origin + '/check/' + encodeURIComponent(pinUp);
+    const url   = window.location.origin + '/r/' + encodeURIComponent(pinUp);
     const img   = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&data=' +
                   encodeURIComponent(url);
     return '' +
@@ -324,9 +289,6 @@
       '</div>';
   }
 
-  // ----------------------------------------------------------------
-  // Fee notice line
-  // ----------------------------------------------------------------
   function buildFeeText(termRec) {
     if (!termRec) return '';
     const parts = [];
@@ -343,49 +305,26 @@
     return parts.length ? parts.join(' · ') : '';
   }
 
-  // ----------------------------------------------------------------
-  // Print CSS
-  // ----------------------------------------------------------------
   function resultsPrintCss() {
     return '<style>' +
       '@page { size: A4 portrait; margin: 12mm; }' +
       'body { font-family: Arial, sans-serif; color: #111; padding: 16px; }' +
       '.results-preview { border: 1px solid #ccc; padding: 16px; border-radius: 8px; background: #fff; position: relative; overflow: hidden; }' +
-
-      '.rc-watermark { position: absolute; top: 50%; left: 50%; ' +
-        'width: 480px; height: 480px; transform: translate(-50%, -50%); ' +
-        'opacity: 0.06; filter: grayscale(100%); pointer-events: none; z-index: 0; }' +
+      '.rc-watermark { position: absolute; top: 50%; left: 50%; width: 480px; height: 480px; transform: translate(-50%, -50%); opacity: 0.06; filter: grayscale(100%); pointer-events: none; z-index: 0; }' +
       '.rc-watermark img { width: 100%; height: 100%; object-fit: contain; display: block; }' +
       '.results-preview > * { position: relative; z-index: 1; }' +
       '.rc-watermark { z-index: 0; }' +
-
-      // ---- Header band ----
-      '.rc-header { display: flex; align-items: center; gap: 12px; ' +
-        'border-bottom: 3px solid transparent; ' +
-        'border-image: linear-gradient(90deg, #0b6623 0%, #0b6623 45%, #d4a017 70%, #c0392b 85%, #1a3f8f 100%) 1; ' +
-        'padding-bottom: 10px; margin-bottom: 12px; }' +
+      '.rc-header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid transparent; border-image: linear-gradient(90deg, #0b6623 0%, #0b6623 45%, #d4a017 70%, #c0392b 85%, #1a3f8f 100%) 1; padding-bottom: 10px; margin-bottom: 12px; }' +
       '.rc-header-mid { flex: 1 1 auto; text-align: center; min-width: 0; }' +
-
-      // ---- SVG titles: no gap, tight block. Print and screen identical. ----
       '.rc-title-1-svg { display: block; width: 100%; max-width: 620px; height: auto; margin: 0 auto; }' +
       '.rc-title-2-svg { display: block; width: 100%; max-width: 620px; height: auto; margin: -2px auto 0 auto; }' +
-
       '.rc-addr { font-size: 11px; color: #555; margin-top: 4px; }' +
-      '.rc-motto { font-size: 12px; font-style: italic; margin-top: 5px; letter-spacing: 3px; ' +
-        'font-weight: 700; color: #1a3f8f; }' +
-      '.rc-subtitle { font-size: 14px; font-weight: 800; margin-top: 8px; ' +
-        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 40%, #d4a017 100%); color: #fff; ' +
-        'display: inline-block; padding: 5px 18px; border-radius: 4px; letter-spacing: 1px; ' +
-        'box-shadow: 0 2px 4px rgba(11,102,35,0.15); }' +
+      '.rc-motto { font-size: 12px; font-style: italic; margin-top: 5px; letter-spacing: 3px; font-weight: 700; color: #1a3f8f; }' +
+      '.rc-subtitle { font-size: 14px; font-weight: 800; margin-top: 8px; background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 40%, #d4a017 100%); color: #fff; display: inline-block; padding: 5px 18px; border-radius: 4px; letter-spacing: 1px; box-shadow: 0 2px 4px rgba(11,102,35,0.15); }' +
       '.rc-logo { height: 76px; width: 76px; object-fit: contain; flex: 0 0 auto; }' +
-      '.rc-photo { width: 92px; height: 92px; border-radius: 50%; overflow: hidden; ' +
-        'border: 3px solid #0b6623; flex: 0 0 auto; background: #e8f5e9; ' +
-        'display: flex; align-items: center; justify-content: center; ' +
-        'box-shadow: 0 0 0 2px #d4a017 inset; }' +
+      '.rc-photo { width: 92px; height: 92px; border-radius: 50%; overflow: hidden; border: 3px solid #0b6623; flex: 0 0 auto; background: #e8f5e9; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #d4a017 inset; }' +
       '.rc-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }' +
       '.rc-photo-empty span { font-size: 36px; font-weight: 900; color: #0b6623; }' +
-
-      // ---- Details / stats / comments ----
       '.rc-details, .rc-stats, .rc-comments { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }' +
       '.rc-details td, .rc-stats td, .rc-comments td { border: 1px solid #b8c4bb; padding: 6px 8px; vertical-align: middle; }' +
       '.rc-details tr:nth-child(odd) td, .rc-comments tr:nth-child(odd) td { background: #fbfdfb; }' +
@@ -398,8 +337,6 @@
       '.rc-v { font-weight: 600; }' +
       '.rc-v-gold { background: #fbf5e3 !important; color: #6f5409; font-weight: 700; }' +
       '.rc-v-blue { background: #eaf1fc !important; color: #1a3f8f; font-weight: 700; }' +
-
-      // ---- Subject table ----
       '.rc-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 0; }' +
       '.rc-table th, .rc-table td { border: 1px solid #b8c4bb; padding: 5px 6px; text-align: center; }' +
       '.rc-table thead th { background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; font-size: 10px; letter-spacing: .3px; font-weight: 700; }' +
@@ -415,22 +352,16 @@
       '.rc-covered { background: #f0f0f0 !important; color: #999; font-style: italic; }' +
       '.rc-tfoot td { background: linear-gradient(90deg, #d7ead9, #f7ecd0) !important; font-weight: 700; }' +
       '.rc-tfoot-label { text-align: right; }' +
-
-      // ---- Psychomotor table ----
       '.rc-psy { width: 100%; border-collapse: collapse; font-size: 9px; }' +
       '.rc-psy-head { background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; font-weight: 700; padding: 6px 6px; text-align: center; letter-spacing: .3px; border: 1px solid #0b6623; font-size: 9.5px; }' +
       '.rc-psy-lbl { background: linear-gradient(90deg, #d7ead9, #e6f2e7); font-weight: 700; color: #0b6623; padding: 4px 6px; border: 1px solid #b8c4bb; text-align: left; font-size: 9px; letter-spacing: .2px; white-space: nowrap; }' +
       '.rc-psy-val { padding: 4px 6px; border: 1px solid #b8c4bb; text-align: center; font-weight: 700; font-size: 9px; color: #1a3f8f; }' +
       '.rc-psy-row-a .rc-psy-val { background: #fbfdfb; }' +
       '.rc-psy-row-b .rc-psy-val { background: #eaf1fc; }' +
-
-      // ---- Body layout ----
       '.rc-body-grid { display: flex; gap: 8px; align-items: flex-start; }' +
       '.rc-body-main { flex: 1 1 auto; min-width: 0; overflow-x: auto; }' +
       '.rc-body-side { flex: 0 0 215px; max-width: 215px; }' +
       '.rc-scroll { overflow-x: auto; }' +
-
-      // ---- Bottom row ----
       '.rc-bottom-grid { display: flex; gap: 10px; margin-top: 12px; align-items: stretch; }' +
       '.rc-bottom-cell { border: 1px solid #b8c4bb; border-radius: 6px; overflow: hidden; flex: 1 1 0; min-width: 0; background: #fff; display: flex; flex-direction: column; }' +
       '.rc-bottom-title { background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; font-weight: 700; font-size: 10px; padding: 5px 8px; text-align: center; letter-spacing: .5px; }' +
@@ -448,9 +379,7 @@
       '.rc-bottom-qr { display: flex; flex-direction: column; align-items: center; justify-content: center; }' +
       '.rc-qr-img { width: 96px; height: 96px; display: block; }' +
       '.rc-qr-caption { font-size: 10px; font-weight: 700; color: #1a3f8f; margin-top: 6px; letter-spacing: .5px; }' +
-
-      '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } ' +
-        '.rc-watermark { opacity: 0.04; } }' +
+      '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } .rc-watermark { opacity: 0.04; } }' +
     '</style>';
   }
 
