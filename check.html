@@ -1,8 +1,8 @@
 <!-- ================================================================
      TIS EMIS — PUBLIC RESULTS PAGE
      File: check.html
-     Loaded by /check  and  /check/<PIN>  via vercel.json.
-     No portal code. No login. Read-only public viewer.
+     Loaded by /r  and  /r/<PIN>  via vercel.json.
+     No portal code. No login. Print-only public viewer.
      Script order:
        1. supabase-client.js  — backend bridge (window.TIS)
        2. report-render.js    — shared report renderer (window.TISReport)
@@ -12,8 +12,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="The Ideal Schools — Public Results Viewer">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="The Ideal Schools — Results">
 <title>Results — The Ideal Schools</title>
 
 <link rel="icon" href="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w64" type="image/png">
@@ -22,132 +23,173 @@
 <link rel="stylesheet" href="/styles.css">
 
 <style>
-  /* Page-shell styling, only for the public wrapper. The report card
-     itself uses the .rc-* classes from styles.css so it matches the
-     internal Results tab pixel for pixel. */
-  .pub-shell { max-width: 1080px; margin: 0 auto; padding: 20px; }
-  .pub-topbar {
-    display: flex; align-items: center; gap: 14px;
+  /* Public shell styling. The report card itself uses the .rc-* classes
+     from styles.css so the printed sheet matches the internal Results tab
+     pixel for pixel. Only the wrapper differs. */
+  html, body { background: #f4f7f5; }
+  .r-shell {
+    max-width: 560px; margin: 0 auto; padding: 24px 16px 40px 16px;
+  }
+  .r-card {
+    background: #fff; border: 1px solid #e0e6e2; border-radius: 12px;
+    padding: 22px 20px; box-shadow: 0 4px 18px rgba(11,102,35,0.06);
+  }
+  .r-head {
+    display: flex; align-items: center; gap: 12px;
     border-bottom: 3px solid #0b6623; padding-bottom: 10px; margin-bottom: 18px;
   }
-  .pub-topbar img { height: 62px; width: 62px; object-fit: contain; }
-  .pub-topbar-mid { flex: 1 1 auto; text-align: center; }
-  .pub-topbar-title { font-size: 22px; font-weight: 900; color: #0b6623; letter-spacing: 1px; }
-  .pub-topbar-sub   { font-size: 12px; color: #555; margin-top: 3px; }
-  .pub-card {
-    background: #fff; border: 1px solid #e0e6e2; border-radius: 10px;
-    padding: 18px; margin-bottom: 16px;
+  .r-head img { height: 58px; width: 58px; object-fit: contain; }
+  .r-head-mid { flex: 1 1 auto; text-align: center; }
+  .r-head-title { font-size: 18px; font-weight: 900; color: #0b6623; letter-spacing: 1px; }
+  .r-head-sub   { font-size: 11px; color: #555; margin-top: 2px; }
+
+  .r-card h2 {
+    margin: 0 0 6px; color: #0b6623; font-size: 16px;
   }
-  .pub-card h2 { margin: 0 0 6px; color: #0b6623; font-size: 17px; }
-  .pub-card p  { margin: 0 0 12px; color: #555; font-size: 13px; }
-  .pub-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-  .pub-row .fld { flex: 1 1 180px; min-width: 160px; }
-  .pub-row .fld.narrow { flex: 0 0 140px; }
-  .pub-row .btn-wrap { flex: 0 0 auto; }
-  .pub-feedback { margin-top: 10px; font-size: 13px; color: #666; min-height: 18px; }
-  .pub-feedback.error { color: #c0392b; }
-  .pub-feedback.ok    { color: #0d4d26; }
-  .pub-welcome {
+  .r-card p {
+    margin: 0 0 16px; color: #555; font-size: 12.5px; line-height: 1.5;
+  }
+  .r-field { margin-bottom: 12px; }
+  .r-field label {
+    display: block; font-size: 11.5px; font-weight: 700;
+    color: #0d4d26; margin-bottom: 4px; letter-spacing: .2px;
+  }
+  .r-field input,
+  .r-field select {
+    width: 100%; padding: 12px 12px; font-size: 15px;
+    border: 1.5px solid #cfd8d2; border-radius: 8px; box-sizing: border-box;
+    background: #fbfdfb;
+  }
+  .r-field input:focus,
+  .r-field select:focus {
+    outline: none; border-color: #0b6623; background: #fff;
+  }
+  #rPin {
+    text-transform: uppercase; text-align: center;
+    letter-spacing: 3px; font-weight: 800; font-size: 17px;
+  }
+  .r-two-up { display: flex; gap: 10px; }
+  .r-two-up > .r-field { flex: 1 1 0; min-width: 0; }
+
+  .r-actions { margin-top: 16px; }
+  .r-btn-print {
+    width: 100%; padding: 14px 16px; font-size: 15px; font-weight: 800;
+    background: linear-gradient(90deg, #0b6623, #1a8a3a);
+    color: #fff; border: none; border-radius: 9px; cursor: pointer;
+    letter-spacing: .4px;
+    box-shadow: 0 3px 10px rgba(11,102,35,0.18);
+  }
+  .r-btn-print:disabled {
+    background: #b8c4bb; box-shadow: none; cursor: not-allowed;
+  }
+  .r-btn-secondary {
+    width: 100%; padding: 12px 16px; font-size: 13.5px; font-weight: 700;
+    background: #eef4ef; color: #0b6623; border: 1px solid #cfe3d3;
+    border-radius: 9px; cursor: pointer; margin-top: 8px;
+  }
+
+  .r-feedback {
+    margin-top: 12px; font-size: 12.5px; color: #666;
+    min-height: 16px; text-align: center;
+  }
+  .r-feedback.error { color: #c0392b; font-weight: 700; }
+  .r-feedback.ok    { color: #0d4d26; font-weight: 700; }
+
+  .r-welcome {
     display: none;
     background: #e8f5e9; border-left: 4px solid #0d4d26;
-    padding: 12px 14px; border-radius: 6px; margin-top: 12px;
-    font-size: 13px; color: #333;
+    padding: 12px 14px; border-radius: 6px; margin: 4px 0 14px 0;
+    font-size: 13px; color: #333; line-height: 1.5;
   }
-  .pub-welcome.show { display: block; }
-  .pub-clearance {
-    display: none;
-    background: #fff7e0; border-left: 4px solid #d4a017;
-    padding: 14px 16px; border-radius: 6px; margin: 14px 0 0 0;
-    font-size: 13px; color: #6f5409; line-height: 1.6;
+  .r-welcome.show { display: block; }
+  .r-welcome b { color: #0d4d26; }
+
+  .r-note {
+    font-size: 11px; color: #888; text-align: center;
+    margin-top: 18px; line-height: 1.6;
   }
-  .pub-clearance.show { display: block; }
-  .pub-clearance b { color: #b8860b; }
-  .pub-print-row { margin-top: 14px; text-align: right; }
-  .pub-footer {
-    text-align: center; font-size: 11px; color: #888;
-    margin-top: 24px; padding-top: 12px; border-top: 1px solid #e6e9f0;
+
+  /* Hidden container for the built report HTML. Never visible. */
+  #rHiddenHolder {
+    position: absolute; left: -10000px; top: 0;
+    width: 1px; height: 1px; overflow: hidden;
   }
 </style>
 </head>
 <body>
 
-<div class="pub-shell">
+<div class="r-shell">
 
-  <div class="pub-topbar">
-    <img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School">
-    <div class="pub-topbar-mid">
-      <div class="pub-topbar-title">THE IDEAL SCHOOLS</div>
-      <div class="pub-topbar-sub">Public Results Viewer</div>
-    </div>
-    <img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry">
-  </div>
-
-  <div class="pub-card">
-    <h2><i class="fas fa-magnifying-glass"></i> Find your result</h2>
-    <p>Enter the student PIN on the report card. Or open the QR code on the report card.</p>
-
-    <div class="pub-row">
-      <div class="fld">
-        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Student PIN</label>
-        <input type="text" id="pubPin" placeholder="e.g. TIS0241"
-               autocomplete="off" spellcheck="false"
-               style="text-transform:uppercase;width:100%;">
+  <div class="r-card">
+    <div class="r-head">
+      <img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School">
+      <div class="r-head-mid">
+        <div class="r-head-title">THE IDEAL SCHOOLS</div>
+        <div class="r-head-sub">Results</div>
       </div>
-      <div class="fld narrow">
-        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Term</label>
-        <select id="pubTerm" style="width:100%;">
+      <img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry">
+    </div>
+
+    <h2>Print a student result</h2>
+    <p>Enter the student PIN from the report card. Your result opens in the print dialog — no preview.</p>
+
+    <div class="r-field">
+      <label for="rPin">Student PIN</label>
+      <input id="rPin" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="TIS0241">
+    </div>
+
+    <div class="r-two-up">
+      <div class="r-field">
+        <label for="rTerm">Term</label>
+        <select id="rTerm">
           <option value="1st">1st Term</option>
           <option value="2nd">2nd Term</option>
           <option value="3rd">3rd Term</option>
         </select>
       </div>
-      <div class="fld narrow">
-        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Year</label>
-        <input type="text" id="pubYear" value="2026" style="width:100%;">
-      </div>
-      <div class="fld narrow">
-        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Report Type</label>
-        <select id="pubType" style="width:100%;">
-          <option value="termly">Termly</option>
-          <option value="sessional">Sessional</option>
-        </select>
-      </div>
-      <div class="btn-wrap">
-        <button class="btn btn-primary" id="pubLoadBtn" type="button">
-          <i class="fas fa-eye"></i> Load Report
-        </button>
+      <div class="r-field">
+        <label for="rYear">Year</label>
+        <input id="rYear" type="text" value="2026">
       </div>
     </div>
 
-    <div class="pub-feedback" id="pubFeedback"></div>
+    <div class="r-field">
+      <label for="rType">Report</label>
+      <select id="rType">
+        <option value="termly">Termly (single term)</option>
+        <option value="sessional">Sessional (all three terms)</option>
+      </select>
+    </div>
 
-    <div class="pub-welcome" id="pubWelcome">
-      Welcome, <b id="pubWelcomeName">—</b>
+    <div class="r-welcome" id="rWelcome">
+      Welcome, <b id="rWelcomeName">—</b>
       <span style="color:#666;">·</span>
-      <span id="pubWelcomeClass">—</span>
+      <span id="rWelcomeClass">—</span>
       <span style="color:#666;">·</span>
-      PIN: <span id="pubWelcomePin">—</span>
+      PIN: <span id="rWelcomePin">—</span>
     </div>
 
-    <div class="pub-clearance" id="pubClearance">
-      <b>TIS Payment Policy</b> — please pay your outstanding balance to view this result.
-      Contact the school office: <b>08067071557</b> · <b>08027270404</b>.
+    <div class="r-actions">
+      <button class="r-btn-print" id="rPrintBtn" type="button">
+        <i class="fas fa-print"></i> Print my result
+      </button>
+      <button class="r-btn-secondary" id="rAgainBtn" type="button" style="display:none;">
+        <i class="fas fa-rotate-right"></i> Print again
+      </button>
     </div>
-  </div>
 
-  <div id="pubReportContainer"></div>
+    <div class="r-feedback" id="rFeedback"></div>
 
-  <div class="pub-print-row" id="pubPrintRow" style="display:none;">
-    <button class="btn btn-gold" id="pubPrintBtn" type="button">
-      <i class="fas fa-print"></i> Print
-    </button>
-  </div>
-
-  <div class="pub-footer">
-    &copy; 2026 Powered by <strong>TIS</strong> · The Ideal Schools Operational Portal
+    <div class="r-note">
+      If you cannot print, ask at the school office.<br>
+      <b>08067071557</b> &middot; <b>08027270404</b>
+    </div>
   </div>
 
 </div>
+
+<!-- The report HTML is built here, invisible, and handed to the print window. -->
+<div id="rHiddenHolder"></div>
 
 <script src="/supabase-client.js"></script>
 <script src="/report-render.js"></script>
