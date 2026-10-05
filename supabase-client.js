@@ -1982,26 +1982,33 @@
     } catch (err) { return fail(err); }
   };
 
-  TIS.getResumptionDate = async function (termType, year) {
+   TIS.getResumptionDate = async function (termType, year) {
     try {
       const sb = await loadSdk();
-      // Find the next term after (termType, year).
-      let nextTermType, nextYear;
-      if (termType === '1st')      { nextTermType = '2nd'; nextYear = year; }
-      else if (termType === '2nd') { nextTermType = '3rd'; nextYear = year; }
-      else                          { nextTermType = '1st'; nextYear = year + 1; }
 
-      const { data, error } = await sb
-        .from('terms')
-        .select('start_date, label')
-        .eq('term_type', nextTermType)
-        .eq('year', nextYear)
+      // Which academic year does the NEXT term fall in?
+      //   1st term year N  → next is 2nd term year N   → same academic year
+      //   2nd term year N  → next is 3rd term year N   → same academic year
+      //   3rd term year N  → next is 1st term year N+1 → academic year N+1
+      const nextYearStart = (termType === '3rd') ? (Number(year) + 1) : Number(year);
+      const academicYear  = nextYearStart + '/' + (nextYearStart + 1);
+
+      // The calendar row is tagged  RESUMPTION (FIRST TERM)  in description.
+      // Search within the academic year the next term belongs to.
+      const r = await sb
+        .from('academic_calendar')
+        .select('event_date, description, academic_year')
+        .ilike('description', '%RESUMPTION (FIRST TERM)%')
+        .eq('academic_year', academicYear)
+        .order('event_date', { ascending: true })
+        .limit(1)
         .maybeSingle();
-      if (error) return fail(error.message);
-      return ok(data ? data.start_date : null);
+
+      if (r.error) return fail(r.error.message);
+      if (!r.data || !r.data.event_date) return ok(null);
+      return ok(r.data.event_date);
     } catch (err) { return fail(err); }
   };
-
   TIS.getScoresForTerm = async function (learnerId, termType, year) {
     try {
       const sb = await loadSdk();
