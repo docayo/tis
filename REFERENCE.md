@@ -1,7 +1,7 @@
 # TIS EMIS — REFERENCE
 
 **Companion to:** `HANDOVER.md` (current state) and `HISTORY.md` (session log).
-**Last updated:** 4 October 2026
+**Last updated:** 5 October 2026
 
 Read `HANDOVER.md` first. This file holds the reference material —
 schemas, code maps, method lists, rules, conventions. Read once when
@@ -25,9 +25,6 @@ select relname, relrowsecurity as rls_enabled
 from pg_class
 where relname in ('<name>')
 order by relname;
-
-Expected: `rls_enabled = false`. If true, the client gets empty results
-and 403 on writes.
 
 Expected: rls_enabled = false. If true, the client gets empty results
 and 403 on writes.
