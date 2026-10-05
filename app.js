@@ -9765,15 +9765,17 @@
   // ----------------------------------------------------------------
   // Build a termly report card (single term)
   // ----------------------------------------------------------------
-  async function resultsBuildTermly(learner, term, year) {
+   async function resultsBuildTermly(learner, term, year) {
     try {
-      const [popR, attR, scoresR, termR, resumeR, subsR] = await Promise.all([
+      const [popR, attR, scoresR, termR, resumeR, subsR, ratingsR, nextR] = await Promise.all([
         window.TIS.getClassPopulation(learner.class_name),
         window.TIS.getAttendanceSummaryForTerm(learner.id, term, year),
         window.TIS.getScoresForTerm(learner.id, term, year),
         window.TIS.getLearnerTermRecord(learner.id, term, year),
         window.TIS.getResumptionDate(term, year),
-        window.TIS.listSubjects()
+        window.TIS.listSubjects(),
+        window.TIS.getReportRatings(learner.id, term, year),
+        window.TIS.getNextClass(learner.class_name)
       ]);
 
       const pop    = (popR && popR.ok) ? popR.data : 0;
@@ -9782,6 +9784,8 @@
       const termRec = (termR && termR.ok) ? termR.data : null;
       const resume = (resumeR && resumeR.ok) ? resumeR.data : null;
       const subjects = (subsR && subsR.ok) ? subsR.data : [];
+      const ratings = (ratingsR && ratingsR.ok) ? ratingsR.data : null;
+      const promotedTo = (nextR && nextR.ok) ? nextR.data : null;
 
       const subjectMap = {};
       subjects.forEach(function (s) { subjectMap[s.code] = s.display_name; });
@@ -9793,6 +9797,36 @@
       // Load the class's slot order for correct row order.
       const csR = await window.TIS.getClassSubjects(learner.class_name);
       const slotOrder = (csR && csR.ok ? csR.data : []).sort(function (a, b) { return a.slot - b.slot; });
+
+      // -------- Class-wide highest and lowest percentage this term --------
+      // Pull every learner in this class, then every score for this term/year,
+      // then compute each learner's percentage and take the extreme values.
+      const classLearnersR = await window.TIS.getLearnersForClasses([learner.class_name]);
+      const classLearnerIds = (classLearnersR && classLearnersR.ok ? classLearnersR.data : [])
+        .map(function (l) { return l.id; });
+      const classScoresR = await window.TIS.getScoresForLearners(classLearnerIds, term, year);
+      const classScoresMap = (classScoresR && classScoresR.ok && classScoresR.data) ? classScoresR.data : {};
+
+      const perLearner = {};
+      Object.keys(classScoresMap).forEach(function (key) {
+        const parts = key.split('|');
+        const lid = parts[0];
+        const row = classScoresMap[key];
+        if (!row || row.total == null) return;
+        if (!perLearner[lid]) perLearner[lid] = { sum: 0, count: 0 };
+        perLearner[lid].sum   += Number(row.total);
+        perLearner[lid].count += 1;
+      });
+      let highestPct = null, lowestPct = null;
+      Object.keys(perLearner).forEach(function (lid) {
+        const e = perLearner[lid];
+        if (e.count === 0) return;
+        const p = e.sum / e.count;              // average per subject, same basis as this learner's
+        if (highestPct === null || p > highestPct) highestPct = p;
+        if (lowestPct === null || p < lowestPct) lowestPct = p;
+      });
+      const highestPctStr = (highestPct === null) ? '—' : highestPct.toFixed(2);
+      const lowestPctStr  = (lowestPct  === null) ? '—' : lowestPct.toFixed(2);
 
       // Build the subject rows in slot order.
       let totalCA = 0, totalExam = 0, rowCount = 0;
@@ -9862,6 +9896,15 @@
                 '<th>(50)</th>' +
                 '<th>(100)</th>' +
               '</tr>' +
+              '<tr class="rc-obtainable">' +
+                '<th class="rc-obtainable-lbl">MARKS OBTAINABLE</th>' +
+                '<th>20</th>' +
+                '<th>30</th>' +
+                '<th>50</th>' +
+                '<th>100</th>' +
+                '<th></th>' +
+                '<th></th>' +
+              '</tr>' +
             '</thead>' +
             '<tbody>' + bodyRows + '</tbody>' +
             '<tfoot>' +
@@ -9874,8 +9917,23 @@
             '</tfoot>' +
           '</table>' +
           '</div>' +
-          window.TISReport.resultsStatsBlock(totalCA, totalExam, aggregate, maxAggregate, pct) +
-          window.TISReport.resultsCommentsBlock(learner, resume, feeText) +
+          window.TISReport.resultsStatsBlock({
+            totalCA:      totalCA,
+            totalExam:    totalExam,
+            aggregate:    aggregate,
+            maxAggregate: maxAggregate,
+            pct:          pct,
+            highestPct:   highestPctStr,
+            lowestPct:    lowestPctStr
+          }) +
+          window.TISReport.resultsCommentsBlock(
+            learner,
+            resume,
+            feeText,
+            ratings,
+            promotedTo,
+            learner.pin
+          ) +
         '</div>';
 
       return { ok: true, html: html };
@@ -9887,16 +9945,18 @@
   async function resultsBuildSessional(learner, year) {
     try {
       const terms = ['1st', '2nd', '3rd'];
-      const [popR, subsR, csR, resumeR] = await Promise.all([
+      const [popR, subsR, csR, resumeR, nextR] = await Promise.all([
         window.TIS.getClassPopulation(learner.class_name),
         window.TIS.listSubjects(),
         window.TIS.getClassSubjects(learner.class_name),
-        window.TIS.getResumptionDate('3rd', year)
+        window.TIS.getResumptionDate('3rd', year),
+        window.TIS.getNextClass(learner.class_name)
       ]);
       const pop = (popR && popR.ok) ? popR.data : 0;
       const subjects = (subsR && subsR.ok) ? subsR.data : [];
       const slotOrder = (csR && csR.ok ? csR.data : []).sort(function (a, b) { return a.slot - b.slot; });
       const resume = (resumeR && resumeR.ok) ? resumeR.data : null;
+      const promotedTo = (nextR && nextR.ok) ? nextR.data : null;
 
       const subjectMap = {};
       subjects.forEach(function (s) { subjectMap[s.code] = s.display_name; });
@@ -9905,15 +9965,18 @@
       const termScores = {};
       const termAtt    = {};
       const termRec    = {};
+      const termRating = {};
       for (const t of terms) {
-        const [sR, aR, rR] = await Promise.all([
+        const [sR, aR, rR, rtR] = await Promise.all([
           window.TIS.getScoresForTerm(learner.id, t, year),
           window.TIS.getAttendanceSummaryForTerm(learner.id, t, year),
-          window.TIS.getLearnerTermRecord(learner.id, t, year)
+          window.TIS.getLearnerTermRecord(learner.id, t, year),
+          window.TIS.getReportRatings(learner.id, t, year)
         ]);
         termScores[t] = (sR && sR.ok) ? sR.data : [];
         termAtt[t]    = (aR && aR.ok) ? aR.data : { opened: 0, present: 0, absent: 0 };
         termRec[t]    = (rR && rR.ok) ? rR.data : null;
+        termRating[t] = (rtR && rtR.ok) ? rtR.data : null;
       }
 
       const totalAtt = {
@@ -9921,6 +9984,12 @@
         present: terms.reduce(function (s, t) { return s + termAtt[t].present; }, 0),
         absent:  terms.reduce(function (s, t) { return s + termAtt[t].absent;  }, 0)
       };
+
+      // Take the sessional ratings from the latest term that has one.
+      let ratings = null;
+      for (let i = terms.length - 1; i >= 0; i--) {
+        if (termRating[terms[i]]) { ratings = termRating[terms[i]]; break; }
+      }
 
       // Build per-subject rows.
       let bodyRows = '';
@@ -9966,6 +10035,29 @@
       const maxSessional = slotOrder.length * 300;
       const sessionalPct = maxSessional > 0 ? (sessionalTotal / maxSessional * 100).toFixed(2) : '0.00';
 
+      // Sessional comparison — highest and lowest cumulative for the class.
+      const classLearnersR = await window.TIS.getLearnersForClasses([learner.class_name]);
+      const classLearnerIds = (classLearnersR && classLearnersR.ok ? classLearnersR.data : [])
+        .map(function (l) { return l.id; });
+
+      const cumulatives = [];
+      for (const lid of classLearnerIds) {
+        let sum = 0, count = 0;
+        for (const t of terms) {
+          const sR = await window.TIS.getScoresForTerm(lid, t, year);
+          const arr = (sR && sR.ok) ? sR.data : [];
+          arr.forEach(function (r) { if (r.total != null) { sum += Number(r.total); count++; } });
+        }
+        if (count > 0) cumulatives.push(sum);
+      }
+      let highestPct = null, lowestPct = null;
+      if (cumulatives.length > 0) {
+        highestPct = Math.max.apply(null, cumulatives);
+        lowestPct  = Math.min.apply(null, cumulatives);
+      }
+      const highestPctStr = (highestPct === null) ? '—' : String(highestPct);
+      const lowestPctStr  = (lowestPct  === null) ? '—' : String(lowestPct);
+
       const html = '' +
         '<div class="results-preview">' +
           window.TISReport.resultsHeaderHtml('Sessional Cumulative Statement of Result') +
@@ -9985,6 +10077,15 @@
               '<tr>' +
                 '<th>(100)</th><th>(100)</th><th>(100)</th><th>(300)</th>' +
               '</tr>' +
+              '<tr class="rc-obtainable">' +
+                '<th class="rc-obtainable-lbl">MARKS OBTAINABLE</th>' +
+                '<th>100</th>' +
+                '<th>100</th>' +
+                '<th>100</th>' +
+                '<th>300</th>' +
+                '<th></th>' +
+                '<th></th>' +
+              '</tr>' +
             '</thead>' +
             '<tbody>' + bodyRows + '</tbody>' +
             '<tfoot>' +
@@ -9999,8 +10100,25 @@
             '</tfoot>' +
           '</table>' +
           '</div>' +
-          window.TISReport.resultsSessionalStats(sumTerm, sessionalTotal, maxSessional, sessionalPct) +
-          window.TISReport.resultsCommentsBlock(learner, resume, '') +
+          window.TISReport.resultsStatsBlock({
+            totalCA:      sumTerm[0] + sumTerm[1] + sumTerm[2],
+            totalExam:    '—',
+            aggregate:    sessionalTotal,
+            maxAggregate: maxSessional,
+            pct:          sessionalPct,
+            highestPct:   highestPctStr,
+            lowestPct:    lowestPctStr,
+            sessional:    true,
+            sumTerm:      sumTerm
+          }) +
+          window.TISReport.resultsCommentsBlock(
+            learner,
+            resume,
+            '',
+            ratings,
+            promotedTo,
+            learner.pin
+          ) +
         '</div>';
 
       return { ok: true, html: html };
