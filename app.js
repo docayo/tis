@@ -2805,7 +2805,7 @@
   //   List of learners (searchable) with per-learner additions and
   //   deductions for the selected term and year.
   // ----------------------------------------------------------------
-  async function feesLoadAdjustments(term, year) {
+   async function feesLoadAdjustments(term, year) {
     feesSetFeedback('Loading learners…');
     const learnerR = await window.TIS.listLearners();
     if (!learnerR || !learnerR.ok) {
@@ -2816,15 +2816,13 @@
       .filter(function (l) {
         const w = (l.date_of_withdrawal || '').toString().trim();
         return !(w && w !== '' && w !== 'N/A');
-      })
-      .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+      });
 
     if (learners.length === 0) {
       setHTML('feesContent', emptyHTML('fa-users', 'No active learners'));
       return;
     }
 
-    // Pull every adjustment row for this term/year in one call.
     const ids = learners.map(function (l) { return l.id; });
     const adjR = await window.TIS.listFeeAdjustmentsForLearners(ids, term, year);
     const adjMap = {};
@@ -2832,8 +2830,33 @@
       adjMap[r.learner_id] = r;
     });
 
-    let html = '<div style="margin-bottom:8px;">';
-    html += '<input type="text" id="feesAdjustSearch" placeholder="Search by name or PIN…" style="width:100%;max-width:340px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;">';
+    // Class order comes from classes.sort_order, so classes read in the
+    // school's academic order rather than alphabetically.
+    const classR = await window.TIS.listClasses();
+    const classOrder = {};
+    (classR && classR.ok ? classR.data : []).forEach(function (c) {
+      classOrder[c.name] = c.sort_order || 9999;
+    });
+
+    // Distinct classes present, in academic order.
+    const presentClasses = {};
+    learners.forEach(function (l) {
+      const c = l.class_name || '';
+      if (c) presentClasses[c] = true;
+    });
+    const classList = Object.keys(presentClasses)
+      .sort(function (a, b) {
+        return (classOrder[a] || 9999) - (classOrder[b] || 9999);
+      });
+
+    let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">';
+    html += '<input type="text" id="feesAdjustSearch" placeholder="Search by name or PIN…" style="flex:1 1 220px;min-width:180px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;">';
+    html += '<select id="feesAdjustClass" style="flex:0 0 200px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;">';
+    html += '<option value="">All classes</option>';
+    classList.forEach(function (c) {
+      html += '<option value="' + escAttr(c) + '">' + esc(c) + '</option>';
+    });
+    html += '</select>';
     html += '</div>';
 
     html += '<div style="overflow-x:auto;">';
@@ -2848,9 +2871,19 @@
     html += '<th style="padding:6px;">Save</th>';
     html += '</tr></thead><tbody>';
 
-    learners.forEach(function (l) {
+    // Sort learners by academic class order, then by name within class.
+    const sorted = learners.slice().sort(function (a, b) {
+      const ao = classOrder[a.class_name] || 9999;
+      const bo = classOrder[b.class_name] || 9999;
+      if (ao !== bo) return ao - bo;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    sorted.forEach(function (l) {
       const a = adjMap[l.id] || {};
-      html += '<tr data-fee-learner="' + l.id + '" data-fee-name="' + escAttr((l.name || '').toLowerCase() + ' ' + (l.pin || '').toLowerCase()) + '">';
+      html += '<tr data-fee-learner="' + l.id +
+              '" data-fee-name="' + escAttr((l.name || '').toLowerCase() + ' ' + (l.pin || '').toLowerCase()) +
+              '" data-fee-class="' + escAttr(l.class_name || '') + '">';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.pin || '') + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.name || '') + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.class_name || '') + '</td>';
@@ -2865,18 +2898,26 @@
     html += '<p style="font-size:11px;color:#666;margin-top:8px;">Additions raise the learner\'s bill. Deductions lower it. A blank field is treated as 0.</p>';
     setHTML('feesContent', html);
 
-    const search = $('feesAdjustSearch');
-    if (search) {
-      search.addEventListener('input', function () {
-        const q = search.value.trim().toLowerCase();
-        document.querySelectorAll('[data-fee-learner]').forEach(function (tr) {
-          const hay = tr.getAttribute('data-fee-name') || '';
-          tr.style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
-        });
+    function applyFilters() {
+      const searchEl = $('feesAdjustSearch');
+      const classEl  = $('feesAdjustClass');
+      const q   = searchEl ? searchEl.value.trim().toLowerCase() : '';
+      const cls = classEl  ? classEl.value : '';
+      document.querySelectorAll('[data-fee-learner]').forEach(function (tr) {
+        const hay = tr.getAttribute('data-fee-name') || '';
+        const rowClass = tr.getAttribute('data-fee-class') || '';
+        const matchQ = !q || hay.indexOf(q) !== -1;
+        const matchC = !cls || rowClass === cls;
+        tr.style.display = (matchQ && matchC) ? '' : 'none';
       });
     }
-  }
 
+    const search = $('feesAdjustSearch');
+    if (search) search.addEventListener('input', applyFilters);
+
+    const clsSel = $('feesAdjustClass');
+    if (clsSel) clsSel.addEventListener('change', applyFilters);
+  }
   async function feesSaveAdjustmentRow(learnerId) {
     const { term, year } = feesReadTermYear();
     const rowEl = document.querySelector('[data-fee-learner="' + learnerId + '"]');
