@@ -23,7 +23,7 @@
     el.textContent = msg || '';
   }
 
-  function pinFromUrl() {
+   function pinFromUrl() {
     const m = window.location.pathname.match(/^\/r\/([^\/?#]+)/i);
     if (m && m[1]) return decodeURIComponent(m[1]).toUpperCase();
     return '';
@@ -48,6 +48,13 @@
     '</div>';
   }
 
+  function logView(entry) {
+    try {
+      if (typeof window.TIS.logResultsView === 'function') {
+        window.TIS.logResultsView(entry).catch(function(){});
+      }
+    } catch (e) { /* silent */ }
+  }
   async function buildTermly(learner, term, year) {
     const [popR, attR, scoresR, termR, resumeR, subsR, ratingsR, nextClassR] = await Promise.all([
       window.TIS.getClassPopulation(learner.class_name),
