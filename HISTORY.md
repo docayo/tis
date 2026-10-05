@@ -230,7 +230,121 @@ results viewer at `/check`.
 
 ---
 
-### Session 7 — (add your next session here)
+
+### Session 7 — 5 October 2026 — Phase A, D.1, and report card parity
+
+**Owner's ask:** Multiple items across the session. Complete the
+report card to match the sample PDFs. Build the public results
+page. Build the fees module. Fix assorted visual issues.
+
+**What was delivered:**
+
+Report card parity and shared renderer:
+- Extracted `[S22]` into a shared `report-render.js` exposing
+  `window.TISReport`, loaded by both `index.html` and `check.html`.
+- Header rewritten: inline SVG titles with real `linearGradient`
+  fills (green → gold → red → blue), school logo on the left,
+  learner photo circle on the right, ministry logo removed.
+- Learner photo pulled from `learners.photo_url`.
+- Faded school logo watermark behind the report card.
+- Palette rebalanced: green 50%, gold 25%, blue 15%, red 10%.
+- MARKS OBTAINABLE row added to both termly and sessional tables.
+- PSYCHOMOTOR RATINGS table moved into a side column beside the
+  subject table with Word-grid styling.
+- FEE BREAKDOWN table added below the psychomotor block. Reads
+  `fee_schedule` + `fee_adjustments` + `learner_terms`. Scholarship
+  and Additions rows hidden when zero.
+- Stats block extended with AGGREGATE SCORE / PERCENTAGE /
+  HIGHEST PEC % / LOWEST PEC %.
+- Comments block now reads `report_ratings.teacher_comment` and
+  `report_ratings.principal_comment` instead of hard-coded text.
+- PROMOTED TO logic: 1st and 2nd term → next term label;
+  3rd term and sessional → next class from `classes.next_class`.
+- LIN row now shows the learner's PIN.
+- SCHOOL STAMP moved out of the comments block. Now sits in a
+  bottom row alongside PERFORMANCE CHART (coloured bar chart by
+  grade) and QR CODE (points at `/r/<PIN>`).
+- `getResumptionDate` in `supabase-client.js` now reads the
+  academic calendar by tag (`RESUMPTION (FIRST TERM)` etc.) for
+  the correct academic year, no hard-coded dates.
+
+Phase A — public results page:
+- `check.html` and `check.js` created. Loaded by `/r` and `/r/<PIN>`
+  via `vercel.json`. Login-free, print-only, no preview.
+- Clearance gate: when `learner_terms.cleared != 'Yes'`, numeric
+  cells render as `—` and a payment-policy notice appears above
+  the subject table. Performance chart is empty for not-cleared
+  learners. Subject names, grades, remarks, psychomotor, comments,
+  stamp and QR still render.
+- `results_views` table created (RLS off) and
+  `TIS.logResultsView` added to `supabase-client.js`. Every public
+  lookup writes one row with PIN, term, year, report type, outcome,
+  masked IP and user agent.
+- Deep link `/r/TIS0241` pre-fills the PIN and auto-opens the
+  print dialog after load.
+
+Phase D.1 — fees module:
+- `fee_schedule` table — class × term × year bill. Unique on
+  `(class_name, term_type, year)`. RLS off.
+- `fee_adjustments` table — per-learner additions and deductions.
+  Unique on `(learner_id, term_type, year)`. RLS off.
+- Nine new methods on `window.TIS`: `listFeeSchedule`,
+  `getFeeScheduleRow`, `upsertFeeSchedule`, `deleteFeeSchedule`,
+  `listFeeAdjustments`, `getFeeAdjustment`,
+  `listFeeAdjustmentsForLearners`, `upsertFeeAdjustment`,
+  `deleteFeeAdjustment`.
+- Fees panel added inside the Terms tab. Two sub-tabs — Class Bill
+  and Adjustments. Class Bill lists one row per active class with
+  four numeric fields and a live total. Adjustments lists one row
+  per learner with additions, deductions, reason, and a live search
+  plus class filter. Adjustments sorted by academic class order,
+  then by name within class.
+- Report card's FEE BREAKDOWN table now feeds from these tables
+  instead of `learner_terms` alone.
+
+**What broke:**
+- Initial `report-render.js` extraction left `buildFeeText` and
+  several helpers unresolved. Fixed by exposing them on
+  `window.TISReport` and updating call sites in `app.js`.
+- Inline `background-clip: text` gradients on the header titles did
+  not render in Chrome's print preview. Fixed by switching to
+  inline SVG with real `linearGradient` fills — prints everywhere.
+- The first attempt at a hidden watermark (`::before` pseudo-element
+  with `background-image`) did not render in print. Fixed by using a
+  real `<img>` inside a `.rc-watermark` div.
+- Two grouped replacements in `check.js` and `report-render.js`
+  initially had wrong boundary lines that would have swallowed
+  unrelated functions. Corrected before pasting.
+- A `git` command block pasted into the Supabase SQL editor produced
+  a `42601` syntax error. Not harmful — the SQL editor does nothing
+  with a failed query. The commit was performed via the GitHub web
+  UI instead.
+
+**What is now live:**
+- Public results page at `/r` and `/r/<PIN>`.
+- Shared `report-render.js`.
+- Report card at parity with the sample PDFs.
+- Fees module with class bill and per-learner adjustments.
+- Fee breakdown table on the report card.
+- `results_views` audit log.
+- Report card watermark, learner photo, inline-SVG header.
+- All palette and layout refinements.
+
+**Open items:**
+- Hide Inactive bug on the Learners tab — exited learners stay
+  visible and the toggle appears ineffective.
+- Reports Workshop comment fields should pre-load from the bank
+  and support Up / Down arrow navigation.
+- Learners View modal should show the fee breakdown from the same
+  source the report card uses.
+- Add Learner should apply the class bill automatically.
+- Deactivate / reactivate learners.
+- Delete duplicate learners.
+- Audit log UI and full write-path wiring.
+- Offline report generation, digital library, offline CBT integration.
+
+
+### Session 8 — (add your next session here)
 
 **Owner's ask:**
 
