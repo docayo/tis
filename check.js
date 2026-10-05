@@ -452,7 +452,7 @@
     setTimeout(function () { w.print(); }, 350);
   }
 
-  async function printReport() {
+   async function printReport() {
     const pinEl  = $('rPin');
     const termEl = $('rTerm');
     const yearEl = $('rYear');
@@ -477,6 +477,14 @@
       const lr = await window.TIS.getLearnerByPin(pin);
       if (!lr || !lr.ok || !lr.data) {
         setFeedback('PIN not found. Please check and try again.', 'error');
+        logView({
+          learner_id:  null,
+          pin:         pin,
+          term_type:   term,
+          year:        year,
+          report_type: type,
+          outcome:     'not-found'
+        });
         if (printBtn) printBtn.disabled = false;
         return;
       }
@@ -496,11 +504,28 @@
 
       if (!payload || !payload.ok) {
         setFeedback((payload && payload.error) || 'Could not build the result.', 'error');
+        logView({
+          learner_id:  learner.id,
+          pin:         learner.pin,
+          term_type:   term,
+          year:        year,
+          report_type: type,
+          outcome:     'build-failed'
+        });
         if (printBtn) printBtn.disabled = false;
         return;
       }
 
       __current = { learner: learner, term: term, year: year, type: type, html: payload.html, cleared: payload.cleared };
+
+      logView({
+        learner_id:  learner.id,
+        pin:         learner.pin,
+        term_type:   term,
+        year:        year,
+        report_type: type,
+        outcome:     payload.cleared ? 'ok' : 'not-cleared'
+      });
 
       if (holder) holder.innerHTML = payload.html;
       openPrintWindow(learner.name, payload.html);
@@ -515,7 +540,6 @@
       if (printBtn) printBtn.disabled = false;
     }
   }
-
   function printAgain() {
     if (!__current) { setFeedback('Load a result first.', 'error'); return; }
     openPrintWindow(__current.learner && __current.learner.name, __current.html);
