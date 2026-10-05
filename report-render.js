@@ -76,7 +76,7 @@
       '</table>';
   }
 
-  function resultsCommentsBlock(learner, resume, feeText) {
+   function resultsCommentsBlock(learner, resume, feeText) {
     return '' +
       '<table class="rc-comments">' +
         '<tr>' +
@@ -94,7 +94,9 @@
           '<td class="rc-k">RESUMPTION DATE</td>' +
           '<td class="rc-v">' + esc(resume || '—') + '</td>' +
           '<td class="rc-k">SCHOOL STAMP</td>' +
-          '<td class="rc-v rc-stamp-cell">[seal]</td>' +
+          '<td class="rc-v rc-stamp-cell">' +
+            '<img class="rc-stamp-img" src="https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/stamp%20and%20signed.gif" alt="School stamp">' +
+          '</td>' +
         '</tr>' +
       '</table>';
   }
@@ -143,12 +145,12 @@
       '.rc-covered { background: #f0f0f0; color: #999; font-style: italic; }' +
       '.rc-tfoot td { background: #e8f5e9; font-weight: 700; }' +
       '.rc-tfoot-label { text-align: right; }' +
-      '.rc-stamp-cell { color: #aaa; font-style: italic; }' +
+      '.rc-stamp-cell { text-align: center; vertical-align: middle; padding: 4px; }' +
+      '.rc-stamp-img { display: block; max-height: 56px; max-width: 100%; height: auto; width: auto; margin: 0 auto; }' +
       '.rc-scroll { overflow-x: auto; }' +
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } }' +
     '</style>';
   }
-
   function bandForTotal(total) {
     if (total >= 80) return { grade: 'A', remark: 'EXCELLENT' };
     if (total >= 70) return { grade: 'B', remark: 'VERY GOOD' };
