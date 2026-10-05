@@ -425,7 +425,6 @@
       return ok({ action: 'check-in', row: insR.data });
     } catch (err) { return fail(err); }
   };
-
   // ================================================================
   // [SCAN EVENTS] — audit log of every scan.
   //   Best-effort write; a failure here must never block the scan.
@@ -450,7 +449,48 @@
       return ok({ logged: true });
     } catch (err) { return ok({ skipped: true, reason: String(err) }); }
   };
-  
+
+  // ================================================================
+  // [RESULTS_VIEWS] — audit log of every public results-page lookup.
+  //   Best-effort. Never throws. Never blocks the page.
+  //   Records PIN, term, year, report type, outcome, a masked IP and
+  //   the user agent, so the school can see who is querying what.
+  // ================================================================
+  TIS.logResultsView = async function (entry) {
+    try {
+      const sb = await loadSdk();
+
+      // Best-effort IP lookup. If it fails, ip_masked stays null
+      // and the insert still goes ahead.
+      let ip_masked = null;
+      try {
+        const r = await fetch('https://api.ipify.org?format=json');
+        const j = await r.json();
+        const ip = String((j && j.ip) || '');
+        const parts = ip.split('.');
+        if (parts.length === 4) ip_masked = parts[0] + '.' + parts[1] + '.x.x';
+        else ip_masked = ip ? ip.slice(0, 6) + '...' : null;
+      } catch (e) { ip_masked = null; }
+
+      const payload = {
+        learner_id:  (entry && entry.learner_id != null) ? entry.learner_id : null,
+        pin:         String((entry && entry.pin) || '').toUpperCase().slice(0, 32),
+        term_type:   (entry && entry.term_type) || null,
+        year:        (entry && entry.year) ? parseInt(entry.year, 10) : null,
+        report_type: (entry && entry.report_type) || null,
+        outcome:     (entry && entry.outcome) || 'ok',
+        ip_masked:   ip_masked,
+        user_agent:  String((navigator && navigator.userAgent) || '').slice(0, 400)
+      };
+
+      const r = await sb.from('results_views').insert(payload);
+      if (r.error) return ok({ skipped: true, reason: r.error.message });
+      return ok({ logged: true });
+    } catch (err) {
+      return ok({ skipped: true, reason: String(err) });
+    }
+  };
+
   // ================================================================
   // [AUDIT LOG] — record every operator write, with before/after
   //   snapshots so changes can be reviewed and (if safe) reversed.
