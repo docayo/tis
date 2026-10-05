@@ -215,6 +215,50 @@
       '</table>';
   }
 
+  // ----------------------------------------------------------------
+  // FEE BREAKDOWN — a bill summary that sits below the psychomotor
+  //   ratings on the report card. Gross bill, no subtraction of
+  //   payments, because the report card is a statement of what is
+  //   owed, not a receipt.
+  //   fees = {
+  //     prevBf, tuition, scholarship, adjustedTuition,
+  //     otherMajor, otherMinor, books, additions, balanceCd
+  //   }
+  //   Scholarship and Additions rows are hidden when zero.
+  // ----------------------------------------------------------------
+  function resultsFeeBreakdownBlock(fees) {
+    const f = fees || {};
+    const money = function (v) {
+      const n = Number(v || 0);
+      return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    const showScholarship = Number(f.scholarship || 0) > 0;
+    const showAdditions   = Number(f.additions   || 0) > 0;
+
+    let rows = '';
+    rows += '<tr class="rc-fee-row-a"><td class="rc-fee-lbl">Previous Term Balance B/F</td><td class="rc-fee-val">' + money(f.prevBf) + '</td></tr>';
+    rows += '<tr class="rc-fee-row-b"><td class="rc-fee-lbl">Current Term Tuition</td><td class="rc-fee-val">' + money(f.tuition) + '</td></tr>';
+    if (showScholarship) {
+      rows += '<tr class="rc-fee-row-a"><td class="rc-fee-lbl">Scholarship</td><td class="rc-fee-val">-' + money(f.scholarship) + '</td></tr>';
+    }
+    rows += '<tr class="rc-fee-row-b"><td class="rc-fee-lbl">Adjusted Tuition Total</td><td class="rc-fee-val">' + money(f.adjustedTuition) + '</td></tr>';
+    rows += '<tr class="rc-fee-row-a"><td class="rc-fee-lbl">Other Bills Major</td><td class="rc-fee-val">' + money(f.otherMajor) + '</td></tr>';
+    rows += '<tr class="rc-fee-row-b"><td class="rc-fee-lbl">Other Bills Minor</td><td class="rc-fee-val">' + money(f.otherMinor) + '</td></tr>';
+    rows += '<tr class="rc-fee-row-a"><td class="rc-fee-lbl">Books</td><td class="rc-fee-val">' + money(f.books) + '</td></tr>';
+    if (showAdditions) {
+      rows += '<tr class="rc-fee-row-b"><td class="rc-fee-lbl">Additions</td><td class="rc-fee-val">' + money(f.additions) + '</td></tr>';
+    }
+    rows += '<tr class="rc-fee-row-total"><td class="rc-fee-lbl">Balance C/D</td><td class="rc-fee-val">' + money(f.balanceCd) + '</td></tr>';
+
+    return '' +
+      '<table class="rc-fee">' +
+        '<thead>' +
+          '<tr><th colspan="2" class="rc-fee-head">FEE BREAKDOWN</th></tr>' +
+        '</thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>';
+  }
+
   function resultsStampBlock() {
     return '' +
       '<div class="rc-bottom-cell">' +
@@ -358,6 +402,14 @@
       '.rc-psy-val { padding: 4px 6px; border: 1px solid #b8c4bb; text-align: center; font-weight: 700; font-size: 9px; color: #1a3f8f; }' +
       '.rc-psy-row-a .rc-psy-val { background: #fbfdfb; }' +
       '.rc-psy-row-b .rc-psy-val { background: #eaf1fc; }' +
+      '.rc-fee { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 8px; }' +
+      '.rc-fee-head { background: linear-gradient(90deg, #1a3f8f, #2f5fb0); color: #fff; font-weight: 700; padding: 6px 6px; text-align: center; letter-spacing: .3px; border: 1px solid #1a3f8f; font-size: 9.5px; }' +
+      '.rc-fee-lbl { background: linear-gradient(90deg, #d6e3f5, #e6eefb); font-weight: 700; color: #1a3f8f; padding: 4px 6px; border: 1px solid #b8c4bb; text-align: left; font-size: 9px; letter-spacing: .2px; white-space: nowrap; }' +
+      '.rc-fee-val { padding: 4px 6px; border: 1px solid #b8c4bb; text-align: right; font-weight: 700; font-size: 9px; color: #0b6623; }' +
+      '.rc-fee-row-a .rc-fee-val { background: #fbfdfb; }' +
+      '.rc-fee-row-b .rc-fee-val { background: #eaf1fc; }' +
+      '.rc-fee-row-total .rc-fee-lbl { background: linear-gradient(90deg, #f7ecd0, #fbf5e3); color: #8a6a10; }' +
+      '.rc-fee-row-total .rc-fee-val { background: #fbf5e3; color: #6f5409; font-weight: 800; }' +
       '.rc-body-grid { display: flex; gap: 8px; align-items: flex-start; }' +
       '.rc-body-main { flex: 1 1 auto; min-width: 0; overflow-x: auto; }' +
       '.rc-body-side { flex: 0 0 215px; max-width: 215px; }' +
@@ -393,19 +445,20 @@
   }
 
   window.TISReport = {
-    resultsHeaderHtml:       resultsHeaderHtml,
-    resultsStudentBar:       resultsStudentBar,
-    resultsStatsBlock:       resultsStatsBlock,
-    resultsSessionalStats:   resultsSessionalStats,
-    resultsPsychomotorBlock: resultsPsychomotorBlock,
-    resultsCommentsBlock:    resultsCommentsBlock,
-    resultsStampBlock:       resultsStampBlock,
-    resultsPerformanceChart: resultsPerformanceChart,
-    resultsQRCode:           resultsQRCode,
-    resultsBottomRow:        resultsBottomRow,
-    buildFeeText:            buildFeeText,
-    resultsPrintCss:         resultsPrintCss,
-    bandForTotal:            bandForTotal
+    resultsHeaderHtml:        resultsHeaderHtml,
+    resultsStudentBar:        resultsStudentBar,
+    resultsStatsBlock:        resultsStatsBlock,
+    resultsSessionalStats:    resultsSessionalStats,
+    resultsPsychomotorBlock:  resultsPsychomotorBlock,
+    resultsFeeBreakdownBlock: resultsFeeBreakdownBlock,
+    resultsCommentsBlock:     resultsCommentsBlock,
+    resultsStampBlock:        resultsStampBlock,
+    resultsPerformanceChart:  resultsPerformanceChart,
+    resultsQRCode:            resultsQRCode,
+    resultsBottomRow:         resultsBottomRow,
+    buildFeeText:             buildFeeText,
+    resultsPrintCss:          resultsPrintCss,
+    bandForTotal:             bandForTotal
   };
 })();
 // ================================================================
