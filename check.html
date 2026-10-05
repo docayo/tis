@@ -1,0 +1,157 @@
+<!-- ================================================================
+     TIS EMIS — PUBLIC RESULTS PAGE
+     File: check.html
+     Loaded by /check  and  /check/<PIN>  via vercel.json.
+     No portal code. No login. Read-only public viewer.
+     Script order:
+       1. supabase-client.js  — backend bridge (window.TIS)
+       2. report-render.js    — shared report renderer (window.TISReport)
+       3. check.js            — this page's logic
+     ================================================================ -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="The Ideal Schools — Public Results Viewer">
+<title>Results — The Ideal Schools</title>
+
+<link rel="icon" href="https://lh3.googleusercontent.com/d/1UioBKTzadLkcC5pPCt8_WKFhoOWAzwFv=w64" type="image/png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+
+<style>
+  /* Page-shell styling, only for the public wrapper. The report card
+     itself uses the .rc-* classes from styles.css so it matches the
+     internal Results tab pixel for pixel. */
+  .pub-shell { max-width: 1080px; margin: 0 auto; padding: 20px; }
+  .pub-topbar {
+    display: flex; align-items: center; gap: 14px;
+    border-bottom: 3px solid #0b6623; padding-bottom: 10px; margin-bottom: 18px;
+  }
+  .pub-topbar img { height: 62px; width: 62px; object-fit: contain; }
+  .pub-topbar-mid { flex: 1 1 auto; text-align: center; }
+  .pub-topbar-title { font-size: 22px; font-weight: 900; color: #0b6623; letter-spacing: 1px; }
+  .pub-topbar-sub   { font-size: 12px; color: #555; margin-top: 3px; }
+  .pub-card {
+    background: #fff; border: 1px solid #e0e6e2; border-radius: 10px;
+    padding: 18px; margin-bottom: 16px;
+  }
+  .pub-card h2 { margin: 0 0 6px; color: #0b6623; font-size: 17px; }
+  .pub-card p  { margin: 0 0 12px; color: #555; font-size: 13px; }
+  .pub-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .pub-row .fld { flex: 1 1 180px; min-width: 160px; }
+  .pub-row .fld.narrow { flex: 0 0 140px; }
+  .pub-row .btn-wrap { flex: 0 0 auto; }
+  .pub-feedback { margin-top: 10px; font-size: 13px; color: #666; min-height: 18px; }
+  .pub-feedback.error { color: #c0392b; }
+  .pub-feedback.ok    { color: #0d4d26; }
+  .pub-welcome {
+    display: none;
+    background: #e8f5e9; border-left: 4px solid #0d4d26;
+    padding: 12px 14px; border-radius: 6px; margin-top: 12px;
+    font-size: 13px; color: #333;
+  }
+  .pub-welcome.show { display: block; }
+  .pub-clearance {
+    display: none;
+    background: #fff7e0; border-left: 4px solid #d4a017;
+    padding: 14px 16px; border-radius: 6px; margin: 14px 0 0 0;
+    font-size: 13px; color: #6f5409; line-height: 1.6;
+  }
+  .pub-clearance.show { display: block; }
+  .pub-clearance b { color: #b8860b; }
+  .pub-print-row { margin-top: 14px; text-align: right; }
+  .pub-footer {
+    text-align: center; font-size: 11px; color: #888;
+    margin-top: 24px; padding-top: 12px; border-top: 1px solid #e6e9f0;
+  }
+</style>
+</head>
+<body>
+
+<div class="pub-shell">
+
+  <div class="pub-topbar">
+    <img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="School">
+    <div class="pub-topbar-mid">
+      <div class="pub-topbar-title">THE IDEAL SCHOOLS</div>
+      <div class="pub-topbar-sub">Public Results Viewer</div>
+    </div>
+    <img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="Ministry">
+  </div>
+
+  <div class="pub-card">
+    <h2><i class="fas fa-magnifying-glass"></i> Find your result</h2>
+    <p>Enter the student PIN on the report card. Or open the QR code on the report card.</p>
+
+    <div class="pub-row">
+      <div class="fld">
+        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Student PIN</label>
+        <input type="text" id="pubPin" placeholder="e.g. TIS0241"
+               autocomplete="off" spellcheck="false"
+               style="text-transform:uppercase;width:100%;">
+      </div>
+      <div class="fld narrow">
+        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Term</label>
+        <select id="pubTerm" style="width:100%;">
+          <option value="1st">1st Term</option>
+          <option value="2nd">2nd Term</option>
+          <option value="3rd">3rd Term</option>
+        </select>
+      </div>
+      <div class="fld narrow">
+        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Year</label>
+        <input type="text" id="pubYear" value="2026" style="width:100%;">
+      </div>
+      <div class="fld narrow">
+        <label style="font-size:12px;font-weight:600;color:#0d4d26;">Report Type</label>
+        <select id="pubType" style="width:100%;">
+          <option value="termly">Termly</option>
+          <option value="sessional">Sessional</option>
+        </select>
+      </div>
+      <div class="btn-wrap">
+        <button class="btn btn-primary" id="pubLoadBtn" type="button">
+          <i class="fas fa-eye"></i> Load Report
+        </button>
+      </div>
+    </div>
+
+    <div class="pub-feedback" id="pubFeedback"></div>
+
+    <div class="pub-welcome" id="pubWelcome">
+      Welcome, <b id="pubWelcomeName">—</b>
+      <span style="color:#666;">·</span>
+      <span id="pubWelcomeClass">—</span>
+      <span style="color:#666;">·</span>
+      PIN: <span id="pubWelcomePin">—</span>
+    </div>
+
+    <div class="pub-clearance" id="pubClearance">
+      <b>TIS Payment Policy</b> — please pay your outstanding balance to view this result.
+      Contact the school office: <b>08067071557</b> · <b>08027270404</b>.
+    </div>
+  </div>
+
+  <div id="pubReportContainer"></div>
+
+  <div class="pub-print-row" id="pubPrintRow" style="display:none;">
+    <button class="btn btn-gold" id="pubPrintBtn" type="button">
+      <i class="fas fa-print"></i> Print
+    </button>
+  </div>
+
+  <div class="pub-footer">
+    &copy; 2026 Powered by <strong>TIS</strong> · The Ideal Schools Operational Portal
+  </div>
+
+</div>
+
+<script src="/supabase-client.js"></script>
+<script src="/report-render.js"></script>
+<script src="/check.js"></script>
+
+</body>
+</html>
