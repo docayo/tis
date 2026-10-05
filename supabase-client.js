@@ -426,7 +426,7 @@
     } catch (err) { return fail(err); }
   };
   // ================================================================
-  // [SCAN EVENTS] — audit log of every scan.
+    // [SCAN EVENTS] — audit log of every scan.
   //   Best-effort write; a failure here must never block the scan.
   // ================================================================
   TIS.logScanEvent = async function (event) {
@@ -453,15 +453,11 @@
   // ================================================================
   // [RESULTS_VIEWS] — audit log of every public results-page lookup.
   //   Best-effort. Never throws. Never blocks the page.
-  //   Records PIN, term, year, report type, outcome, a masked IP and
-  //   the user agent, so the school can see who is querying what.
   // ================================================================
   TIS.logResultsView = async function (entry) {
     try {
       const sb = await loadSdk();
 
-      // Best-effort IP lookup. If it fails, ip_masked stays null
-      // and the insert still goes ahead.
       let ip_masked = null;
       try {
         const r = await fetch('https://api.ipify.org?format=json');
@@ -500,8 +496,6 @@
     try {
       const sb = await loadSdk();
 
-      // Who is doing this? Read from the current auth user + State.profile
-      // (the caller passes what they know; we fill what we can).
       let actor_id = entry.actor_id || null;
       let actor_name = entry.actor_name || '';
       let actor_role = entry.actor_role || '';
@@ -513,7 +507,6 @@
         } catch (_) {}
       }
 
-      // Determine the current term so the log can be grouped by term.
       let term_type = entry.term_type || null;
       let year      = entry.year || null;
       if (!term_type || !year) {
