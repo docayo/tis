@@ -13,9 +13,11 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  const SCHOOL_LOGO_URL = 'https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200';
+
   // ----------------------------------------------------------------
-  // Header band (school name, address, motto, subtitle)
-  //   Left  : school logo
+  // Header band
+  //   Left  : school logo (kept)
   //   Centre: school identity, widened to fill the page width
   //   Right : learner photo (circle), replacing the ministry logo
   // ----------------------------------------------------------------
@@ -28,7 +30,7 @@
 
     return '' +
       '<div class="rc-header">' +
-        '<img class="rc-logo" src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="">' +
+        '<img class="rc-logo" src="' + SCHOOL_LOGO_URL + '" alt="">' +
         '<div class="rc-header-mid">' +
           '<div class="rc-title-1">THE IDEAL SCHOOLS</div>' +
           '<div class="rc-title-2">The Ideal Secondary School &mdash; The Ideal Kiddies School</div>' +
@@ -68,7 +70,7 @@
   }
 
   // ----------------------------------------------------------------
-  // Stats block — accepts an object from app.js.
+  // Stats block
   // ----------------------------------------------------------------
   function resultsStatsBlock(args) {
     const a = args || {};
@@ -82,13 +84,13 @@
             '<td class="rc-k">1ST TERM</td><td class="rc-v">' + sumTerm[0] + '</td>' +
             '<td class="rc-k">2ND TERM</td><td class="rc-v">' + sumTerm[1] + '</td>' +
             '<td class="rc-k">3RD TERM</td><td class="rc-v">' + sumTerm[2] + '</td>' +
-            '<td class="rc-k">SESSIONAL</td><td class="rc-v">' + (a.aggregate || 0) + '/' + (a.maxAggregate || 0) + ' (' + (a.pct || '0.00') + '%)</td>' +
+            '<td class="rc-k rc-k-gold">SESSIONAL</td><td class="rc-v rc-v-gold">' + (a.aggregate || 0) + '/' + (a.maxAggregate || 0) + ' (' + (a.pct || '0.00') + '%)</td>' +
           '</tr>' +
           '<tr>' +
-            '<td class="rc-k">AGGREGATE SCORE</td><td class="rc-v">' + (a.aggregate || 0) + '</td>' +
-            '<td class="rc-k">PERCENTAGE %</td><td class="rc-v">' + (a.pct || '0.00') + '%</td>' +
-            '<td class="rc-k">HIGHEST PEC %</td><td class="rc-v">' + (a.highestPct || '—') + '</td>' +
-            '<td class="rc-k">LOWEST PEC %</td><td class="rc-v">' + (a.lowestPct || '—') + '</td>' +
+            '<td class="rc-k rc-k-gold">AGGREGATE SCORE</td><td class="rc-v rc-v-gold">' + (a.aggregate || 0) + '</td>' +
+            '<td class="rc-k rc-k-gold">PERCENTAGE %</td><td class="rc-v rc-v-gold">' + (a.pct || '0.00') + '%</td>' +
+            '<td class="rc-k rc-k-blue">HIGHEST PEC %</td><td class="rc-v rc-v-blue">' + (a.highestPct || '—') + '</td>' +
+            '<td class="rc-k rc-k-blue">LOWEST PEC %</td><td class="rc-v rc-v-blue">' + (a.lowestPct || '—') + '</td>' +
           '</tr>' +
         '</table>';
     }
@@ -98,12 +100,12 @@
         '<tr>' +
           '<td class="rc-k">TOTAL C.A</td><td class="rc-v">' + (a.totalCA || 0) + '</td>' +
           '<td class="rc-k">TOTAL EXAM</td><td class="rc-v">' + (a.totalExam || 0) + '</td>' +
-          '<td class="rc-k">AGGREGATE SCORE</td><td class="rc-v">' + (a.aggregate || 0) + '/' + (a.maxAggregate || 0) + '</td>' +
-          '<td class="rc-k">PERCENTAGE %</td><td class="rc-v">' + (a.pct || '0.00') + '%</td>' +
+          '<td class="rc-k rc-k-gold">AGGREGATE SCORE</td><td class="rc-v rc-v-gold">' + (a.aggregate || 0) + '/' + (a.maxAggregate || 0) + '</td>' +
+          '<td class="rc-k rc-k-gold">PERCENTAGE %</td><td class="rc-v rc-v-gold">' + (a.pct || '0.00') + '%</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="rc-k">HIGHEST PEC %</td><td class="rc-v">' + (a.highestPct || '—') + '</td>' +
-          '<td class="rc-k">LOWEST PEC %</td><td class="rc-v">' + (a.lowestPct || '—') + '</td>' +
+          '<td class="rc-k rc-k-blue">HIGHEST PEC %</td><td class="rc-v rc-v-blue">' + (a.highestPct || '—') + '</td>' +
+          '<td class="rc-k rc-k-blue">LOWEST PEC %</td><td class="rc-v rc-v-blue">' + (a.lowestPct || '—') + '</td>' +
           '<td colspan="4"></td>' +
         '</tr>' +
       '</table>';
@@ -119,14 +121,13 @@
           '<td class="rc-k">1ST TERM</td><td class="rc-v">' + sumTerm[0] + '</td>' +
           '<td class="rc-k">2ND TERM</td><td class="rc-v">' + sumTerm[1] + '</td>' +
           '<td class="rc-k">3RD TERM</td><td class="rc-v">' + sumTerm[2] + '</td>' +
-          '<td class="rc-k">SESSIONAL</td><td class="rc-v">' + sessionalTotal + '/' + maxSessional + ' (' + pct + '%)</td>' +
+          '<td class="rc-k rc-k-gold">SESSIONAL</td><td class="rc-v rc-v-gold">' + sessionalTotal + '/' + maxSessional + ' (' + pct + '%)</td>' +
         '</tr>' +
       '</table>';
   }
 
   // ----------------------------------------------------------------
-  // Psychomotor ratings block — its own table, styled in the same
-  // Word-grid aesthetic as the subject table.
+  // Psychomotor ratings block — its own table, Word-grid design.
   // ----------------------------------------------------------------
   const PSYCHOMOTOR_FIELDS = [
     { key: 'leadership',    label: 'LEADERSHIP' },
@@ -163,7 +164,6 @@
 
   // ----------------------------------------------------------------
   // Comments, fee notice, PROMOTED TO, LIN, RESUMPTION DATE.
-  // School stamp has moved out — it now lives in the bottom row.
   // ----------------------------------------------------------------
   function resultsCommentsBlock(learner, resume, feeText, ratings, promotedTo, lin) {
     const teacherComment   = (ratings && ratings.teacher_comment)   || '—';
@@ -229,11 +229,12 @@
       const pct   = Math.max(0, Math.min(100, (total / maxTotal) * 100));
       const grade = row.grade || '';
       const colour =
-        grade === 'A' ? '#1a8a3a' :
-        grade === 'B' ? '#2e9c4e' :
-        grade === 'C' ? '#7bb661' :
-        grade === 'D' ? '#d4a017' :
-        grade === 'E' ? '#e08e2a' : '#c0392b';
+        grade === 'A' ? 'linear-gradient(90deg,#1a8a3a,#2e9c4e)' :
+        grade === 'B' ? 'linear-gradient(90deg,#2e9c4e,#7bb661)' :
+        grade === 'C' ? 'linear-gradient(90deg,#7bb661,#b7d27a)' :
+        grade === 'D' ? 'linear-gradient(90deg,#d4a017,#e0b23a)' :
+        grade === 'E' ? 'linear-gradient(90deg,#e08e2a,#e0a03a)' :
+                        'linear-gradient(90deg,#c0392b,#e05252)';
       bars += '<div class="rc-chart-row">' +
         '<div class="rc-chart-lbl" title="' + esc(name) + '">' + esc(name) + '</div>' +
         '<div class="rc-chart-track">' +
@@ -257,7 +258,7 @@
                   encodeURIComponent(url);
     return '' +
       '<div class="rc-bottom-cell">' +
-        '<div class="rc-bottom-title">QR CODE</div>' +
+        '<div class="rc-bottom-title rc-bottom-title-blue">QR CODE</div>' +
         '<div class="rc-bottom-body rc-bottom-qr">' +
           '<img src="' + esc(img) + '" alt="QR" class="rc-qr-img">' +
           '<div class="rc-qr-caption">' + esc(pinUp) + '</div>' +
@@ -282,7 +283,7 @@
     const parts = [];
     const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
     const tuition = num(termRec.tuition);
-    const other   = num(termRec.other_bills_major);
+    const other   = num(termRec.bills);
     const books   = num(termRec.books);
     const minor   = num(termRec.other_bills_minor);
     if (tuition) parts.push('Tuition ₦' + tuition.toLocaleString());
@@ -294,73 +295,100 @@
   }
 
   // ----------------------------------------------------------------
-  // Print CSS — Word-grid table aesthetic throughout.
+  // Print CSS
+  //   Palette: green 50% | gold 25% | red 10% | blue 15%
+  //   School logo kept in the header and duplicated as a fading watermark.
   // ----------------------------------------------------------------
   function resultsPrintCss() {
     return '<style>' +
       '@page { size: A4 portrait; margin: 12mm; }' +
       'body { font-family: Arial, sans-serif; color: #111; padding: 16px; }' +
-      '.results-preview { border: 1px solid #ccc; padding: 16px; border-radius: 8px; background: #fff; }' +
+      '.results-preview { border: 1px solid #ccc; padding: 16px; border-radius: 8px; background: #fff; position: relative; overflow: hidden; }' +
 
-      // ---- Header band: logo | wide centre text | learner photo ----
-      '.rc-header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #0b6623; padding-bottom: 10px; margin-bottom: 12px; }' +
+      // ---- Watermark (faded school logo, behind everything) ----
+      '.results-preview::before { content: ""; position: absolute; top: 50%; left: 50%; ' +
+        'width: 480px; height: 480px; transform: translate(-50%, -50%); ' +
+        'background-image: url("' + SCHOOL_LOGO_URL + '"); ' +
+        'background-size: contain; background-repeat: no-repeat; background-position: center; ' +
+        'opacity: 0.06; filter: grayscale(100%); pointer-events: none; z-index: 0; }' +
+      '.results-preview > * { position: relative; z-index: 1; }' +
+
+      // ---- Header band ----
+      '.rc-header { display: flex; align-items: center; gap: 12px; ' +
+        'border-bottom: 3px solid transparent; ' +
+        'border-image: linear-gradient(90deg, #0b6623 0%, #0b6623 45%, #d4a017 70%, #c0392b 85%, #1a3f8f 100%) 1; ' +
+        'padding-bottom: 10px; margin-bottom: 12px; }' +
       '.rc-header-mid { flex: 1 1 auto; text-align: center; min-width: 0; }' +
-      '.rc-title-1 { font-size: 26px; font-weight: 900; color: #0b6623; letter-spacing: 1.5px; }' +
-      '.rc-title-2 { font-size: 13px; font-weight: 700; margin-top: 3px; color: #0b6623; }' +
+      '.rc-title-1 { font-size: 28px; font-weight: 900; letter-spacing: 1.5px; ' +
+        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 55%, #d4a017 100%); ' +
+        '-webkit-background-clip: text; background-clip: text; color: transparent; }' +
+      '.rc-title-2 { font-size: 13px; font-weight: 700; margin-top: 4px; color: #0b6623; }' +
       '.rc-addr { font-size: 11px; color: #555; margin-top: 2px; }' +
-      '.rc-motto { font-size: 11px; font-style: italic; margin-top: 4px; letter-spacing: 2px; }' +
-      '.rc-subtitle { font-size: 13px; font-weight: 700; margin-top: 8px; background: #0b6623; color: #fff; display: inline-block; padding: 4px 14px; border-radius: 4px; }' +
-      '.rc-logo { height: 72px; width: 72px; object-fit: contain; flex: 0 0 auto; }' +
-      '.rc-photo { width: 90px; height: 90px; border-radius: 50%; overflow: hidden; border: 3px solid #0b6623; flex: 0 0 auto; background: #e8f5e9; display: flex; align-items: center; justify-content: center; }' +
+      '.rc-motto { font-size: 11px; font-style: italic; margin-top: 4px; letter-spacing: 2px; color: #1a3f8f; }' +
+      '.rc-subtitle { font-size: 13px; font-weight: 700; margin-top: 8px; ' +
+        'background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; ' +
+        'display: inline-block; padding: 4px 14px; border-radius: 4px; }' +
+      '.rc-logo { height: 76px; width: 76px; object-fit: contain; flex: 0 0 auto; }' +
+      '.rc-photo { width: 92px; height: 92px; border-radius: 50%; overflow: hidden; ' +
+        'border: 3px solid #0b6623; flex: 0 0 auto; background: #e8f5e9; ' +
+        'display: flex; align-items: center; justify-content: center; ' +
+        'box-shadow: 0 0 0 2px #d4a017 inset; }' +
       '.rc-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }' +
-      '.rc-photo-empty span { font-size: 34px; font-weight: 900; color: #0b6623; }' +
+      '.rc-photo-empty span { font-size: 36px; font-weight: 900; color: #0b6623; }' +
 
-      // ---- Details / stats / comments: Word-grid style ----
+      // ---- Details / stats / comments ----
       '.rc-details, .rc-stats, .rc-comments { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }' +
       '.rc-details td, .rc-stats td, .rc-comments td { border: 1px solid #b8c4bb; padding: 6px 8px; vertical-align: middle; }' +
       '.rc-details tr:nth-child(odd) td, .rc-comments tr:nth-child(odd) td { background: #fbfdfb; }' +
       '.rc-details tr:nth-child(even) td, .rc-comments tr:nth-child(even) td { background: #f1f8f2; }' +
-      '.rc-k { background: #d7ead9 !important; font-weight: 700; color: #0b6623; width: 110px; letter-spacing: .3px; }' +
+      '.rc-stats tr:nth-child(odd) td { background: #fbfdfb; }' +
+      '.rc-stats tr:nth-child(even) td { background: #f7f4e8; }' +
+      '.rc-k { background: linear-gradient(90deg, #d7ead9, #e6f2e7) !important; font-weight: 700; color: #0b6623; width: 110px; letter-spacing: .3px; }' +
+      '.rc-k-gold { background: linear-gradient(90deg, #f7ecd0, #fbf5e3) !important; color: #8a6a10 !important; }' +
+      '.rc-k-blue { background: linear-gradient(90deg, #d6e3f5, #e6eefb) !important; color: #1a3f8f !important; }' +
       '.rc-v { font-weight: 600; }' +
+      '.rc-v-gold { background: #fbf5e3 !important; color: #6f5409; font-weight: 700; }' +
+      '.rc-v-blue { background: #eaf1fc !important; color: #1a3f8f; font-weight: 700; }' +
 
-      // ---- Subject table: Word-grid style ----
+      // ---- Subject table ----
       '.rc-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 0; }' +
       '.rc-table th, .rc-table td { border: 1px solid #b8c4bb; padding: 5px 6px; text-align: center; }' +
-      '.rc-table thead th { background: #0b6623; color: #fff; font-size: 10px; letter-spacing: .3px; font-weight: 700; }' +
-      '.rc-table thead tr:nth-child(2) th { background: #1a8a3a; }' +
-      '.rc-table thead tr.rc-obtainable th { background: #eaf6ec; color: #0b6623; font-size: 10px; font-weight: 700; }' +
+      '.rc-table thead th { background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; font-size: 10px; letter-spacing: .3px; font-weight: 700; }' +
+      '.rc-table thead tr:nth-child(2) th { background: linear-gradient(90deg, #1a8a3a, #2e9c4e); }' +
+      '.rc-table thead tr.rc-obtainable th { background: linear-gradient(90deg, #f7ecd0, #fbf5e3); color: #8a6a10; font-size: 10px; font-weight: 700; }' +
       '.rc-table tbody tr:nth-child(odd) td { background: #fbfdfb; }' +
       '.rc-table tbody tr:nth-child(even) td { background: #f1f8f2; }' +
       '.rc-obtainable-lbl { text-align: right; }' +
-      '.rc-subj { text-align: left; font-weight: 700; }' +
+      '.rc-subj { text-align: left; font-weight: 700; padding-left: 4px !important; }' +
       '.rc-num { width: 42px; font-weight: 700; }' +
-      '.rc-total { background: #eaf6ec !important; font-weight: 800; }' +
+      '.rc-total { background: linear-gradient(90deg, #eaf6ec, #f7ecd0) !important; font-weight: 800; color: #0b6623; }' +
       '.rc-remark { text-align: left; font-weight: 700; }' +
       '.rc-covered { background: #f0f0f0 !important; color: #999; font-style: italic; }' +
-      '.rc-tfoot td { background: #d7ead9 !important; font-weight: 700; }' +
+      '.rc-tfoot td { background: linear-gradient(90deg, #d7ead9, #f7ecd0) !important; font-weight: 700; }' +
       '.rc-tfoot-label { text-align: right; }' +
 
-      // ---- Psychomotor table: Word-grid style, its own frame ----
-      '.rc-psy { width: 100%; border-collapse: collapse; font-size: 10px; }' +
-      '.rc-psy-head { background: #0b6623; color: #fff; font-weight: 700; padding: 6px 8px; text-align: center; letter-spacing: .3px; border: 1px solid #0b6623; }' +
-      '.rc-psy-lbl { background: #d7ead9; font-weight: 700; color: #0b6623; padding: 5px 8px; border: 1px solid #b8c4bb; text-align: left; }' +
-      '.rc-psy-val { padding: 5px 8px; border: 1px solid #b8c4bb; text-align: center; font-weight: 600; }' +
+      // ---- Psychomotor table (side column, roomier) ----
+      '.rc-psy { width: 100%; border-collapse: collapse; font-size: 9px; }' +
+      '.rc-psy-head { background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; font-weight: 700; padding: 6px 6px; text-align: center; letter-spacing: .3px; border: 1px solid #0b6623; font-size: 9.5px; }' +
+      '.rc-psy-lbl { background: linear-gradient(90deg, #d7ead9, #e6f2e7); font-weight: 700; color: #0b6623; padding: 4px 6px; border: 1px solid #b8c4bb; text-align: left; font-size: 9px; letter-spacing: .2px; white-space: nowrap; }' +
+      '.rc-psy-val { padding: 4px 6px; border: 1px solid #b8c4bb; text-align: center; font-weight: 700; font-size: 9px; color: #1a3f8f; }' +
       '.rc-psy-row-a .rc-psy-val { background: #fbfdfb; }' +
-      '.rc-psy-row-b .rc-psy-val { background: #f1f8f2; }' +
+      '.rc-psy-row-b .rc-psy-val { background: #eaf1fc; }' +
 
-      // ---- Body layout: subject table + psychomotor side by side ----
+      // ---- Body layout ----
       '.rc-body-grid { display: flex; gap: 8px; align-items: flex-start; }' +
       '.rc-body-main { flex: 1 1 auto; min-width: 0; overflow-x: auto; }' +
-      '.rc-body-side { flex: 0 0 175px; max-width: 175px; }' +
+      '.rc-body-side { flex: 0 0 215px; max-width: 215px; }' +
       '.rc-scroll { overflow-x: auto; }' +
 
-      // ---- Bottom row: stamp | performance chart | QR ----
+      // ---- Bottom row ----
       '.rc-bottom-grid { display: flex; gap: 10px; margin-top: 12px; align-items: stretch; }' +
       '.rc-bottom-cell { border: 1px solid #b8c4bb; border-radius: 6px; overflow: hidden; flex: 1 1 0; min-width: 0; background: #fff; display: flex; flex-direction: column; }' +
-      '.rc-bottom-title { background: #0b6623; color: #fff; font-weight: 700; font-size: 10px; padding: 5px 8px; text-align: center; letter-spacing: .5px; }' +
+      '.rc-bottom-title { background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; font-weight: 700; font-size: 10px; padding: 5px 8px; text-align: center; letter-spacing: .5px; }' +
+      '.rc-bottom-title-blue { background: linear-gradient(90deg, #1a3f8f, #2f5fb0); }' +
       '.rc-bottom-body { padding: 8px; flex: 1 1 auto; }' +
       '.rc-bottom-stamp { display: flex; align-items: center; justify-content: center; }' +
-      '.rc-stamp-img { display: block; max-height: 90px; max-width: 100%; height: auto; width: auto; margin: 0 auto; }' +
+      '.rc-stamp-img { display: block; max-height: 92px; max-width: 100%; height: auto; width: auto; margin: 0 auto; }' +
       '.rc-bottom-chart { display: flex; flex-direction: column; gap: 4px; }' +
       '.rc-chart-row { display: flex; align-items: center; gap: 6px; font-size: 9px; }' +
       '.rc-chart-lbl { flex: 0 0 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #333; font-weight: 600; }' +
@@ -370,9 +398,10 @@
       '.rc-chart-empty { text-align: center; color: #888; font-size: 11px; padding: 20px 0; }' +
       '.rc-bottom-qr { display: flex; flex-direction: column; align-items: center; justify-content: center; }' +
       '.rc-qr-img { width: 96px; height: 96px; display: block; }' +
-      '.rc-qr-caption { font-size: 10px; font-weight: 700; color: #0b6623; margin-top: 6px; letter-spacing: .5px; }' +
+      '.rc-qr-caption { font-size: 10px; font-weight: 700; color: #1a3f8f; margin-top: 6px; letter-spacing: .5px; }' +
 
-      '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } }' +
+      '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } ' +
+        '.results-preview::before { opacity: 0.04; } }' +
     '</style>';
   }
 
