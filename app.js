@@ -9755,7 +9755,7 @@
     const html = __resultsCurrent.html
       .replace(/<div class="results-preview">/, '<div>');
     w.document.write('<html><head><title>Report — ' + esc(__resultsCurrent.learner.name || '') + '</title>' +
-      resultsPrintCss() +
+      window.TISReport.resultsPrintCss() +
       '</head><body>' + html + '</body></html>');
     w.document.close();
     setTimeout(function () { w.print(); }, 250);
@@ -9805,8 +9805,8 @@
         const t2 = row && row.test2 != null ? Number(row.test2) : null;
         const ex = row && row.exam  != null ? Number(row.exam)  : null;
         const total = (t1 || 0) + (t2 || 0) + (ex || 0);
-        const grade = row && row.grade ? row.grade : (row ? bandForTotal(total).grade : '');
-        const remark = row && row.remark ? row.remark : (row ? bandForTotal(total).remark : '');
+        const grade = row && row.grade ? row.grade : (row ? window.TISReport.bandForTotal(total).grade : '');
+        const remark = row && row.remark ? row.remark : (row ? window.TISReport.bandForTotal(total).remark : '');
 
         if (t1 != null || t2 != null || ex != null) {
           totalCA   += (t1 || 0) + (t2 || 0);
@@ -9830,7 +9830,7 @@
       const pct = maxAggregate > 0 ? (aggregate / maxAggregate * 100).toFixed(2) : '0.00';
 
       // Fee — next class bill from learner_terms if available.
-      const feeText = buildFeeText(termRec);
+      const feeText = window.TISReport.buildFeeText(termRec);
 
       const cleared = termRec && String(termRec.cleared || '').toLowerCase() === 'yes';
       const coverScores = !cleared;
@@ -9843,8 +9843,8 @@
 
       const html = '' +
         '<div class="results-preview">' +
-          resultsHeaderHtml('Statement of Result') +
-          resultsStudentBar(learner, pop, term, year, att) +
+          window.TISReport.resultsHeaderHtml('Statement of Result') +
+          window.TISReport.resultsStudentBar(learner, pop, term, year, att) +
           '<div class="rc-scroll">' +
           '<table class="rc-table">' +
             '<thead>' +
@@ -9874,8 +9874,8 @@
             '</tfoot>' +
           '</table>' +
           '</div>' +
-          resultsStatsBlock(totalCA, totalExam, aggregate, maxAggregate, pct) +
-          resultsCommentsBlock(learner, resume, feeText) +
+          replace with  window.TISReport.resultsStatsBlock(totalCA, totalExam, aggregate, maxAggregate, pct) +
+          window.TISReport.resultsCommentsBlock(learner, resume, feeText) +
         '</div>';
 
       return { ok: true, html: html };
@@ -9968,8 +9968,8 @@
 
       const html = '' +
         '<div class="results-preview">' +
-          resultsHeaderHtml('Sessional Cumulative Statement of Result') +
-          resultsStudentBar(learner, pop, '3rd', year, totalAtt) +
+          window.TISReport.resultsHeaderHtml('Sessional Cumulative Statement of Result') +
+          window.TISReport.resultsStudentBar(learner, pop, '3rd', year, totalAtt) +
           '<div class="rc-scroll">' +
           '<table class="rc-table">' +
             '<thead>' +
@@ -9999,7 +9999,7 @@
             '</tfoot>' +
           '</table>' +
           '</div>' +
-          resultsSessionalStats(sumTerm, sessionalTotal, maxSessional, sessionalPct) +
+          window.TISReport.resultsSessionalStats(sumTerm, sessionalTotal, maxSessional, sessionalPct) +
           resultsCommentsBlock(learner, resume, '') +
         '</div>';
 
