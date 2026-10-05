@@ -9669,7 +9669,6 @@
       pinEl.__wired = true;
     }
 
-    // Default term/year to the active term.
     (async function () {
       try {
         const at = await window.TIS.getActiveTerm();
@@ -9680,7 +9679,6 @@
       } catch (e) { /* silent */ }
     })();
 
-    // If a report is already loaded, keep it.
     if (__resultsCurrent) {
       const container = $('resultsContent');
       if (container) container.innerHTML = __resultsCurrent.html || '';
@@ -9790,15 +9788,13 @@
       const subjectMap = {};
       subjects.forEach(function (s) { subjectMap[s.code] = s.display_name; });
 
-      // Convert scores array into { subject_code: row }
       const scoreMap = {};
       scores.forEach(function (s) { scoreMap[s.subject_code] = s; });
 
-      // Load the class's slot order for correct row order.
       const csR = await window.TIS.getClassSubjects(learner.class_name);
       const slotOrder = (csR && csR.ok ? csR.data : []).sort(function (a, b) { return a.slot - b.slot; });
 
-      // -------- Class-wide highest and lowest percentage this term --------
+      // Class-wide highest and lowest percentage this term
       const classLearnersR = await window.TIS.getLearnersForClasses([learner.class_name]);
       const classLearnerIds = (classLearnersR && classLearnersR.ok ? classLearnersR.data : [])
         .map(function (l) { return l.id; });
@@ -9826,9 +9822,9 @@
       const highestPctStr = (highestPct === null) ? '—' : highestPct.toFixed(2);
       const lowestPctStr  = (lowestPct  === null) ? '—' : lowestPct.toFixed(2);
 
-      // Build the subject rows in slot order.
       let totalCA = 0, totalExam = 0, rowCount = 0;
       let bodyRows = '';
+      const chartRows = [];
 
       slotOrder.forEach(function (slot) {
         const code = slot.subject_code;
@@ -9844,6 +9840,7 @@
           totalCA   += (t1 || 0) + (t2 || 0);
           totalExam += (ex || 0);
           rowCount++;
+          chartRows.push({ name: subjectMap[code] || code, total: total, grade: grade });
         }
 
         bodyRows += '<tr>' +
@@ -9873,10 +9870,10 @@
 
       const html = '' +
         '<div class="results-preview">' +
-          window.TISReport.resultsHeaderHtml('Statement of Result') +
+          window.TISReport.resultsHeaderHtml('Statement of Result', learner) +
           window.TISReport.resultsStudentBar(learner, pop, term, year, att) +
           '<div class="rc-body-grid">' +
-            '<div class="rc-scroll rc-body-main">' +
+            '<div class="rc-body-main rc-scroll">' +
               '<table class="rc-table">' +
                 '<thead>' +
                   '<tr>' +
@@ -9935,6 +9932,7 @@
             promotedTo,
             learner.pin
           ) +
+          window.TISReport.resultsBottomRow(chartRows, learner.pin) +
         '</div>';
 
       return { ok: true, html: html };
@@ -9993,6 +9991,7 @@
       let bodyRows = '';
       let sumTerm = [0, 0, 0];
       let sumCumulative = 0;
+      const chartRows = [];
 
       slotOrder.forEach(function (slot) {
         const code = slot.subject_code;
@@ -10015,6 +10014,14 @@
           const arr = termScores[terms[i]] || [];
           const row = arr.find(function (x) { return x.subject_code === code; });
           if (row && row.grade) { grade = row.grade; remark = row.remark || ''; break; }
+        }
+
+        if (cumulative > 0) {
+          chartRows.push({
+            name: subjectMap[code] || code,
+            total: cumulative,
+            grade: window.TISReport.bandForTotal(Math.round(cumulative / 3)).grade
+          });
         }
 
         bodyRows += '<tr>' +
@@ -10056,10 +10063,10 @@
 
       const html = '' +
         '<div class="results-preview">' +
-          window.TISReport.resultsHeaderHtml('Sessional Cumulative Statement of Result') +
+          window.TISReport.resultsHeaderHtml('Sessional Cumulative Statement of Result', learner) +
           window.TISReport.resultsStudentBar(learner, pop, '3rd', year, totalAtt) +
           '<div class="rc-body-grid">' +
-            '<div class="rc-scroll rc-body-main">' +
+            '<div class="rc-body-main rc-scroll">' +
               '<table class="rc-table">' +
                 '<thead>' +
                   '<tr>' +
@@ -10120,6 +10127,7 @@
             promotedTo,
             learner.pin
           ) +
+          window.TISReport.resultsBottomRow(chartRows, learner.pin) +
         '</div>';
 
       return { ok: true, html: html };
