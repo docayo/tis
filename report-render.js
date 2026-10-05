@@ -255,10 +255,12 @@
       '.rc-stamp-cell { text-align: center; vertical-align: middle; padding: 4px; }' +
       '.rc-stamp-img { display: block; max-height: 56px; max-width: 100%; height: auto; width: auto; margin: 0 auto; }' +
       '.rc-scroll { overflow-x: auto; }' +
+      '.rc-body-grid { display: flex; gap: 8px; align-items: flex-start; }' +
+      '.rc-body-main { flex: 1 1 auto; min-width: 0; }' +
+      '.rc-body-side { flex: 0 0 160px; max-width: 160px; }' +
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } }' +
     '</style>';
   }
-
   // ----------------------------------------------------------------
   // Score band helper
   // ----------------------------------------------------------------
