@@ -17,6 +17,9 @@
 
   // ----------------------------------------------------------------
   // Header band
+  //   Title lines are inline SVG with real linearGradient fills, so
+  //   they print identically in Chrome, Firefox, Edge, Safari and any
+  //   other renderer. No reliance on background-clip: text.
   // ----------------------------------------------------------------
   function resultsHeaderHtml(title, learner) {
     const photo = learner && learner.photo_url ? learner.photo_url : '';
@@ -25,13 +28,57 @@
       ? '<div class="rc-photo"><img src="' + esc(photo) + '" alt=""></div>'
       : '<div class="rc-photo rc-photo-empty"><span>' + esc(initial) + '</span></div>';
 
+    // ---------------------------------------------------------------
+    // Line 1: THE IDEAL SCHOOLS
+    //   viewBox width 900, height 60, big bold text, gradient
+    //   green → green → gold → red → blue.
+    // ---------------------------------------------------------------
+    const title1Svg =
+      '<svg class="rc-title-1-svg" viewBox="0 0 900 60" preserveAspectRatio="xMidYMid meet" ' +
+        'xmlns="http://www.w3.org/2000/svg" aria-label="THE IDEAL SCHOOLS">' +
+        '<defs>' +
+          '<linearGradient id="tisTitleGrad" x1="0" y1="0" x2="1" y2="0">' +
+            '<stop offset="0%"   stop-color="#0b6623"/>' +
+            '<stop offset="28%"  stop-color="#1a8a3a"/>' +
+            '<stop offset="58%"  stop-color="#d4a017"/>' +
+            '<stop offset="82%"  stop-color="#c0392b"/>' +
+            '<stop offset="100%" stop-color="#1a3f8f"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        '<text x="450" y="46" text-anchor="middle" ' +
+          'font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="900" ' +
+          'letter-spacing="3" fill="url(#tisTitleGrad)">THE IDEAL SCHOOLS</text>' +
+      '</svg>';
+
+    // ---------------------------------------------------------------
+    // Line 2: The Ideal Secondary School — The Ideal Kiddies School
+    //   viewBox width 900, height 26, sits tight under line 1.
+    //   Gradient blue → green → gold → red for contrast against line 1.
+    // ---------------------------------------------------------------
+    const title2Svg =
+      '<svg class="rc-title-2-svg" viewBox="0 0 900 26" preserveAspectRatio="xMidYMid meet" ' +
+        'xmlns="http://www.w3.org/2000/svg" aria-label="The Ideal Secondary School - The Ideal Kiddies School">' +
+        '<defs>' +
+          '<linearGradient id="tisSubtitleGrad" x1="0" y1="0" x2="1" y2="0">' +
+            '<stop offset="0%"   stop-color="#1a3f8f"/>' +
+            '<stop offset="38%"  stop-color="#0b6623"/>' +
+            '<stop offset="72%"  stop-color="#d4a017"/>' +
+            '<stop offset="100%" stop-color="#c0392b"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        '<text x="450" y="20" text-anchor="middle" ' +
+          'font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="800" ' +
+          'letter-spacing="0.5" fill="url(#tisSubtitleGrad)">' +
+          'The Ideal Secondary School &#8212; The Ideal Kiddies School' +
+        '</text>' +
+      '</svg>';
+
     return '' +
       '<div class="rc-header">' +
         '<img class="rc-logo" src="' + SCHOOL_LOGO_URL + '" alt="">' +
         '<div class="rc-header-mid">' +
-          '<div class="rc-title-1">THE IDEAL SCHOOLS</div>' +
-          '<div class="rc-title-rule"></div>' +
-          '<div class="rc-title-2">The Ideal Secondary School &mdash; The Ideal Kiddies School</div>' +
+          title1Svg +
+          title2Svg +
           '<div class="rc-addr">ROAD ONE ALUBARIKA ESTATE SOKOTO / BADAGRY EXPRESS WAY</div>' +
           '<div class="rc-addr">08067071557 &middot; 08027270404</div>' +
           '<div class="rc-motto">SCIENTIA EST POTENTIA</div>' +
@@ -199,7 +246,7 @@
   }
 
   // ----------------------------------------------------------------
-  // Bottom row: SCHOOL STAMP | PERFORMANCE CHART | QR CODE
+  // Bottom row
   // ----------------------------------------------------------------
   function resultsStampBlock() {
     return '' +
@@ -319,18 +366,11 @@
         'padding-bottom: 10px; margin-bottom: 12px; }' +
       '.rc-header-mid { flex: 1 1 auto; text-align: center; min-width: 0; }' +
 
-      // ---- Title: print-safe solid deep green, gradient-ish depth via text-shadow.
-      // The multi-colour accent lives in the rule below the title and the subtitle band,
-      // both of which are backgrounds and print reliably. ----
-      '.rc-title-1 { font-size: 34px; font-weight: 900; letter-spacing: 2px; line-height: 1.05; ' +
-        'color: #0b6623; ' +
-        'text-shadow: 1px 1px 0 #d4a017, -1px -1px 0 #1a8a3a; }' +
-      '.rc-title-rule { height: 5px; margin: 8px auto 6px auto; max-width: 620px; border-radius: 3px; ' +
-        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 25%, #d4a017 55%, #c0392b 80%, #1a3f8f 100%); }' +
-      '.rc-title-2 { font-size: 15px; font-weight: 800; margin-top: 4px; letter-spacing: .3px; ' +
-        'color: #1a3f8f; ' +
-        'text-shadow: 0.5px 0.5px 0 #d4a017; }' +
-      '.rc-addr { font-size: 11px; color: #555; margin-top: 3px; }' +
+      // ---- SVG titles: no gap, tight block. Print and screen identical. ----
+      '.rc-title-1-svg { display: block; width: 100%; max-width: 620px; height: auto; margin: 0 auto; }' +
+      '.rc-title-2-svg { display: block; width: 100%; max-width: 620px; height: auto; margin: -2px auto 0 auto; }' +
+
+      '.rc-addr { font-size: 11px; color: #555; margin-top: 4px; }' +
       '.rc-motto { font-size: 12px; font-style: italic; margin-top: 5px; letter-spacing: 3px; ' +
         'font-weight: 700; color: #1a3f8f; }' +
       '.rc-subtitle { font-size: 14px; font-weight: 800; margin-top: 8px; ' +
@@ -409,27 +449,8 @@
       '.rc-qr-img { width: 96px; height: 96px; display: block; }' +
       '.rc-qr-caption { font-size: 10px; font-weight: 700; color: #1a3f8f; margin-top: 6px; letter-spacing: .5px; }' +
 
-      // ---- On screen only: restore the live gradient on the title text.
-      // Print always uses the solid deep green so the name never disappears. ----
-      '@media screen { ' +
-        '.rc-title-1 { color: transparent; -webkit-text-fill-color: transparent; ' +
-          'text-shadow: none; ' +
-          'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 25%, #d4a017 55%, #c0392b 80%, #1a3f8f 100%); ' +
-          '-webkit-background-clip: text; background-clip: text; } ' +
-        '.rc-title-2 { color: transparent; -webkit-text-fill-color: transparent; ' +
-          'text-shadow: none; ' +
-          'background: linear-gradient(90deg, #1a3f8f 0%, #0b6623 40%, #d4a017 80%, #c0392b 100%); ' +
-          '-webkit-background-clip: text; background-clip: text; } ' +
-      '}' +
-
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } ' +
-        '.rc-watermark { opacity: 0.04; } ' +
-        // Print-safe overrides: solid deep green so the title always renders.
-        '.rc-title-1 { color: #0b6623 !important; -webkit-text-fill-color: #0b6623 !important; ' +
-          'background: none !important; text-shadow: 1px 1px 0 #d4a017, -1px -1px 0 #1a8a3a !important; } ' +
-        '.rc-title-2 { color: #1a3f8f !important; -webkit-text-fill-color: #1a3f8f !important; ' +
-          'background: none !important; text-shadow: 0.5px 0.5px 0 #d4a017 !important; } ' +
-      '}' +
+        '.rc-watermark { opacity: 0.04; } }' +
     '</style>';
   }
 
