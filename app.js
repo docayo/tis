@@ -2610,8 +2610,300 @@
   async function initTermsTab() {
     await loadTerms();
     await loadArchives();
+    initFeesPanel();
   }
 
+  // ================================================================
+  // [S09.x] FEES MODULE — lives inside the Terms tab.
+  //   Two views:
+  //     • Class Bill   — one row per class × term × year
+  //     • Adjustments  — one row per learner × term × year
+  //   Feeds the FEE NOTICE line on the report card.
+  // ================================================================
+  let __feesMode = 'schedule';   // 'schedule' | 'adjustments'
+
+  function initFeesPanel() {
+    const btnSched  = $('feesSubSchedule');
+    const btnAdjust = $('feesSubAdjust');
+    const loadBtn   = $('btnFeesLoad');
+
+    if (btnSched && !btnSched.__wired) {
+      btnSched.addEventListener('click', function () {
+        __feesMode = 'schedule';
+        feesRefreshSubButtons();
+        feesLoad();
+      });
+      btnSched.__wired = true;
+    }
+
+    if (btnAdjust && !btnAdjust.__wired) {
+      btnAdjust.addEventListener('click', function () {
+        __feesMode = 'adjustments';
+        feesRefreshSubButtons();
+        feesLoad();
+      });
+      btnAdjust.__wired = true;
+    }
+
+    if (loadBtn && !loadBtn.__wired) {
+      loadBtn.addEventListener('click', feesLoad);
+      loadBtn.__wired = true;
+    }
+
+    // Default term / year to the active term.
+    (async function () {
+      try {
+        const at = await window.TIS.getActiveTerm();
+        if (at && at.ok && at.data) {
+          const t = $('feesTerm'); if (t) t.value = at.data.term_type || '1st';
+          const y = $('feesYear'); if (y) y.value = String(at.data.year || new Date().getFullYear());
+        }
+      } catch (e) { /* silent */ }
+    })();
+
+    feesRefreshSubButtons();
+  }
+  window.initFeesPanel = initFeesPanel;
+
+  function feesRefreshSubButtons() {
+    const btnSched  = $('feesSubSchedule');
+    const btnAdjust = $('feesSubAdjust');
+    if (btnSched && btnAdjust) {
+      if (__feesMode === 'schedule') {
+        btnSched.classList.remove('btn-secondary');  btnSched.classList.add('btn-primary');
+        btnAdjust.classList.remove('btn-primary');   btnAdjust.classList.add('btn-secondary');
+      } else {
+        btnAdjust.classList.remove('btn-secondary'); btnAdjust.classList.add('btn-primary');
+        btnSched.classList.remove('btn-primary');    btnSched.classList.add('btn-secondary');
+      }
+    }
+  }
+
+  function feesSetFeedback(msg, kind) {
+    const el = $('feesFeedback');
+    if (!el) return;
+    el.style.color = (kind === 'error') ? '#c0392b' : (kind === 'ok' ? '#0d4d26' : '#666');
+    el.textContent = msg || '';
+  }
+
+  function feesReadTermYear() {
+    const termEl = $('feesTerm');
+    const yearEl = $('feesYear');
+    const term = termEl ? termEl.value : '1st';
+    const year = yearEl ? parseInt(yearEl.value, 10) : 0;
+    return { term: term, year: year };
+  }
+
+  async function feesLoad() {
+    const { term, year } = feesReadTermYear();
+    if (!year) { feesSetFeedback('Pick a year.', 'error'); return; }
+    feesSetFeedback('Loading…');
+    setHTML('feesContent', pageLoaderHTML('Loading fees…'));
+    startLoader();
+    try {
+      if (__feesMode === 'schedule')   await feesLoadSchedule(term, year);
+      else                             await feesLoadAdjustments(term, year);
+      feesSetFeedback('Loaded.', 'ok');
+    } catch (err) {
+      feesSetFeedback('Unexpected error: ' + (err && err.message ? err.message : err), 'error');
+    } finally {
+      stopLoader();
+    }
+  }
+  window.feesLoad = feesLoad;
+
+  // ----------------------------------------------------------------
+  // CLASS BILL VIEW
+  // ----------------------------------------------------------------
+  async function feesLoadSchedule(term, year) {
+    const classesR = await window.TIS.listClasses();
+    const classes = (classesR && classesR.ok ? classesR.data : [])
+      .filter(function (c) { return c.is_active !== false; })
+      .sort(function (a, b) { return (a.sort_order || 9999) - (b.sort_order || 9999); });
+
+    const rowsR = await window.TIS.listFeeSchedule(year, term);
+    const byClass = {};
+    (rowsR && rowsR.ok ? rowsR.data : []).forEach(function (r) {
+      byClass[r.class_name] = r;
+    });
+
+    let html = '<div style="overflow-x:auto;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#1a3f8f;color:#fff;">';
+    html += '<th style="text-align:left;padding:6px;">Class</th>';
+    html += '<th style="padding:6px;">Tuition ₦</th>';
+    html += '<th style="padding:6px;">Other Major ₦</th>';
+    html += '<th style="padding:6px;">Other Minor ₦</th>';
+    html += '<th style="padding:6px;">Books ₦</th>';
+    html += '<th style="padding:6px;">Total ₦</th>';
+    html += '<th style="padding:6px;">Save</th>';
+    html += '</tr></thead><tbody>';
+
+    classes.forEach(function (c) {
+      const row = byClass[c.name] || {};
+      const total =
+        Number(row.tuition || 0) +
+        Number(row.other_bills_major || 0) +
+        Number(row.other_bills_minor || 0) +
+        Number(row.books || 0);
+      html += '<tr data-fee-class="' + escAttr(c.name) + '">';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(c.name) + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="tuition" value="' + (row.tuition || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_major" value="' + (row.other_bills_major || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_minor" value="' + (row.other_bills_minor || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="books" value="' + (row.books || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:right;font-weight:700;" data-total>' + total.toLocaleString() + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveScheduleRow(\'' + escAttr(c.name) + '\')">Save</button></td>';
+      html += '</tr>';
+    });
+
+    if (classes.length === 0) {
+      html += '<tr><td colspan="7" style="padding:14px;text-align:center;color:#888;">No active classes.</td></tr>';
+    }
+
+    html += '</tbody></table></div>';
+    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year + '. A blank field is treated as 0.</p>';
+    setHTML('feesContent', html);
+  }
+
+  async function feesSaveScheduleRow(className) {
+    const { term, year } = feesReadTermYear();
+    const rowEl = document.querySelector('[data-fee-class="' + className.replace(/"/g, '\\"') + '"]');
+    if (!rowEl) return;
+    const get = function (f) {
+      const el = rowEl.querySelector('.fee-inp[data-field="' + f + '"]');
+      return el ? Number(el.value || 0) : 0;
+    };
+    const payload = {
+      class_name:        className,
+      term_type:         term,
+      year:              year,
+      tuition:           get('tuition'),
+      other_bills_major: get('other_bills_major'),
+      other_bills_minor: get('other_bills_minor'),
+      books:             get('books')
+    };
+    startLoader();
+    const r = await window.TIS.upsertFeeSchedule(payload);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
+    const totalEl = rowEl.querySelector('[data-total]');
+    if (totalEl) {
+      const total =
+        Number(payload.tuition || 0) +
+        Number(payload.other_bills_major || 0) +
+        Number(payload.other_bills_minor || 0) +
+        Number(payload.books || 0);
+      totalEl.textContent = total.toLocaleString();
+    }
+    showToast('Saved: ' + className, 'success');
+  }
+  window.feesSaveScheduleRow = feesSaveScheduleRow;
+
+  // ----------------------------------------------------------------
+  // ADJUSTMENTS VIEW
+  //   List of learners (searchable) with per-learner additions and
+  //   deductions for the selected term and year.
+  // ----------------------------------------------------------------
+  async function feesLoadAdjustments(term, year) {
+    feesSetFeedback('Loading learners…');
+    const learnerR = await window.TIS.listLearners();
+    if (!learnerR || !learnerR.ok) {
+      setHTML('feesContent', errorHTML('Could not load learners', learnerR && learnerR.error));
+      return;
+    }
+    const learners = (learnerR.data || [])
+      .filter(function (l) {
+        const w = (l.date_of_withdrawal || '').toString().trim();
+        return !(w && w !== '' && w !== 'N/A');
+      })
+      .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+    if (learners.length === 0) {
+      setHTML('feesContent', emptyHTML('fa-users', 'No active learners'));
+      return;
+    }
+
+    // Pull every adjustment row for this term/year in one call.
+    const ids = learners.map(function (l) { return l.id; });
+    const adjR = await window.TIS.listFeeAdjustmentsForLearners(ids, term, year);
+    const adjMap = {};
+    (adjR && adjR.ok ? adjR.data : []).forEach(function (r) {
+      adjMap[r.learner_id] = r;
+    });
+
+    let html = '<div style="margin-bottom:8px;">';
+    html += '<input type="text" id="feesAdjustSearch" placeholder="Search by name or PIN…" style="width:100%;max-width:340px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;">';
+    html += '</div>';
+
+    html += '<div style="overflow-x:auto;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#1a3f8f;color:#fff;">';
+    html += '<th style="text-align:left;padding:6px;">PIN</th>';
+    html += '<th style="text-align:left;padding:6px;">Name</th>';
+    html += '<th style="text-align:left;padding:6px;">Class</th>';
+    html += '<th style="padding:6px;">Additions ₦</th>';
+    html += '<th style="padding:6px;">Deductions ₦</th>';
+    html += '<th style="text-align:left;padding:6px;">Reason</th>';
+    html += '<th style="padding:6px;">Save</th>';
+    html += '</tr></thead><tbody>';
+
+    learners.forEach(function (l) {
+      const a = adjMap[l.id] || {};
+      html += '<tr data-fee-learner="' + l.id + '" data-fee-name="' + escAttr((l.name || '').toLowerCase() + ' ' + (l.pin || '').toLowerCase()) + '">';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.pin || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.name || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.class_name || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="fee-adj" data-field="additions" value="' + (a.additions || '') + '" style="width:100px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="fee-adj" data-field="deductions" value="' + (a.deductions || '') + '" style="width:100px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="text" class="fee-adj" data-field="reason" value="' + escAttr(a.reason || '') + '" style="width:100%;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveAdjustmentRow(' + l.id + ')">Save</button></td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Additions raise the learner\'s bill. Deductions lower it. A blank field is treated as 0.</p>';
+    setHTML('feesContent', html);
+
+    const search = $('feesAdjustSearch');
+    if (search) {
+      search.addEventListener('input', function () {
+        const q = search.value.trim().toLowerCase();
+        document.querySelectorAll('[data-fee-learner]').forEach(function (tr) {
+          const hay = tr.getAttribute('data-fee-name') || '';
+          tr.style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
+        });
+      });
+    }
+  }
+
+  async function feesSaveAdjustmentRow(learnerId) {
+    const { term, year } = feesReadTermYear();
+    const rowEl = document.querySelector('[data-fee-learner="' + learnerId + '"]');
+    if (!rowEl) return;
+    const get = function (f) {
+      const el = rowEl.querySelector('.fee-adj[data-field="' + f + '"]');
+      return el ? el.value : '';
+    };
+    const payload = {
+      learner_id: learnerId,
+      term_type:  term,
+      year:       year,
+      additions:  Number(get('additions') || 0),
+      deductions: Number(get('deductions') || 0),
+      reason:     String(get('reason') || '').trim() || null
+    };
+    if (payload.additions === 0 && payload.deductions === 0 && !payload.reason) {
+      showToast('Nothing to save for this row.', 'info');
+      return;
+    }
+    startLoader();
+    const r = await window.TIS.upsertFeeAdjustment(payload);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
+    showToast('Saved.', 'success');
+  }
+  window.feesSaveAdjustmentRow = feesSaveAdjustmentRow;
   async function loadTerms() {
     setHTML('termsList', pageLoaderHTML('Loading terms…'));
 
