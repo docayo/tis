@@ -1,7 +1,18 @@
+// ================================================================
+// TIS EMIS — SHARED REPORT RENDERER
+// File: report-render.js
+// Loaded by index.html (internal Results tab) and check.html
+// (public results page). Exposes window.TISReport.
+// ================================================================
+(function () {
+  'use strict';
 
-  // ----------------------------------------------------------------
-  // Report card building blocks
-  // ----------------------------------------------------------------
+  function esc(s) {
+    return (s === null || s === undefined ? '' : s).toString()
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   function resultsHeaderHtml(title) {
     return '' +
       '<div class="rc-header">' +
@@ -104,9 +115,6 @@
     return parts.length ? parts.join(' · ') : '';
   }
 
-  // ----------------------------------------------------------------
-  // Print CSS — matches the sample PDFs
-  // ----------------------------------------------------------------
   function resultsPrintCss() {
     return '<style>' +
       '@page { size: A4 portrait; margin: 12mm; }' +
@@ -140,7 +148,8 @@
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } }' +
     '</style>';
   }
- function bandForTotal(total) {
+
+  function bandForTotal(total) {
     if (total >= 80) return { grade: 'A', remark: 'EXCELLENT' };
     if (total >= 70) return { grade: 'B', remark: 'VERY GOOD' };
     if (total >= 60) return { grade: 'C', remark: 'GOOD' };
@@ -149,5 +158,17 @@
     return { grade: 'F', remark: 'FAIL' };
   }
 
-
- 
+  window.TISReport = {
+    resultsHeaderHtml:     resultsHeaderHtml,
+    resultsStudentBar:     resultsStudentBar,
+    resultsStatsBlock:     resultsStatsBlock,
+    resultsSessionalStats: resultsSessionalStats,
+    resultsCommentsBlock:  resultsCommentsBlock,
+    buildFeeText:          buildFeeText,
+    resultsPrintCss:       resultsPrintCss,
+    bandForTotal:          bandForTotal
+  };
+})();
+// ================================================================
+// END OF report-render.js
+// ================================================================
