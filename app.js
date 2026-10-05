@@ -10296,6 +10296,8 @@
                            .replace(/<td class="rc-num rc-total">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>');
       }
 
+      const feeBreakdown = await buildFeeBreakdown(learner, term, year);
+
       const html = '' +
         '<div class="results-preview">' +
           resultsWatermarkHtml() +
@@ -10342,6 +10344,7 @@
             '</div>' +
             '<div class="rc-body-side">' +
               window.TISReport.resultsPsychomotorBlock(ratings) +
+              window.TISReport.resultsFeeBreakdownBlock(feeBreakdown) +
             '</div>' +
           '</div>' +
           window.TISReport.resultsStatsBlock({
@@ -10356,7 +10359,7 @@
           window.TISReport.resultsCommentsBlock(
             learner,
             resume,
-            feeText,
+            '',
             ratings,
             promotedTo,
             learner.pin
@@ -10493,6 +10496,8 @@
       const highestPctStr = (highestPct === null) ? '—' : String(highestPct);
       const lowestPctStr  = (lowestPct  === null) ? '—' : String(lowestPct);
 
+       const feeBreakdown = await buildFeeBreakdown(learner, '3rd', year);
+
       const html = '' +
         '<div class="results-preview">' +
           resultsWatermarkHtml() +
@@ -10539,6 +10544,7 @@
             '</div>' +
             '<div class="rc-body-side">' +
               window.TISReport.resultsPsychomotorBlock(ratings) +
+              window.TISReport.resultsFeeBreakdownBlock(feeBreakdown) +
             '</div>' +
           '</div>' +
           window.TISReport.resultsStatsBlock({
