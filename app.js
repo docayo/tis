@@ -9765,7 +9765,7 @@
   // ----------------------------------------------------------------
   // Build a termly report card (single term)
   // ----------------------------------------------------------------
-   async function resultsBuildTermly(learner, term, year) {
+  async function resultsBuildTermly(learner, term, year) {
     try {
       const [popR, attR, scoresR, termR, resumeR, subsR, ratingsR, nextR] = await Promise.all([
         window.TIS.getClassPopulation(learner.class_name),
@@ -9799,8 +9799,6 @@
       const slotOrder = (csR && csR.ok ? csR.data : []).sort(function (a, b) { return a.slot - b.slot; });
 
       // -------- Class-wide highest and lowest percentage this term --------
-      // Pull every learner in this class, then every score for this term/year,
-      // then compute each learner's percentage and take the extreme values.
       const classLearnersR = await window.TIS.getLearnersForClasses([learner.class_name]);
       const classLearnerIds = (classLearnersR && classLearnersR.ok ? classLearnersR.data : [])
         .map(function (l) { return l.id; });
@@ -9821,9 +9819,9 @@
       Object.keys(perLearner).forEach(function (lid) {
         const e = perLearner[lid];
         if (e.count === 0) return;
-        const p = e.sum / e.count;              // average per subject, same basis as this learner's
+        const p = e.sum / e.count;
         if (highestPct === null || p > highestPct) highestPct = p;
-        if (lowestPct === null || p < lowestPct) lowestPct = p;
+        if (lowestPct  === null || p < lowestPct)  lowestPct  = p;
       });
       const highestPctStr = (highestPct === null) ? '—' : highestPct.toFixed(2);
       const lowestPctStr  = (lowestPct  === null) ? '—' : lowestPct.toFixed(2);
@@ -9863,13 +9861,11 @@
       const maxAggregate = rowCount * 100;
       const pct = maxAggregate > 0 ? (aggregate / maxAggregate * 100).toFixed(2) : '0.00';
 
-      // Fee — next class bill from learner_terms if available.
       const feeText = window.TISReport.buildFeeText(termRec);
 
       const cleared = termRec && String(termRec.cleared || '').toLowerCase() === 'yes';
       const coverScores = !cleared;
 
-      // If not cleared, re-render body with covered cells.
       if (coverScores) {
         bodyRows = bodyRows.replace(/<td class="rc-num">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>')
                            .replace(/<td class="rc-num rc-total">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>');
@@ -9879,43 +9875,48 @@
         '<div class="results-preview">' +
           window.TISReport.resultsHeaderHtml('Statement of Result') +
           window.TISReport.resultsStudentBar(learner, pop, term, year, att) +
-          '<div class="rc-scroll">' +
-          '<table class="rc-table">' +
-            '<thead>' +
-              '<tr>' +
-                '<th rowspan="2" class="rc-subj">SUBJECTS</th>' +
-                '<th colspan="2">CONTINUOUS ASSESSMENT</th>' +
-                '<th>EXAM</th>' +
-                '<th>TOTAL</th>' +
-                '<th rowspan="2">GRADE</th>' +
-                '<th rowspan="2">REMARKS</th>' +
-              '</tr>' +
-              '<tr>' +
-                '<th>TEST 1</th>' +
-                '<th>TEST 2</th>' +
-                '<th>(50)</th>' +
-                '<th>(100)</th>' +
-              '</tr>' +
-              '<tr class="rc-obtainable">' +
-                '<th class="rc-obtainable-lbl">MARKS OBTAINABLE</th>' +
-                '<th>20</th>' +
-                '<th>30</th>' +
-                '<th>50</th>' +
-                '<th>100</th>' +
-                '<th></th>' +
-                '<th></th>' +
-              '</tr>' +
-            '</thead>' +
-            '<tbody>' + bodyRows + '</tbody>' +
-            '<tfoot>' +
-              '<tr class="rc-tfoot">' +
-                '<td colspan="3" class="rc-tfoot-label">TOTAL C.A</td>' +
-                '<td class="rc-num">' + (totalExam || '-') + '</td>' +
-                '<td class="rc-num rc-total">' + aggregate + '</td>' +
-                '<td colspan="2"></td>' +
-              '</tr>' +
-            '</tfoot>' +
-          '</table>' +
+          '<div class="rc-body-grid">' +
+            '<div class="rc-scroll rc-body-main">' +
+              '<table class="rc-table">' +
+                '<thead>' +
+                  '<tr>' +
+                    '<th rowspan="2" class="rc-subj">SUBJECTS</th>' +
+                    '<th colspan="2">CONTINUOUS ASSESSMENT</th>' +
+                    '<th>EXAM</th>' +
+                    '<th>TOTAL</th>' +
+                    '<th rowspan="2">GRADE</th>' +
+                    '<th rowspan="2">REMARKS</th>' +
+                  '</tr>' +
+                  '<tr>' +
+                    '<th>TEST 1</th>' +
+                    '<th>TEST 2</th>' +
+                    '<th>(50)</th>' +
+                    '<th>(100)</th>' +
+                  '</tr>' +
+                  '<tr class="rc-obtainable">' +
+                    '<th class="rc-obtainable-lbl">MARKS OBTAINABLE</th>' +
+                    '<th>20</th>' +
+                    '<th>30</th>' +
+                    '<th>50</th>' +
+                    '<th>100</th>' +
+                    '<th></th>' +
+                    '<th></th>' +
+                  '</tr>' +
+                '</thead>' +
+                '<tbody>' + bodyRows + '</tbody>' +
+                '<tfoot>' +
+                  '<tr class="rc-tfoot">' +
+                    '<td colspan="3" class="rc-tfoot-label">TOTAL C.A</td>' +
+                    '<td class="rc-num">' + (totalExam || '-') + '</td>' +
+                    '<td class="rc-num rc-total">' + aggregate + '</td>' +
+                    '<td colspan="2"></td>' +
+                  '</tr>' +
+                '</tfoot>' +
+              '</table>' +
+            '</div>' +
+            '<div class="rc-body-side">' +
+              window.TISReport.resultsPsychomotorBlock(ratings) +
+            '</div>' +
           '</div>' +
           window.TISReport.resultsStatsBlock({
             totalCA:      totalCA,
@@ -9961,7 +9962,6 @@
       const subjectMap = {};
       subjects.forEach(function (s) { subjectMap[s.code] = s.display_name; });
 
-      // Fetch scores per term in parallel.
       const termScores = {};
       const termAtt    = {};
       const termRec    = {};
@@ -9985,13 +9985,11 @@
         absent:  terms.reduce(function (s, t) { return s + termAtt[t].absent;  }, 0)
       };
 
-      // Take the sessional ratings from the latest term that has one.
       let ratings = null;
       for (let i = terms.length - 1; i >= 0; i--) {
         if (termRating[terms[i]]) { ratings = termRating[terms[i]]; break; }
       }
 
-      // Build per-subject rows.
       let bodyRows = '';
       let sumTerm = [0, 0, 0];
       let sumCumulative = 0;
@@ -10012,7 +10010,6 @@
 
         sumCumulative += cumulative;
 
-        // Take grade from the latest term with data.
         let grade = '', remark = '';
         for (let i = terms.length - 1; i >= 0; i--) {
           const arr = termScores[terms[i]] || [];
@@ -10035,7 +10032,6 @@
       const maxSessional = slotOrder.length * 300;
       const sessionalPct = maxSessional > 0 ? (sessionalTotal / maxSessional * 100).toFixed(2) : '0.00';
 
-      // Sessional comparison — highest and lowest cumulative for the class.
       const classLearnersR = await window.TIS.getLearnersForClasses([learner.class_name]);
       const classLearnerIds = (classLearnersR && classLearnersR.ok ? classLearnersR.data : [])
         .map(function (l) { return l.id; });
@@ -10062,43 +10058,48 @@
         '<div class="results-preview">' +
           window.TISReport.resultsHeaderHtml('Sessional Cumulative Statement of Result') +
           window.TISReport.resultsStudentBar(learner, pop, '3rd', year, totalAtt) +
-          '<div class="rc-scroll">' +
-          '<table class="rc-table">' +
-            '<thead>' +
-              '<tr>' +
-                '<th rowspan="2" class="rc-subj">SUBJECTS</th>' +
-                '<th>1ST TERM</th>' +
-                '<th>2ND TERM</th>' +
-                '<th>3RD TERM</th>' +
-                '<th>CUMULATIVE</th>' +
-                '<th rowspan="2">GRADE</th>' +
-                '<th rowspan="2">REMARKS</th>' +
-              '</tr>' +
-              '<tr>' +
-                '<th>(100)</th><th>(100)</th><th>(100)</th><th>(300)</th>' +
-              '</tr>' +
-              '<tr class="rc-obtainable">' +
-                '<th class="rc-obtainable-lbl">MARKS OBTAINABLE</th>' +
-                '<th>100</th>' +
-                '<th>100</th>' +
-                '<th>100</th>' +
-                '<th>300</th>' +
-                '<th></th>' +
-                '<th></th>' +
-              '</tr>' +
-            '</thead>' +
-            '<tbody>' + bodyRows + '</tbody>' +
-            '<tfoot>' +
-              '<tr class="rc-tfoot">' +
-                '<td class="rc-tfoot-label">TOTAL</td>' +
-                '<td class="rc-num">' + sumTerm[0] + '</td>' +
-                '<td class="rc-num">' + sumTerm[1] + '</td>' +
-                '<td class="rc-num">' + sumTerm[2] + '</td>' +
-                '<td class="rc-num rc-total">' + sessionalTotal + '</td>' +
-                '<td colspan="2"></td>' +
-              '</tr>' +
-            '</tfoot>' +
-          '</table>' +
+          '<div class="rc-body-grid">' +
+            '<div class="rc-scroll rc-body-main">' +
+              '<table class="rc-table">' +
+                '<thead>' +
+                  '<tr>' +
+                    '<th rowspan="2" class="rc-subj">SUBJECTS</th>' +
+                    '<th>1ST TERM</th>' +
+                    '<th>2ND TERM</th>' +
+                    '<th>3RD TERM</th>' +
+                    '<th>CUMULATIVE</th>' +
+                    '<th rowspan="2">GRADE</th>' +
+                    '<th rowspan="2">REMARKS</th>' +
+                  '</tr>' +
+                  '<tr>' +
+                    '<th>(100)</th><th>(100)</th><th>(100)</th><th>(300)</th>' +
+                  '</tr>' +
+                  '<tr class="rc-obtainable">' +
+                    '<th class="rc-obtainable-lbl">MARKS OBTAINABLE</th>' +
+                    '<th>100</th>' +
+                    '<th>100</th>' +
+                    '<th>100</th>' +
+                    '<th>300</th>' +
+                    '<th></th>' +
+                    '<th></th>' +
+                  '</tr>' +
+                '</thead>' +
+                '<tbody>' + bodyRows + '</tbody>' +
+                '<tfoot>' +
+                  '<tr class="rc-tfoot">' +
+                    '<td class="rc-tfoot-label">TOTAL</td>' +
+                    '<td class="rc-num">' + sumTerm[0] + '</td>' +
+                    '<td class="rc-num">' + sumTerm[1] + '</td>' +
+                    '<td class="rc-num">' + sumTerm[2] + '</td>' +
+                    '<td class="rc-num rc-total">' + sessionalTotal + '</td>' +
+                    '<td colspan="2"></td>' +
+                  '</tr>' +
+                '</tfoot>' +
+              '</table>' +
+            '</div>' +
+            '<div class="rc-body-side">' +
+              window.TISReport.resultsPsychomotorBlock(ratings) +
+            '</div>' +
           '</div>' +
           window.TISReport.resultsStatsBlock({
             totalCA:      sumTerm[0] + sumTerm[1] + sumTerm[2],
