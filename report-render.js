@@ -30,6 +30,7 @@
         '<img class="rc-logo" src="' + SCHOOL_LOGO_URL + '" alt="">' +
         '<div class="rc-header-mid">' +
           '<div class="rc-title-1">THE IDEAL SCHOOLS</div>' +
+          '<div class="rc-title-rule"></div>' +
           '<div class="rc-title-2">The Ideal Secondary School &mdash; The Ideal Kiddies School</div>' +
           '<div class="rc-addr">ROAD ONE ALUBARIKA ESTATE SOKOTO / BADAGRY EXPRESS WAY</div>' +
           '<div class="rc-addr">08067071557 &middot; 08027270404</div>' +
@@ -158,8 +159,6 @@
 
   // ----------------------------------------------------------------
   // Comments, fee notice, PROMOTED TO, LIN, RESUMPTION DATE.
-  //   promotedTo may be either a string (next class) or an object
-  //   of shape { term: '2nd', year: 2026 } — both handled here.
   // ----------------------------------------------------------------
   function resultsCommentsBlock(learner, resume, feeText, ratings, promotedTo, lin) {
     const teacherComment   = (ratings && ratings.teacher_comment)   || '—';
@@ -306,8 +305,6 @@
       'body { font-family: Arial, sans-serif; color: #111; padding: 16px; }' +
       '.results-preview { border: 1px solid #ccc; padding: 16px; border-radius: 8px; background: #fff; position: relative; overflow: hidden; }' +
 
-      // ---- Watermark: rendered as a real <img> inside the preview.
-      // Placed at 6% opacity, greyscale, centred behind all content.
       '.rc-watermark { position: absolute; top: 50%; left: 50%; ' +
         'width: 480px; height: 480px; transform: translate(-50%, -50%); ' +
         'opacity: 0.06; filter: grayscale(100%); pointer-events: none; z-index: 0; }' +
@@ -321,15 +318,18 @@
         'border-image: linear-gradient(90deg, #0b6623 0%, #0b6623 45%, #d4a017 70%, #c0392b 85%, #1a3f8f 100%) 1; ' +
         'padding-bottom: 10px; margin-bottom: 12px; }' +
       '.rc-header-mid { flex: 1 1 auto; text-align: center; min-width: 0; }' +
+
+      // ---- Title: print-safe solid deep green, gradient-ish depth via text-shadow.
+      // The multi-colour accent lives in the rule below the title and the subtitle band,
+      // both of which are backgrounds and print reliably. ----
       '.rc-title-1 { font-size: 34px; font-weight: 900; letter-spacing: 2px; line-height: 1.05; ' +
-        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 30%, #d4a017 65%, #c0392b 90%, #1a3f8f 100%); ' +
-        '-webkit-background-clip: text; background-clip: text; color: transparent; ' +
-        '-webkit-text-fill-color: transparent; ' +
-        'text-shadow: 0 0 0 transparent; }' +
-      '.rc-title-2 { font-size: 15px; font-weight: 800; margin-top: 5px; letter-spacing: .3px; ' +
-        'background: linear-gradient(90deg, #1a3f8f 0%, #0b6623 40%, #d4a017 80%, #c0392b 100%); ' +
-        '-webkit-background-clip: text; background-clip: text; color: transparent; ' +
-        '-webkit-text-fill-color: transparent; }' +
+        'color: #0b6623; ' +
+        'text-shadow: 1px 1px 0 #d4a017, -1px -1px 0 #1a8a3a; }' +
+      '.rc-title-rule { height: 5px; margin: 8px auto 6px auto; max-width: 620px; border-radius: 3px; ' +
+        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 25%, #d4a017 55%, #c0392b 80%, #1a3f8f 100%); }' +
+      '.rc-title-2 { font-size: 15px; font-weight: 800; margin-top: 4px; letter-spacing: .3px; ' +
+        'color: #1a3f8f; ' +
+        'text-shadow: 0.5px 0.5px 0 #d4a017; }' +
       '.rc-addr { font-size: 11px; color: #555; margin-top: 3px; }' +
       '.rc-motto { font-size: 12px; font-style: italic; margin-top: 5px; letter-spacing: 3px; ' +
         'font-weight: 700; color: #1a3f8f; }' +
@@ -409,8 +409,27 @@
       '.rc-qr-img { width: 96px; height: 96px; display: block; }' +
       '.rc-qr-caption { font-size: 10px; font-weight: 700; color: #1a3f8f; margin-top: 6px; letter-spacing: .5px; }' +
 
+      // ---- On screen only: restore the live gradient on the title text.
+      // Print always uses the solid deep green so the name never disappears. ----
+      '@media screen { ' +
+        '.rc-title-1 { color: transparent; -webkit-text-fill-color: transparent; ' +
+          'text-shadow: none; ' +
+          'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 25%, #d4a017 55%, #c0392b 80%, #1a3f8f 100%); ' +
+          '-webkit-background-clip: text; background-clip: text; } ' +
+        '.rc-title-2 { color: transparent; -webkit-text-fill-color: transparent; ' +
+          'text-shadow: none; ' +
+          'background: linear-gradient(90deg, #1a3f8f 0%, #0b6623 40%, #d4a017 80%, #c0392b 100%); ' +
+          '-webkit-background-clip: text; background-clip: text; } ' +
+      '}' +
+
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } ' +
-        '.rc-watermark { opacity: 0.04; } }' +
+        '.rc-watermark { opacity: 0.04; } ' +
+        // Print-safe overrides: solid deep green so the title always renders.
+        '.rc-title-1 { color: #0b6623 !important; -webkit-text-fill-color: #0b6623 !important; ' +
+          'background: none !important; text-shadow: 1px 1px 0 #d4a017, -1px -1px 0 #1a8a3a !important; } ' +
+        '.rc-title-2 { color: #1a3f8f !important; -webkit-text-fill-color: #1a3f8f !important; ' +
+          'background: none !important; text-shadow: 0.5px 0.5px 0 #d4a017 !important; } ' +
+      '}' +
     '</style>';
   }
 
