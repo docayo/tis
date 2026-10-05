@@ -501,4 +501,52 @@
     }
   }
 
- 
+  function printReport() {
+    if (!__current) { setFeedback('Load a report first.', 'error'); return; }
+    const w = window.open('', '_blank');
+    if (!w) { setFeedback('Allow pop-ups to print.', 'error'); return; }
+    const html = __current.html.replace(/<div class="results-preview">/, '<div>');
+    w.document.write(
+      '<html><head><title>Report — ' + esc(__current.learner.name || '') + '</title>' +
+      window.TISReport.resultsPrintCss() +
+      '</head><body>' + html + '</body></html>'
+    );
+    w.document.close();
+    setTimeout(function () { w.print(); }, 250);
+  }
+
+  // ----------------------------------------------------------------
+  // Boot
+  // ----------------------------------------------------------------
+  document.addEventListener('DOMContentLoaded', function () {
+    // Default term/year to the active term.
+    (async function () {
+      try {
+        const at = await window.TIS.getActiveTerm();
+        if (at && at.ok && at.data) {
+          const t = $('pubTerm'); if (t) t.value = at.data.term_type || '1st';
+          const y = $('pubYear'); if (y) y.value = String(at.data.year || new Date().getFullYear());
+        }
+      } catch (e) { /* silent */ }
+    })();
+
+    const urlPin = pinFromUrl();
+    if (urlPin) {
+      const pinEl = $('pubPin');
+      if (pinEl) pinEl.value = urlPin;
+      // Small delay so the active-term default has settled.
+      setTimeout(loadReport, 400);
+    }
+
+    const loadBtn = $('pubLoadBtn');
+    if (loadBtn) loadBtn.addEventListener('click', loadReport);
+
+    const pinIn = $('pubPin');
+    if (pinIn) pinIn.addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') loadReport();
+    });
+
+    const printBtn = $('pubPrintBtn');
+    if (printBtn) printBtn.addEventListener('click', printReport);
+  });
+})();
