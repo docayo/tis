@@ -236,7 +236,58 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
   <div class="module-title"><i class="fas fa-calendar-alt"></i> Terms &amp; Promotion</div>
   <div class="module-subtitle">Manage terms, promote learners, exit learners</div>
 
-  <div class="card-bg" id="termsList"></div>
+    <div class="card-bg" id="termsList"></div>
+
+  <!-- ============================================================
+       FEES MODULE — class-wide bill per class × term × year, plus
+       per-learner additions and deductions.
+       Lives inside the Terms tab. Feeds the FEE NOTICE line on the
+       report card.
+       ============================================================ -->
+  <div class="card-bg" id="feesPanel" style="border-left:4px solid #1a3f8f;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div>
+        <div style="font-weight:800;color:#1a3f8f;font-size:15px;">
+          <i class="fas fa-coins"></i> Fees
+        </div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">
+          Class bill per term, plus per-learner adjustments. Feeds the report card fee notice.
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-sm btn-secondary" type="button" id="feesSubSchedule">
+          <i class="fas fa-table-list"></i> Class Bill
+        </button>
+        <button class="btn btn-sm btn-secondary" type="button" id="feesSubAdjust">
+          <i class="fas fa-sliders"></i> Adjustments
+        </button>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Term</label>
+        <select id="feesTerm">
+          <option value="1st">1st Term</option>
+          <option value="2nd">2nd Term</option>
+          <option value="3rd">3rd Term</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Year</label>
+        <input type="text" id="feesYear" value="2026">
+      </div>
+      <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+        <button class="btn btn-primary" type="button" id="btnFeesLoad">
+          <i class="fas fa-sync-alt"></i> Load
+        </button>
+      </div>
+    </div>
+
+    <div id="feesFeedback" style="margin-top:6px;font-size:12px;color:#666;"></div>
+
+    <div id="feesContent" style="margin-top:12px;"></div>
+  </div>
 
   <div class="card-bg">
     <h4 style="margin-bottom:10px;color:var(--blue-primary);">Exit Learner</h4>
@@ -258,7 +309,6 @@ THE IDEAL SCHOOLS LTD. ~ Scientia est potentia ~ The Ideal Secondary School ~ Th
     <div id="exitFeedback" style="margin-top:8px;font-size:12px;"></div>
   </div>
 </div>
-
 <!-- ============ LEARNER ATTENDANCE ============ -->
 <div class="module-view hidden" id="module-attendance">
 <div class="module-title"><i class="fas fa-clipboard-check"></i> Learner Attendance</div>
