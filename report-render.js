@@ -17,9 +17,6 @@
 
   // ----------------------------------------------------------------
   // Header band
-  //   Left  : school logo (kept)
-  //   Centre: school identity, widened to fill the page width
-  //   Right : learner photo (circle), replacing the ministry logo
   // ----------------------------------------------------------------
   function resultsHeaderHtml(title, learner) {
     const photo = learner && learner.photo_url ? learner.photo_url : '';
@@ -111,9 +108,6 @@
       '</table>';
   }
 
-  // ----------------------------------------------------------------
-  // Legacy sessional stats — kept for compatibility.
-  // ----------------------------------------------------------------
   function resultsSessionalStats(sumTerm, sessionalTotal, maxSessional, pct) {
     return '' +
       '<table class="rc-stats">' +
@@ -127,7 +121,7 @@
   }
 
   // ----------------------------------------------------------------
-  // Psychomotor ratings block — its own table, Word-grid design.
+  // Psychomotor ratings block
   // ----------------------------------------------------------------
   const PSYCHOMOTOR_FIELDS = [
     { key: 'leadership',    label: 'LEADERSHIP' },
@@ -164,11 +158,20 @@
 
   // ----------------------------------------------------------------
   // Comments, fee notice, PROMOTED TO, LIN, RESUMPTION DATE.
+  //   promotedTo may be either a string (next class) or an object
+  //   of shape { term: '2nd', year: 2026 } — both handled here.
   // ----------------------------------------------------------------
   function resultsCommentsBlock(learner, resume, feeText, ratings, promotedTo, lin) {
     const teacherComment   = (ratings && ratings.teacher_comment)   || '—';
     const principalComment = (ratings && ratings.principal_comment) || '—';
     const linValue         = lin || (learner && learner.pin) || '—';
+
+    let promotedLabel = '—';
+    if (promotedTo && typeof promotedTo === 'object' && promotedTo.term) {
+      promotedLabel = promotedTo.term.toUpperCase() + ' TERM ' + promotedTo.year;
+    } else if (typeof promotedTo === 'string' && promotedTo) {
+      promotedLabel = promotedTo;
+    }
 
     return '' +
       '<table class="rc-comments">' +
@@ -185,7 +188,7 @@
           : '') +
         '<tr>' +
           '<td class="rc-k">PROMOTED TO</td>' +
-          '<td class="rc-v">' + esc(promotedTo || '—') + '</td>' +
+          '<td class="rc-v">' + esc(promotedLabel) + '</td>' +
           '<td class="rc-k">LIN</td>' +
           '<td class="rc-v">' + esc(linValue) + '</td>' +
         '</tr>' +
@@ -296,8 +299,6 @@
 
   // ----------------------------------------------------------------
   // Print CSS
-  //   Palette: green 50% | gold 25% | red 10% | blue 15%
-  //   School logo kept in the header and duplicated as a fading watermark.
   // ----------------------------------------------------------------
   function resultsPrintCss() {
     return '<style>' +
@@ -305,13 +306,14 @@
       'body { font-family: Arial, sans-serif; color: #111; padding: 16px; }' +
       '.results-preview { border: 1px solid #ccc; padding: 16px; border-radius: 8px; background: #fff; position: relative; overflow: hidden; }' +
 
-      // ---- Watermark (faded school logo, behind everything) ----
-      '.results-preview::before { content: ""; position: absolute; top: 50%; left: 50%; ' +
+      // ---- Watermark: rendered as a real <img> inside the preview.
+      // Placed at 6% opacity, greyscale, centred behind all content.
+      '.rc-watermark { position: absolute; top: 50%; left: 50%; ' +
         'width: 480px; height: 480px; transform: translate(-50%, -50%); ' +
-        'background-image: url("' + SCHOOL_LOGO_URL + '"); ' +
-        'background-size: contain; background-repeat: no-repeat; background-position: center; ' +
         'opacity: 0.06; filter: grayscale(100%); pointer-events: none; z-index: 0; }' +
+      '.rc-watermark img { width: 100%; height: 100%; object-fit: contain; display: block; }' +
       '.results-preview > * { position: relative; z-index: 1; }' +
+      '.rc-watermark { z-index: 0; }' +
 
       // ---- Header band ----
       '.rc-header { display: flex; align-items: center; gap: 12px; ' +
@@ -319,15 +321,22 @@
         'border-image: linear-gradient(90deg, #0b6623 0%, #0b6623 45%, #d4a017 70%, #c0392b 85%, #1a3f8f 100%) 1; ' +
         'padding-bottom: 10px; margin-bottom: 12px; }' +
       '.rc-header-mid { flex: 1 1 auto; text-align: center; min-width: 0; }' +
-      '.rc-title-1 { font-size: 28px; font-weight: 900; letter-spacing: 1.5px; ' +
-        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 55%, #d4a017 100%); ' +
-        '-webkit-background-clip: text; background-clip: text; color: transparent; }' +
-      '.rc-title-2 { font-size: 13px; font-weight: 700; margin-top: 4px; color: #0b6623; }' +
-      '.rc-addr { font-size: 11px; color: #555; margin-top: 2px; }' +
-      '.rc-motto { font-size: 11px; font-style: italic; margin-top: 4px; letter-spacing: 2px; color: #1a3f8f; }' +
-      '.rc-subtitle { font-size: 13px; font-weight: 700; margin-top: 8px; ' +
-        'background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; ' +
-        'display: inline-block; padding: 4px 14px; border-radius: 4px; }' +
+      '.rc-title-1 { font-size: 34px; font-weight: 900; letter-spacing: 2px; line-height: 1.05; ' +
+        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 30%, #d4a017 65%, #c0392b 90%, #1a3f8f 100%); ' +
+        '-webkit-background-clip: text; background-clip: text; color: transparent; ' +
+        '-webkit-text-fill-color: transparent; ' +
+        'text-shadow: 0 0 0 transparent; }' +
+      '.rc-title-2 { font-size: 15px; font-weight: 800; margin-top: 5px; letter-spacing: .3px; ' +
+        'background: linear-gradient(90deg, #1a3f8f 0%, #0b6623 40%, #d4a017 80%, #c0392b 100%); ' +
+        '-webkit-background-clip: text; background-clip: text; color: transparent; ' +
+        '-webkit-text-fill-color: transparent; }' +
+      '.rc-addr { font-size: 11px; color: #555; margin-top: 3px; }' +
+      '.rc-motto { font-size: 12px; font-style: italic; margin-top: 5px; letter-spacing: 3px; ' +
+        'font-weight: 700; color: #1a3f8f; }' +
+      '.rc-subtitle { font-size: 14px; font-weight: 800; margin-top: 8px; ' +
+        'background: linear-gradient(90deg, #0b6623 0%, #1a8a3a 40%, #d4a017 100%); color: #fff; ' +
+        'display: inline-block; padding: 5px 18px; border-radius: 4px; letter-spacing: 1px; ' +
+        'box-shadow: 0 2px 4px rgba(11,102,35,0.15); }' +
       '.rc-logo { height: 76px; width: 76px; object-fit: contain; flex: 0 0 auto; }' +
       '.rc-photo { width: 92px; height: 92px; border-radius: 50%; overflow: hidden; ' +
         'border: 3px solid #0b6623; flex: 0 0 auto; background: #e8f5e9; ' +
@@ -367,7 +376,7 @@
       '.rc-tfoot td { background: linear-gradient(90deg, #d7ead9, #f7ecd0) !important; font-weight: 700; }' +
       '.rc-tfoot-label { text-align: right; }' +
 
-      // ---- Psychomotor table (side column, roomier) ----
+      // ---- Psychomotor table ----
       '.rc-psy { width: 100%; border-collapse: collapse; font-size: 9px; }' +
       '.rc-psy-head { background: linear-gradient(90deg, #0b6623, #1a8a3a); color: #fff; font-weight: 700; padding: 6px 6px; text-align: center; letter-spacing: .3px; border: 1px solid #0b6623; font-size: 9.5px; }' +
       '.rc-psy-lbl { background: linear-gradient(90deg, #d7ead9, #e6f2e7); font-weight: 700; color: #0b6623; padding: 4px 6px; border: 1px solid #b8c4bb; text-align: left; font-size: 9px; letter-spacing: .2px; white-space: nowrap; }' +
@@ -401,13 +410,10 @@
       '.rc-qr-caption { font-size: 10px; font-weight: 700; color: #1a3f8f; margin-top: 6px; letter-spacing: .5px; }' +
 
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } ' +
-        '.results-preview::before { opacity: 0.04; } }' +
+        '.rc-watermark { opacity: 0.04; } }' +
     '</style>';
   }
 
-  // ----------------------------------------------------------------
-  // Score band helper
-  // ----------------------------------------------------------------
   function bandForTotal(total) {
     if (total >= 80) return { grade: 'A', remark: 'EXCELLENT' };
     if (total >= 70) return { grade: 'B', remark: 'VERY GOOD' };
