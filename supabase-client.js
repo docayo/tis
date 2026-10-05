@@ -1982,23 +1982,35 @@
     } catch (err) { return fail(err); }
   };
 
-   TIS.getResumptionDate = async function (termType, year) {
+     TIS.getResumptionDate = async function (termType, year) {
     try {
       const sb = await loadSdk();
+      const y = Number(year);
 
-      // Which academic year does the NEXT term fall in?
-      //   1st term year N  → next is 2nd term year N   → same academic year
-      //   2nd term year N  → next is 3rd term year N   → same academic year
-      //   3rd term year N  → next is 1st term year N+1 → academic year N+1
-      const nextYearStart = (termType === '3rd') ? (Number(year) + 1) : Number(year);
-      const academicYear  = nextYearStart + '/' + (nextYearStart + 1);
+      // Which calendar row carries the NEXT term's resumption?
+      //   1st term of year N → look for RESUMPTION (SECOND TERM) in year N / N+1
+      //   2nd term of year N → look for RESUMPTION (THIRD TERM)  in year N / N+1
+      //   3rd term of year N → look for RESUMPTION (FIRST TERM)  in year N+1 / N+2
+      //
+      // The academic_year column is stored as "YYYY/YYYY" (e.g. "2026/2027").
+      // No dates are hard-coded — the search key is the calendar tag itself,
+      // so a future calendar upload with the same tags will be found.
+      let key, academicYear;
+      if (termType === '1st') {
+        key = '%RESUMPTION (SECOND TERM)%';
+        academicYear = y + '/' + (y + 1);
+      } else if (termType === '2nd') {
+        key = '%RESUMPTION (THIRD TERM)%';
+        academicYear = y + '/' + (y + 1);
+      } else {
+        key = '%RESUMPTION (FIRST TERM)%';
+        academicYear = (y + 1) + '/' + (y + 2);
+      }
 
-      // The calendar row is tagged  RESUMPTION (FIRST TERM)  in description.
-      // Search within the academic year the next term belongs to.
       const r = await sb
         .from('academic_calendar')
         .select('event_date, description, academic_year')
-        .ilike('description', '%RESUMPTION (FIRST TERM)%')
+        .ilike('description', key)
         .eq('academic_year', academicYear)
         .order('event_date', { ascending: true })
         .limit(1)
