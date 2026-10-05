@@ -2,7 +2,7 @@
 
 **Project:** The Ideal Schools — Operational Portal & Databank
 **Owner:** Dr Ayoola Gabriel Ololade FCIA. NIIA — ayonio@gmail.com — 08067071557
-**Last updated:** 4 October 2026
+**Last updated:** 5 October 2026
 
 ---
 
@@ -15,14 +15,8 @@ After reading this file, consult:
 
 - **`REFERENCE.md`** — database schemas, `app.js` section map,
   `supabase-client.js` method list, absolute rules, coding conventions.
-  Read it once when you start. Consult it when you need detail.
-
 - **`HISTORY.md`** — the session-by-session log of how the project got
-  here. Read it if you need to understand why something is the way it is.
-  Never confuse it with current state.
-
-**The rule:** current state lives here. Architecture lives in
-REFERENCE. History lives in HISTORY. Never mix them.
+  here.
 
 **Live copies:**
 - https://tis-tan.vercel.app/handover
@@ -34,16 +28,14 @@ REFERENCE. History lives in HISTORY. Never mix them.
 
 ## PART 0 — EMERGENCY CARD
 
-If something is broken and you need the portal back up fast.
-
 ### Where things live
 
 | Asset | Location |
 |---|---|
 | Live portal | `https://tis-tan.vercel.app` |
+| Public results page | `https://tis-tan.vercel.app/r` and `/r/<PIN>` |
 | Recovery page | `https://tis-tan.vercel.app/rec` |
 | Handover (this doc) | `https://tis-tan.vercel.app/handover` |
-| Public results page (in build) | `https://tis-tan.vercel.app/check` |
 | GitHub code repo | `github.com/docayo/tis` |
 | GitHub backups repo | `github.com/docayo/tis-backups` |
 | Supabase project | `https://ndsroviwrfjbgaucajri.supabase.co` |
@@ -102,7 +94,7 @@ minutes). Or use a sealed code from the safe. Verify. Then follow
 
 ## PART 1 — WHAT IS LIVE TODAY
 
-State as of 4 October 2026.
+State as of 5 October 2026.
 
 ### Stack
 
@@ -141,7 +133,6 @@ State as of 4 October 2026.
     Termly (1st and 2nd) or sessional (3rd). Print on demand.
 12. **ID Cards** — portrait CR80, 3 × 3 A4 grid, ZIP export of
     Front + Back PNGs (662 × 1036 px @ 300 DPI with 2 mm bleed).
-    School + ministry logos, GTB badge, stamp on back.
 13. **QR** — `/g/<token>` staff gate QR. `/s/<code>` per-person
     card QR. Learner → attendance. Staff → smart clock flow.
     Visitor → check-in/out. Auto-close after 7 seconds.
@@ -150,6 +141,17 @@ State as of 4 October 2026.
     (importer with conflict modal). Auto-assign after import.
 15. **Recovery system** — `/rec` page + Edge Functions + Resend
     + 9 sealed backup codes in the safe.
+16. **Public Results Page** — `/r` and `/r/<PIN>`, login-free,
+    print-only, clearance gate covers scores for not-cleared
+    learners, every lookup logged to `results_views`.
+17. **Fees Module** — `fee_schedule` (class × term × year bill),
+    `fee_adjustments` (per-learner additions and deductions).
+    Panel inside the Terms tab. Feeds the fee breakdown table
+    on the report card.
+18. **Report Card** — termly and sessional. Includes watermark,
+    inline-SVG header, learner photo, subject table, psychomotor
+    ratings, fee breakdown, stats, comments, LIN, PROMOTED TO,
+    bottom row with stamp / performance chart / QR code.
 
 ### Data current state
 
@@ -176,26 +178,11 @@ State as of 4 October 2026.
 | visits | varies | Visitor in/out |
 | scan_events | varies | Every card scan |
 | audit_log | varies | Operator write log (partial) |
+| results_views | varies | Public lookup log |
+| fee_schedule | varies | Class bill per class × term × year |
+| fee_adjustments | varies | Per-learner additions and deductions |
 
 Full schemas in `REFERENCE.md`.
-
-### What is pending
-
-| # | Item | Priority |
-|---|---|---|
-| A | Public results page `/check` | Highest |
-| B | Report card parity with PDF samples | High |
-| C | Shared `report-render.js` | High — unblocks A and B |
-| D | Fees module | Medium |
-| E | Deactivate/reactivate learners | Medium |
-| F | Delete duplicate learners | Medium |
-| G | Audit log UI + full write-path wiring | Medium |
-| H | Learner Collectibles tab | Low |
-| I | Offline report generation + upload | Later |
-| J | Digital library (staff and learner) | Later |
-| K | Offline CBT app upload | Separate project |
-
-Detailed scope for each in `HISTORY.md`.
 
 ### Data conventions
 
@@ -211,6 +198,8 @@ Detailed scope for each in `HISTORY.md`.
 | Grades | A / B / C / D / E / F matched to bands |
 | Storage bucket | `TISAssets` (public) |
 | Photo filenames | Learners `<PIN>.png`. Staff `<STAFF_ID>.png` |
+| Public results path | `/r/<PIN>` |
+| Stamp URL | `TISAssets/stamp and signed.gif` |
 
 ### Class list (26, in academic order)
 
@@ -225,54 +214,60 @@ CRECHE · STARTERS · BEGINNERS · NURSERY 1 · NURSERY 2 · NURSERY 3
 
 ## PART 2 — WHAT TO DO NEXT
 
-### Phase A — Public results viewer (`/check`)
+### Item 1 — Fix the "Hide Inactive" bug on the Learners tab
 
-The single most valuable remaining feature. Parents and students
-view their own report card by PIN, without login.
+Symptom: exited learners stay visible by default even with an exit
+reason filled in, and pressing the toggle has no visible effect on
+the grid. Fix in `app.js` `[S07]`. One delivery.
 
-Deliver in four steps:
+### Item 2 — Reports Workshop comment default + keyboard navigation
 
-1. `check.html` and `check.js` — PIN input, learner lookup,
-   "Welcome, <Name>" banner. No portal code loaded.
-2. Extend `report-render.js` (see Phase C) so public and internal
-   pages render identically.
-3. Clearance gate — if `learner_terms.cleared != 'Yes'`, score
-   cells show `—` with overlay: *"TIS Payment Policy — please
-   pay your outstanding balance to view this result. Contact the
-   school office."*
-4. `results_views` audit table — log every public lookup.
+Teacher Comment and Principal Comment fields should pre-load with a
+comment-bank entry by default. Up / Down arrow keys inside the field
+should cycle through the bank. Fix in `app.js` `[S15]` plus the
+comment bank read from `window.TIS`. One delivery.
 
-### Phase B — Report card parity
+### Item 3 — Learners tab wired to the fee schedule
 
-Match `SAMPLE TERMLY REPORT CARD.pdf` and
-`SAMPLE CUMULATIVE REPORT CARD.pdf` exactly. Missing pieces:
+The View modal inside `[S07]` should show the same fee breakdown
+the report card shows: read from `fee_schedule` + `fee_adjustments`
++ `learner_terms`. Adding a new learner to a class should apply that
+class's bill by definition — no manual write required, because the
+bill comes from `fee_schedule`, not from the learner row. 2–3
+deliveries.
 
-- Psychomotor column (10 ratings) from `report_ratings.ratings`.
-- CLASS AVG / H.S. / L.S. columns per subject.
-- Stamp image (`TISAssets/stamp and signed.gif`).
-- QR code on the report card → `/check/<PIN>`.
-- Bar chart (subject totals, coloured by grade).
-- Auto term selection (1st/2nd → termly, 3rd → sessional).
-- Comments from `report_ratings` with `{first}` filled.
+### Item 4 — Deactivate / reactivate learners
 
-### Phase C — Shared renderer
+Add `is_active` to `learners`, grid filter Active / Inactive / All,
+edit-modal toggle, exclude inactive from attendance and ID Cards.
+1 delivery.
 
-Extract the whole render pipeline from `[S22]` into
-`report-render.js`, loaded by both `index.html` and `check.html`.
-Expose on `window.TISReport`.
+### Item 5 — Delete duplicate learners
 
-### Phase D — Fees, learner lifecycle, audit
+Diagnostic SQL by name + DOB, review screen, merge or delete with
+confirmation. 1 delivery.
 
-- Fees module: class-wide bills + per-learner adjustments.
-- Deactivate/reactivate learners.
-- Delete duplicate learners.
-- Audit log UI + full write-path wiring.
+### Item 6 — Audit log UI + full write-path wiring
 
-### Phase E — Later phases
+Table exists. Write paths partially wired. Panel missing.
+2 deliveries.
 
-- Offline report generation.
-- Digital library.
-- Offline CBT app integration.
+### Item 7 — Later phases
+
+- Offline report generation + upload. Multi-week.
+- Digital library. Multi-month.
+- Offline CBT app integration. Separate project.
+
+### Data conventions for the fee module
+
+| Item | Value |
+|---|---|
+| Class bill | `fee_schedule.class_name × term_type × year` |
+| Per-learner adjustment | `fee_adjustments.learner_id × term_type × year` |
+| Scholarship | `fee_adjustments.deductions` (shown only when > 0) |
+| Additions | `fee_adjustments.additions` (shown only when > 0) |
+| Balance C/D | adjusted tuition + other major + other minor + books + additions + previous B/F |
+| Report card fee row order | Prev B/F → Tuition → Scholarship → Adjusted → Other Major → Other Minor → Books → Additions → Balance C/D |
 
 ---
 
@@ -297,4 +292,5 @@ Update `REFERENCE.md` — new tables, new `app.js` sections, new
 
 ### The first-message prompt
 
-When starting a new AI conversation, paste this:
+When starting a new AI conversation, paste the contents of
+`PROMPT.md`.
