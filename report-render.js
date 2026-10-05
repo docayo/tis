@@ -15,25 +15,34 @@
 
   // ----------------------------------------------------------------
   // Header band (school name, address, motto, subtitle)
+  //   Left  : school logo
+  //   Centre: school identity, widened to fill the page width
+  //   Right : learner photo (circle), replacing the ministry logo
   // ----------------------------------------------------------------
-  function resultsHeaderHtml(title) {
+  function resultsHeaderHtml(title, learner) {
+    const photo = learner && learner.photo_url ? learner.photo_url : '';
+    const initial = learner && learner.name ? learner.name.charAt(0) : '?';
+    const photoHtml = photo
+      ? '<div class="rc-photo"><img src="' + esc(photo) + '" alt=""></div>'
+      : '<div class="rc-photo rc-photo-empty"><span>' + esc(initial) + '</span></div>';
+
     return '' +
       '<div class="rc-header">' +
         '<img class="rc-logo" src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="">' +
         '<div class="rc-header-mid">' +
           '<div class="rc-title-1">THE IDEAL SCHOOLS</div>' +
-          '<div class="rc-title-2">PRE-PRIMARY · PRIMARY · SECONDARY</div>' +
+          '<div class="rc-title-2">The Ideal Secondary School &mdash; The Ideal Kiddies School</div>' +
           '<div class="rc-addr">ROAD ONE ALUBARIKA ESTATE SOKOTO / BADAGRY EXPRESS WAY</div>' +
-          '<div class="rc-addr">08067071557 · 08027270404</div>' +
+          '<div class="rc-addr">08067071557 &middot; 08027270404</div>' +
           '<div class="rc-motto">SCIENTIA EST POTENTIA</div>' +
           '<div class="rc-subtitle">' + esc(title) + '</div>' +
         '</div>' +
-        '<img class="rc-logo" src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="">' +
+        photoHtml +
       '</div>';
   }
 
   // ----------------------------------------------------------------
-  // Student detail bar (name, class, pop, term, session, attendance)
+  // Student detail bar
   // ----------------------------------------------------------------
   function resultsStudentBar(learner, pop, term, year, att) {
     return '' +
@@ -60,8 +69,6 @@
 
   // ----------------------------------------------------------------
   // Stats block — accepts an object from app.js.
-  //   { totalCA, totalExam, aggregate, maxAggregate, pct,
-  //     highestPct, lowestPct, sessional, sumTerm }
   // ----------------------------------------------------------------
   function resultsStatsBlock(args) {
     const a = args || {};
@@ -103,10 +110,7 @@
   }
 
   // ----------------------------------------------------------------
-  // Sessional stats — kept for compatibility. Not used by the new
-  // app.js (the sessional path now flows through resultsStatsBlock
-  // with { sessional: true }). Kept so nothing that still calls it
-  // breaks.
+  // Legacy sessional stats — kept for compatibility.
   // ----------------------------------------------------------------
   function resultsSessionalStats(sumTerm, sessionalTotal, maxSessional, pct) {
     return '' +
@@ -121,9 +125,8 @@
   }
 
   // ----------------------------------------------------------------
-  // Psychomotor ratings block — the 10-item column.
-  //   ratings  — object from report_ratings.ratings, or null.
-  //   layout   — 'column' (sits beside subject table) or 'block' (own row)
+  // Psychomotor ratings block — its own table, styled in the same
+  // Word-grid aesthetic as the subject table.
   // ----------------------------------------------------------------
   const PSYCHOMOTOR_FIELDS = [
     { key: 'leadership',    label: 'LEADERSHIP' },
@@ -141,9 +144,10 @@
   function resultsPsychomotorBlock(ratings) {
     const r = (ratings && ratings.ratings) ? ratings.ratings : {};
     let rows = '';
-    PSYCHOMOTOR_FIELDS.forEach(function (f) {
+    PSYCHOMOTOR_FIELDS.forEach(function (f, i) {
       const val = r[f.key] || '—';
-      rows += '<tr>' +
+      const band = (i % 2 === 0) ? 'rc-psy-row-a' : 'rc-psy-row-b';
+      rows += '<tr class="' + band + '">' +
         '<td class="rc-psy-lbl">' + esc(f.label) + '</td>' +
         '<td class="rc-psy-val">' + esc(val) + '</td>' +
       '</tr>';
@@ -158,8 +162,8 @@
   }
 
   // ----------------------------------------------------------------
-  // Comments, resumption, stamp, LIN, PROMOTED TO.
-  //   Signature: (learner, resume, feeText, ratings, promotedTo, lin)
+  // Comments, fee notice, PROMOTED TO, LIN, RESUMPTION DATE.
+  // School stamp has moved out — it now lives in the bottom row.
   // ----------------------------------------------------------------
   function resultsCommentsBlock(learner, resume, feeText, ratings, promotedTo, lin) {
     const teacherComment   = (ratings && ratings.teacher_comment)   || '—';
@@ -187,13 +191,87 @@
         '</tr>' +
         '<tr>' +
           '<td class="rc-k">RESUMPTION DATE</td>' +
-          '<td class="rc-v">' + esc(resume || '—') + '</td>' +
-          '<td class="rc-k">SCHOOL STAMP</td>' +
-          '<td class="rc-v rc-stamp-cell">' +
-            '<img class="rc-stamp-img" src="https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/stamp%20and%20signed.gif" alt="School stamp">' +
-          '</td>' +
+          '<td class="rc-v" colspan="3">' + esc(resume || '—') + '</td>' +
         '</tr>' +
       '</table>';
+  }
+
+  // ----------------------------------------------------------------
+  // Bottom row: SCHOOL STAMP | PERFORMANCE CHART | QR CODE
+  // ----------------------------------------------------------------
+  function resultsStampBlock() {
+    return '' +
+      '<div class="rc-bottom-cell">' +
+        '<div class="rc-bottom-title">SCHOOL STAMP</div>' +
+        '<div class="rc-bottom-body rc-bottom-stamp">' +
+          '<img class="rc-stamp-img" ' +
+            'src="https://ndsroviwrfjbgaucajri.supabase.co/storage/v1/object/public/TISAssets/stamp%20and%20signed.gif" ' +
+            'alt="School stamp">' +
+        '</div>' +
+      '</div>';
+  }
+
+  function resultsPerformanceChart(subjects) {
+    const rows = Array.isArray(subjects) ? subjects : [];
+    if (rows.length === 0) {
+      return '' +
+        '<div class="rc-bottom-cell">' +
+          '<div class="rc-bottom-title">PERFORMANCE CHART</div>' +
+          '<div class="rc-bottom-body rc-bottom-chart"><div class="rc-chart-empty">No scores yet</div></div>' +
+        '</div>';
+    }
+
+    const maxTotal = 100;
+    let bars = '';
+    rows.forEach(function (row) {
+      const name  = row.name || '';
+      const total = Number(row.total || 0);
+      const pct   = Math.max(0, Math.min(100, (total / maxTotal) * 100));
+      const grade = row.grade || '';
+      const colour =
+        grade === 'A' ? '#1a8a3a' :
+        grade === 'B' ? '#2e9c4e' :
+        grade === 'C' ? '#7bb661' :
+        grade === 'D' ? '#d4a017' :
+        grade === 'E' ? '#e08e2a' : '#c0392b';
+      bars += '<div class="rc-chart-row">' +
+        '<div class="rc-chart-lbl" title="' + esc(name) + '">' + esc(name) + '</div>' +
+        '<div class="rc-chart-track">' +
+          '<div class="rc-chart-bar" style="width:' + pct.toFixed(1) + '%;background:' + colour + ';"></div>' +
+        '</div>' +
+        '<div class="rc-chart-val">' + (total || 0) + '</div>' +
+      '</div>';
+    });
+
+    return '' +
+      '<div class="rc-bottom-cell">' +
+        '<div class="rc-bottom-title">PERFORMANCE CHART</div>' +
+        '<div class="rc-bottom-body rc-bottom-chart">' + bars + '</div>' +
+      '</div>';
+  }
+
+  function resultsQRCode(pin) {
+    const pinUp = String(pin || '').toUpperCase();
+    const url   = window.location.origin + '/check/' + encodeURIComponent(pinUp);
+    const img   = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&data=' +
+                  encodeURIComponent(url);
+    return '' +
+      '<div class="rc-bottom-cell">' +
+        '<div class="rc-bottom-title">QR CODE</div>' +
+        '<div class="rc-bottom-body rc-bottom-qr">' +
+          '<img src="' + esc(img) + '" alt="QR" class="rc-qr-img">' +
+          '<div class="rc-qr-caption">' + esc(pinUp) + '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function resultsBottomRow(subjects, pin) {
+    return '' +
+      '<div class="rc-bottom-grid">' +
+        resultsStampBlock() +
+        resultsPerformanceChart(subjects) +
+        resultsQRCode(pin) +
+      '</div>';
   }
 
   // ----------------------------------------------------------------
@@ -216,51 +294,88 @@
   }
 
   // ----------------------------------------------------------------
-  // Print CSS
+  // Print CSS — Word-grid table aesthetic throughout.
   // ----------------------------------------------------------------
   function resultsPrintCss() {
     return '<style>' +
       '@page { size: A4 portrait; margin: 12mm; }' +
       'body { font-family: Arial, sans-serif; color: #111; padding: 16px; }' +
       '.results-preview { border: 1px solid #ccc; padding: 16px; border-radius: 8px; background: #fff; }' +
-      '.rc-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #0b6623; padding-bottom: 8px; margin-bottom: 10px; }' +
-      '.rc-header-mid { flex: 1; text-align: center; }' +
-      '.rc-title-1 { font-size: 20px; font-weight: 900; color: #0b6623; letter-spacing: 1px; }' +
-      '.rc-title-2 { font-size: 11px; letter-spacing: 2px; margin-top: 2px; }' +
-      '.rc-addr { font-size: 10px; color: #555; margin-top: 2px; }' +
-      '.rc-motto { font-size: 11px; font-style: italic; margin-top: 3px; }' +
-      '.rc-subtitle { font-size: 13px; font-weight: 700; margin-top: 6px; background: #0b6623; color: #fff; display: inline-block; padding: 3px 12px; border-radius: 4px; }' +
-      '.rc-logo { height: 62px; width: auto; }' +
-      '.rc-details, .rc-stats, .rc-comments { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }' +
-      '.rc-details td, .rc-stats td, .rc-comments td { border: 1px solid #333; padding: 5px 7px; }' +
-      '.rc-k { background: #e8f5e9; font-weight: 700; color: #0b6623; width: 110px; }' +
+
+      // ---- Header band: logo | wide centre text | learner photo ----
+      '.rc-header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #0b6623; padding-bottom: 10px; margin-bottom: 12px; }' +
+      '.rc-header-mid { flex: 1 1 auto; text-align: center; min-width: 0; }' +
+      '.rc-title-1 { font-size: 26px; font-weight: 900; color: #0b6623; letter-spacing: 1.5px; }' +
+      '.rc-title-2 { font-size: 13px; font-weight: 700; margin-top: 3px; color: #0b6623; }' +
+      '.rc-addr { font-size: 11px; color: #555; margin-top: 2px; }' +
+      '.rc-motto { font-size: 11px; font-style: italic; margin-top: 4px; letter-spacing: 2px; }' +
+      '.rc-subtitle { font-size: 13px; font-weight: 700; margin-top: 8px; background: #0b6623; color: #fff; display: inline-block; padding: 4px 14px; border-radius: 4px; }' +
+      '.rc-logo { height: 72px; width: 72px; object-fit: contain; flex: 0 0 auto; }' +
+      '.rc-photo { width: 90px; height: 90px; border-radius: 50%; overflow: hidden; border: 3px solid #0b6623; flex: 0 0 auto; background: #e8f5e9; display: flex; align-items: center; justify-content: center; }' +
+      '.rc-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }' +
+      '.rc-photo-empty span { font-size: 34px; font-weight: 900; color: #0b6623; }' +
+
+      // ---- Details / stats / comments: Word-grid style ----
+      '.rc-details, .rc-stats, .rc-comments { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }' +
+      '.rc-details td, .rc-stats td, .rc-comments td { border: 1px solid #b8c4bb; padding: 6px 8px; vertical-align: middle; }' +
+      '.rc-details tr:nth-child(odd) td, .rc-comments tr:nth-child(odd) td { background: #fbfdfb; }' +
+      '.rc-details tr:nth-child(even) td, .rc-comments tr:nth-child(even) td { background: #f1f8f2; }' +
+      '.rc-k { background: #d7ead9 !important; font-weight: 700; color: #0b6623; width: 110px; letter-spacing: .3px; }' +
       '.rc-v { font-weight: 600; }' +
-      '.rc-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }' +
-      '.rc-table th, .rc-table td { border: 1px solid #333; padding: 4px 6px; text-align: center; }' +
-      '.rc-table thead th { background: #0b6623; color: #fff; font-size: 10px; }' +
+
+      // ---- Subject table: Word-grid style ----
+      '.rc-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 0; }' +
+      '.rc-table th, .rc-table td { border: 1px solid #b8c4bb; padding: 5px 6px; text-align: center; }' +
+      '.rc-table thead th { background: #0b6623; color: #fff; font-size: 10px; letter-spacing: .3px; font-weight: 700; }' +
       '.rc-table thead tr:nth-child(2) th { background: #1a8a3a; }' +
-      '.rc-table thead tr.rc-obtainable th { background: #f1f8e9; color: #0b6623; font-size: 10px; font-weight: 700; }' +
+      '.rc-table thead tr.rc-obtainable th { background: #eaf6ec; color: #0b6623; font-size: 10px; font-weight: 700; }' +
+      '.rc-table tbody tr:nth-child(odd) td { background: #fbfdfb; }' +
+      '.rc-table tbody tr:nth-child(even) td { background: #f1f8f2; }' +
       '.rc-obtainable-lbl { text-align: right; }' +
       '.rc-subj { text-align: left; font-weight: 700; }' +
       '.rc-num { width: 42px; font-weight: 700; }' +
-      '.rc-total { background: #e8f5e9; }' +
+      '.rc-total { background: #eaf6ec !important; font-weight: 800; }' +
       '.rc-remark { text-align: left; font-weight: 700; }' +
-      '.rc-covered { background: #f0f0f0; color: #999; font-style: italic; }' +
-      '.rc-tfoot td { background: #e8f5e9; font-weight: 700; }' +
+      '.rc-covered { background: #f0f0f0 !important; color: #999; font-style: italic; }' +
+      '.rc-tfoot td { background: #d7ead9 !important; font-weight: 700; }' +
       '.rc-tfoot-label { text-align: right; }' +
-      '.rc-psy { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 6px; }' +
-      '.rc-psy-head { background: #0b6623; color: #fff; font-weight: 700; padding: 4px 6px; text-align: center; }' +
-      '.rc-psy-lbl { background: #e8f5e9; font-weight: 700; color: #0b6623; padding: 3px 6px; border: 1px solid #333; text-align: left; }' +
-      '.rc-psy-val { padding: 3px 6px; border: 1px solid #333; text-align: center; font-weight: 600; }' +
-      '.rc-stamp-cell { text-align: center; vertical-align: middle; padding: 4px; }' +
-      '.rc-stamp-img { display: block; max-height: 56px; max-width: 100%; height: auto; width: auto; margin: 0 auto; }' +
-      '.rc-scroll { overflow-x: auto; }' +
+
+      // ---- Psychomotor table: Word-grid style, its own frame ----
+      '.rc-psy { width: 100%; border-collapse: collapse; font-size: 10px; }' +
+      '.rc-psy-head { background: #0b6623; color: #fff; font-weight: 700; padding: 6px 8px; text-align: center; letter-spacing: .3px; border: 1px solid #0b6623; }' +
+      '.rc-psy-lbl { background: #d7ead9; font-weight: 700; color: #0b6623; padding: 5px 8px; border: 1px solid #b8c4bb; text-align: left; }' +
+      '.rc-psy-val { padding: 5px 8px; border: 1px solid #b8c4bb; text-align: center; font-weight: 600; }' +
+      '.rc-psy-row-a .rc-psy-val { background: #fbfdfb; }' +
+      '.rc-psy-row-b .rc-psy-val { background: #f1f8f2; }' +
+
+      // ---- Body layout: subject table + psychomotor side by side ----
       '.rc-body-grid { display: flex; gap: 8px; align-items: flex-start; }' +
-      '.rc-body-main { flex: 1 1 auto; min-width: 0; }' +
-      '.rc-body-side { flex: 0 0 160px; max-width: 160px; }' +
+      '.rc-body-main { flex: 1 1 auto; min-width: 0; overflow-x: auto; }' +
+      '.rc-body-side { flex: 0 0 175px; max-width: 175px; }' +
+      '.rc-scroll { overflow-x: auto; }' +
+
+      // ---- Bottom row: stamp | performance chart | QR ----
+      '.rc-bottom-grid { display: flex; gap: 10px; margin-top: 12px; align-items: stretch; }' +
+      '.rc-bottom-cell { border: 1px solid #b8c4bb; border-radius: 6px; overflow: hidden; flex: 1 1 0; min-width: 0; background: #fff; display: flex; flex-direction: column; }' +
+      '.rc-bottom-title { background: #0b6623; color: #fff; font-weight: 700; font-size: 10px; padding: 5px 8px; text-align: center; letter-spacing: .5px; }' +
+      '.rc-bottom-body { padding: 8px; flex: 1 1 auto; }' +
+      '.rc-bottom-stamp { display: flex; align-items: center; justify-content: center; }' +
+      '.rc-stamp-img { display: block; max-height: 90px; max-width: 100%; height: auto; width: auto; margin: 0 auto; }' +
+      '.rc-bottom-chart { display: flex; flex-direction: column; gap: 4px; }' +
+      '.rc-chart-row { display: flex; align-items: center; gap: 6px; font-size: 9px; }' +
+      '.rc-chart-lbl { flex: 0 0 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #333; font-weight: 600; }' +
+      '.rc-chart-track { flex: 1 1 auto; height: 10px; background: #eef4ef; border: 1px solid #d7ead9; border-radius: 3px; overflow: hidden; }' +
+      '.rc-chart-bar { height: 100%; }' +
+      '.rc-chart-val { flex: 0 0 22px; text-align: right; font-weight: 700; color: #0b6623; }' +
+      '.rc-chart-empty { text-align: center; color: #888; font-size: 11px; padding: 20px 0; }' +
+      '.rc-bottom-qr { display: flex; flex-direction: column; align-items: center; justify-content: center; }' +
+      '.rc-qr-img { width: 96px; height: 96px; display: block; }' +
+      '.rc-qr-caption { font-size: 10px; font-weight: 700; color: #0b6623; margin-top: 6px; letter-spacing: .5px; }' +
+
       '@media print { .results-preview { border: none; padding: 0; } body { padding: 0; } }' +
     '</style>';
   }
+
   // ----------------------------------------------------------------
   // Score band helper
   // ----------------------------------------------------------------
@@ -274,15 +389,19 @@
   }
 
   window.TISReport = {
-    resultsHeaderHtml:     resultsHeaderHtml,
-    resultsStudentBar:     resultsStudentBar,
-    resultsStatsBlock:     resultsStatsBlock,
-    resultsSessionalStats: resultsSessionalStats,
+    resultsHeaderHtml:       resultsHeaderHtml,
+    resultsStudentBar:       resultsStudentBar,
+    resultsStatsBlock:       resultsStatsBlock,
+    resultsSessionalStats:   resultsSessionalStats,
     resultsPsychomotorBlock: resultsPsychomotorBlock,
-    resultsCommentsBlock:  resultsCommentsBlock,
-    buildFeeText:          buildFeeText,
-    resultsPrintCss:       resultsPrintCss,
-    bandForTotal:          bandForTotal
+    resultsCommentsBlock:    resultsCommentsBlock,
+    resultsStampBlock:       resultsStampBlock,
+    resultsPerformanceChart: resultsPerformanceChart,
+    resultsQRCode:           resultsQRCode,
+    resultsBottomRow:        resultsBottomRow,
+    buildFeeText:            buildFeeText,
+    resultsPrintCss:         resultsPrintCss,
+    bandForTotal:            bandForTotal
   };
 })();
 // ================================================================
