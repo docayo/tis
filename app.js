@@ -9649,6 +9649,12 @@
   // ================================================================
   let __resultsCurrent = null;   // { learner, term, year, type, payload }
 
+  const RESULTS_SCHOOL_LOGO = 'https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200';
+
+  function resultsWatermarkHtml() {
+    return '<div class="rc-watermark"><img src="' + RESULTS_SCHOOL_LOGO + '" alt=""></div>';
+  }
+
   function initResultsTab() {
     const btn    = $('btnResultsLoad');
     const printB = $('btnResultsPrint');
@@ -9761,11 +9767,23 @@
   window.resultsPrint = resultsPrint;
 
   // ----------------------------------------------------------------
+  // Term promotion label helper.
+  //   1st term  → next label is  "2ND TERM <year>"
+  //   2nd term  → next label is  "3RD TERM <year>"
+  //   3rd term  → next label is the next class (from classes.next_class)
+  // ----------------------------------------------------------------
+  function nextTermLabel(termType, year) {
+    if (termType === '1st') return { term: '2nd', year: year };
+    if (termType === '2nd') return { term: '3rd', year: year };
+    return null;   // 3rd term → use next class instead
+  }
+
+  // ----------------------------------------------------------------
   // Build a termly report card (single term)
   // ----------------------------------------------------------------
   async function resultsBuildTermly(learner, term, year) {
     try {
-      const [popR, attR, scoresR, termR, resumeR, subsR, ratingsR, nextR] = await Promise.all([
+      const [popR, attR, scoresR, termR, resumeR, subsR, ratingsR, nextClassR] = await Promise.all([
         window.TIS.getClassPopulation(learner.class_name),
         window.TIS.getAttendanceSummaryForTerm(learner.id, term, year),
         window.TIS.getScoresForTerm(learner.id, term, year),
@@ -9783,7 +9801,16 @@
       const resume = (resumeR && resumeR.ok) ? resumeR.data : null;
       const subjects = (subsR && subsR.ok) ? subsR.data : [];
       const ratings = (ratingsR && ratingsR.ok) ? ratingsR.data : null;
-      const promotedTo = (nextR && nextR.ok) ? nextR.data : null;
+      const nextClass = (nextClassR && nextClassR.ok) ? nextClassR.data : null;
+
+      // PROMOTED TO: 1st/2nd → next term; 3rd → next class
+      let promotedTo;
+      const nextT = nextTermLabel(term, year);
+      if (nextT) {
+        promotedTo = { term: nextT.term, year: nextT.year };
+      } else {
+        promotedTo = nextClass || '—';
+      }
 
       const subjectMap = {};
       subjects.forEach(function (s) { subjectMap[s.code] = s.display_name; });
@@ -9794,7 +9821,6 @@
       const csR = await window.TIS.getClassSubjects(learner.class_name);
       const slotOrder = (csR && csR.ok ? csR.data : []).sort(function (a, b) { return a.slot - b.slot; });
 
-      // Class-wide highest and lowest percentage this term
       const classLearnersR = await window.TIS.getLearnersForClasses([learner.class_name]);
       const classLearnerIds = (classLearnersR && classLearnersR.ok ? classLearnersR.data : [])
         .map(function (l) { return l.id; });
@@ -9870,6 +9896,7 @@
 
       const html = '' +
         '<div class="results-preview">' +
+          resultsWatermarkHtml() +
           window.TISReport.resultsHeaderHtml('Statement of Result', learner) +
           window.TISReport.resultsStudentBar(learner, pop, term, year, att) +
           '<div class="rc-body-grid">' +
@@ -9944,7 +9971,7 @@
   async function resultsBuildSessional(learner, year) {
     try {
       const terms = ['1st', '2nd', '3rd'];
-      const [popR, subsR, csR, resumeR, nextR] = await Promise.all([
+      const [popR, subsR, csR, resumeR, nextClassR] = await Promise.all([
         window.TIS.getClassPopulation(learner.class_name),
         window.TIS.listSubjects(),
         window.TIS.getClassSubjects(learner.class_name),
@@ -9955,7 +9982,10 @@
       const subjects = (subsR && subsR.ok) ? subsR.data : [];
       const slotOrder = (csR && csR.ok ? csR.data : []).sort(function (a, b) { return a.slot - b.slot; });
       const resume = (resumeR && resumeR.ok) ? resumeR.data : null;
-      const promotedTo = (nextR && nextR.ok) ? nextR.data : null;
+      const nextClass = (nextClassR && nextClassR.ok) ? nextClassR.data : null;
+
+      // Sessional reports are end-of-year. PROMOTED TO = next class.
+      const promotedTo = nextClass || '—';
 
       const subjectMap = {};
       subjects.forEach(function (s) { subjectMap[s.code] = s.display_name; });
@@ -10063,6 +10093,7 @@
 
       const html = '' +
         '<div class="results-preview">' +
+          resultsWatermarkHtml() +
           window.TISReport.resultsHeaderHtml('Sessional Cumulative Statement of Result', learner) +
           window.TISReport.resultsStudentBar(learner, pop, '3rd', year, totalAtt) +
           '<div class="rc-body-grid">' +
