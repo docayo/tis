@@ -426,7 +426,7 @@
     } catch (err) { return fail(err); }
   };
   // ================================================================
-    // [SCAN EVENTS] — audit log of every scan.
+      // [SCAN EVENTS] — audit log of every scan.
   //   Best-effort write; a failure here must never block the scan.
   // ================================================================
   TIS.logScanEvent = async function (event) {
@@ -487,6 +487,173 @@
     }
   };
 
+  // ================================================================
+  // [FEE_SCHEDULE] — class-wide bill per class × term × year.
+  //   listFeeSchedule(year?, term?)      — filter, or all if omitted
+  //   getFeeScheduleRow(cls, term, year) — one row
+  //   upsertFeeSchedule(row)             — insert or update one row
+  //   deleteFeeSchedule(id)              — remove one row
+  // ================================================================
+  TIS.listFeeSchedule = async function (year, termType) {
+    try {
+      const sb = await loadSdk();
+      let q = sb.from('fee_schedule')
+        .select('*')
+        .order('year', { ascending: false })
+        .order('term_type', { ascending: true })
+        .order('class_name', { ascending: true });
+      if (year)     q = q.eq('year', year);
+      if (termType) q = q.eq('term_type', termType);
+      const { data, error } = await q;
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getFeeScheduleRow = async function (className, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('fee_schedule')
+        .select('*')
+        .eq('class_name', className)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertFeeSchedule = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        class_name:        String(row.class_name || '').trim(),
+        term_type:         String(row.term_type || '').trim(),
+        year:              parseInt(row.year, 10),
+        tuition:           Number(row.tuition || 0),
+        other_bills_major: Number(row.other_bills_major || 0),
+        other_bills_minor: Number(row.other_bills_minor || 0),
+        books:             Number(row.books || 0),
+        notes:             row.notes ? String(row.notes).slice(0, 500) : null,
+        updated_at:        new Date().toISOString()
+      };
+      if (!payload.class_name || !payload.term_type || !payload.year) {
+        return fail('class_name, term_type and year are required');
+      }
+      const { data, error } = await sb
+        .from('fee_schedule')
+        .upsert(payload, { onConflict: 'class_name,term_type,year' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteFeeSchedule = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('fee_schedule').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({ id: id });
+    } catch (err) { return fail(err); }
+  };
+
+  // ================================================================
+  // [FEE_ADJUSTMENTS] — per-learner additions and deductions.
+  //   listFeeAdjustments(year?, term?)  — filter, or all if omitted
+  //   getFeeAdjustment(learnerId,term,year) — one row
+  //   listFeeAdjustmentsForLearners(ids, term, year) — many rows
+  //   upsertFeeAdjustment(row)          — insert or update one row
+  //   deleteFeeAdjustment(id)           — remove one row
+  // ================================================================
+  TIS.listFeeAdjustments = async function (year, termType) {
+    try {
+      const sb = await loadSdk();
+      let q = sb.from('fee_adjustments')
+        .select('*')
+        .order('year', { ascending: false })
+        .order('term_type', { ascending: true });
+      if (year)     q = q.eq('year', year);
+      if (termType) q = q.eq('term_type', termType);
+      const { data, error } = await q;
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getFeeAdjustment = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('fee_adjustments')
+        .select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listFeeAdjustmentsForLearners = async function (learnerIds, termType, year) {
+    try {
+      if (!learnerIds || learnerIds.length === 0) return ok([]);
+      const sb = await loadSdk();
+      const map = [];
+      const CHUNK = 200;
+      for (let i = 0; i < learnerIds.length; i += CHUNK) {
+        const slice = learnerIds.slice(i, i + CHUNK);
+        const { data, error } = await sb
+          .from('fee_adjustments')
+          .select('*')
+          .eq('term_type', termType)
+          .eq('year', year)
+          .in('learner_id', slice);
+        if (error) return fail(error.message);
+        (data || []).forEach(function (r) { map.push(r); });
+      }
+      return ok(map);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertFeeAdjustment = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        learner_id: parseInt(row.learner_id, 10),
+        term_type:  String(row.term_type || '').trim(),
+        year:       parseInt(row.year, 10),
+        additions:  Number(row.additions || 0),
+        deductions: Number(row.deductions || 0),
+        reason:     row.reason ? String(row.reason).slice(0, 200) : null,
+        notes:      row.notes  ? String(row.notes).slice(0, 500) : null,
+        updated_at: new Date().toISOString()
+      };
+      if (!payload.learner_id || !payload.term_type || !payload.year) {
+        return fail('learner_id, term_type and year are required');
+      }
+      const { data, error } = await sb
+        .from('fee_adjustments')
+        .upsert(payload, { onConflict: 'learner_id,term_type,year' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteFeeAdjustment = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('fee_adjustments').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({ id: id });
+    } catch (err) { return fail(err); }
+  };
   // ================================================================
   // [AUDIT LOG] — record every operator write, with before/after
   //   snapshots so changes can be reviewed and (if safe) reversed.
