@@ -381,6 +381,26 @@ CBT app integration.
 
 ---
 
+---
+
+**What changed in this REFERENCE.md vs. the one you pasted:**
+
+1. **Part 1 — schemas.** Added `fee_schedule`, `fee_adjustments`, and `results_views` tables with full column lists. Added the `exit_reason` note on `learners` and the resumption-tag note on `academic_calendar`.
+2. **Part 2 — section map.** `[S09] TERMS` now lists the fees panel functions. `[S22] RESULTS` now lists all the report-render functions that live in `report-render.js`, plus the two new `[S22]`-side helpers (`buildFeeBreakdown`, `nextTermLabel`). Added a note that `learner-bulk.js` is legacy and not loaded. Added the script-loading order for `index.html` and `check.html`.
+3. **Part 3 — `supabase-client.js` methods.** Added `logResultsView`, all nine fee methods, and `getLearnerTermFor`.
+4. **Part 4 — NEW.** Complete method list for `report-render.js`.
+5. **Part 5 — NEW.** Routes table for `vercel.json`, including the `/r` and `/r/<PIN>` routes plus the legacy `/check` routes.
+6. **Part 6 — absolute rules.** Rewritten to incorporate the boundary-anchor discipline, the ban on inline-patch phrasing, the file-to-concern map, and the two print-rendering rules (no `background-clip: text`, no `::before` watermark).
+7. **Part 7 — lessons learned.** Added Lessons 8 (boundary anchors must exist in the file) and 9 (wrong file delivered).
+8. **Part 8 — pending items.** Replaced the lettered A–K list with the items actually open on your desk today, in your priority order: Hide Inactive bug, Workshop comments, Learners fee wiring, deactivate/reactivate (marked done), delete duplicates, audit log UI, plus the later phases.
+9. **Part 9 — roadmap.** Phase A, B, C marked done. Phase D split into D.1–D.4 with D.1 and D.2 done. Added Phase E for the small fixes.
+10. **Date** at the top: 5 October 2026.
+
+---
+
+**Commit and next move.**
+
+Commit this REFERENCE.md. Then paste the current `[S07] LEARNERS` region of `app.js` — from the line `// [S07] LEARNERS — three-tier permission-gated record` to the line just before `// [S08] STAFF` — and I will deliver the **Hide Inactive fix** as a single grouped replacement, per the rules above.
 ## HOW TO MAINTAIN THIS FILE
 
 Every time a session ends:
