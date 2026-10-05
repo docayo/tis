@@ -10100,6 +10100,7 @@
   window.resultsPrint = resultsPrint;
 
   // ----------------------------------------------------------------
+    // ----------------------------------------------------------------
   // Term promotion label helper.
   //   1st term  → next label is  "2ND TERM <year>"
   //   2nd term  → next label is  "3RD TERM <year>"
@@ -10109,6 +10110,74 @@
     if (termType === '1st') return { term: '2nd', year: year };
     if (termType === '2nd') return { term: '3rd', year: year };
     return null;   // 3rd term → use next class instead
+  }
+
+  // ----------------------------------------------------------------
+  // Fee breakdown helper.
+  //   Reads the class bill from fee_schedule, the learner's adjustment
+  //   from fee_adjustments, and the previous term's carry-forward
+  //   from learner_terms. Computes the eight figures the report card
+  //   needs and returns them as an object for resultsFeeBreakdownBlock.
+  //
+  //   Formula (gross bill, no subtraction of payments):
+  //     adjustedTuition = tuition - scholarship
+  //     balanceCd       = adjustedTuition + otherMajor + otherMinor
+  //                       + books + additions + prevBf
+  // ----------------------------------------------------------------
+  async function buildFeeBreakdown(learner, term, year) {
+    try {
+      const [schedR, adjR] = await Promise.all([
+        window.TIS.getFeeScheduleRow(learner.class_name, term, year),
+        window.TIS.getFeeAdjustment(learner.id, term, year)
+      ]);
+
+      const sched = (schedR && schedR.ok) ? schedR.data : null;
+      const adj   = (adjR   && adjR.ok)   ? adjR.data   : null;
+
+      const tuition     = Number(sched && sched.tuition           || 0);
+      const otherMajor  = Number(sched && sched.other_bills_major || 0);
+      const otherMinor  = Number(sched && sched.other_bills_minor || 0);
+      const books       = Number(sched && sched.books             || 0);
+      const scholarship = Number(adj   && adj.deductions          || 0);
+      const additions   = Number(adj   && adj.additions           || 0);
+
+      // Previous term's carry-forward comes from learner_terms.
+      // For a 1st term report there is no prior term, so it is 0.
+      let prevBf = 0;
+      try {
+        let prevTerm = null;
+        let prevYear = year;
+        if (term === '2nd') { prevTerm = '1st'; prevYear = year; }
+        else if (term === '3rd') { prevTerm = '2nd'; prevYear = year; }
+        else if (term === '1st') { prevTerm = '3rd'; prevYear = year - 1; }
+        if (prevTerm) {
+          const pR = await window.TIS.getLearnerTermFor(learner.id, prevTerm, prevYear);
+          if (pR && pR.ok && pR.data) {
+            prevBf = Number(String(pR.data.balance_cf || 0).replace(/[^0-9.\-]/g, '')) || 0;
+          }
+        }
+      } catch (e) { prevBf = 0; }
+
+      const adjustedTuition = tuition - scholarship;
+      const balanceCd = adjustedTuition + otherMajor + otherMinor + books + additions + prevBf;
+
+      return {
+        prevBf:          prevBf,
+        tuition:         tuition,
+        scholarship:     scholarship,
+        adjustedTuition: adjustedTuition,
+        otherMajor:      otherMajor,
+        otherMinor:      otherMinor,
+        books:           books,
+        additions:       additions,
+        balanceCd:       balanceCd
+      };
+    } catch (err) {
+      return {
+        prevBf: 0, tuition: 0, scholarship: 0, adjustedTuition: 0,
+        otherMajor: 0, otherMinor: 0, books: 0, additions: 0, balanceCd: 0
+      };
+    }
   }
 
   // ----------------------------------------------------------------
