@@ -1400,7 +1400,23 @@
     html += '</div></div></div>';
     setHTML('modalContainer', html);
   }
-
+  // Build an intent:// URL that hands HTML to RawBT for direct thermal
+  // printing. RawBT renders it at the receipt's native 203 dpi — no
+  // Chrome print-dialog downscaling, which is what was making the text tiny.
+  function rawbtPrint(htmlString) {
+    // RawBT accepts base64 in the `base64` extra; encode as UTF-8 safe base64.
+    const utf8 = unescape(encodeURIComponent(htmlString));
+    const b64  = btoa(utf8);
+    const intent =
+      'intent:base64,' + b64 +
+      '#Intent;scheme=rawbt;' +
+      'package=ru.a402d.rawbtprinter;' +
+      'S.title=' + encodeURIComponent('TIS Learner Card') + ';' +
+      'end;';
+    // Fire the intent — Android will route it to RawBT.
+    window.location.href = intent;
+  }
+  window.rawbtPrint = rawbtPrint;
   async function printLearnerCard(pin) {
     const secA = document.getElementById('pp_secA');
     const secB = document.getElementById('pp_secB');
@@ -1465,23 +1481,38 @@
       '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
       '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
 
-    let html = '<html><head><title>' + esc(d.name) + '</title><style>' + (paper === '80mm' ? css80 : cssA4) + '</style></head><body>';
-    html += '<div class="hdr">';
-    if (paper === 'A4') html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
-    html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
-            (paper === 'A4' ? '<div style="font-style:italic;color:#666;font-size:12px;">Scientia est potentia</div>' : '') +
-            '</div>';
-    if (paper === 'A4') html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
-    html += '</div>';
-    html += '<h2 style="margin-top:14px;">' + esc(d.name) + ' — ' + esc(d.pin) + '</h2>';
-    html += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Class: ' + esc(d.class_name) + ' · Active Term: ' + esc(termLabel) + '</div>';
-
-    const rowFn = function (label, value) {
+      const rowFn = function (label, value) {
       return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + esc(value) + '</span></div>';
     };
 
+    let html = '<!doctype html><html><head><meta charset="utf-8">' +
+               '<title>' + esc(d.name) + '</title>' +
+               '<style>' + (paper === '80mm' ? css80 : cssA4) + '</style>' +
+               '</head><body>';
+
+    // ---------- Header ----------
+    html += '<div class="hdr">';
+    if (paper === 'A4') {
+      html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
+      html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
+              '<div class="sub" style="font-style:italic;color:#666;">Scientia est potentia</div></div>';
+      html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
+    } else {
+      // 80mm: text-only, big, centred. No logos — they waste vertical paper.
+      html += '<h1>THE IDEAL SCHOOLS</h1>';
+      html += '<div class="sub">Scientia est potentia</div>';
+    }
+    html += '</div>';
+
+    // ---------- Who ----------
+    html += '<div class="who">' + esc(d.name || '') + '</div>';
+    html += '<div class="who-sub">PIN ' + esc(d.pin || '') +
+            ' &middot; ' + esc(d.class_name || '') +
+            ' &middot; ' + esc(termLabel) + '</div>';
+
+    // ---------- Section A ----------
     if (wantA) {
-      html += '<h2>Section A — Identity</h2>';
+      html += '<h2>Section A &mdash; Identity</h2>';
       html += rowFn('Class', d.class_name || '—');
       html += rowFn('PIN', d.pin || '—');
       html += rowFn('Name', d.name || '—');
@@ -1492,8 +1523,10 @@
       html += rowFn('Clearance Date', (termRow && fmtDateOrDash(termRow.clearance)) || '—');
       html += rowFn('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
     }
+
+    // ---------- Section B ----------
     if (wantB) {
-      html += '<h2>Section B — Fees (' + termLabel + ')</h2>';
+      html += '<h2>Section B &mdash; Fees</h2>';
       html += rowFn('Tuition', moneyOrDash(termRow && termRow.tuition));
       html += rowFn('Scholarship', moneyOrDash(termRow && termRow.scholarship));
       html += rowFn('Adjusted Tuition', moneyOrDash(adjusted));
@@ -1502,7 +1535,7 @@
           const dt = termRow['part_payment_' + n + '_date'];
           const am = termRow['part_payment_' + n + '_amount'];
           if ((!dt || dt === '') && (!am || am === '')) continue;
-          html += rowFn('Part Payment ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
+          html += rowFn('Part Pay ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
         }
       }
       html += rowFn('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
@@ -1510,13 +1543,15 @@
       html += rowFn('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
       html += rowFn('Net Bills', moneyOrDash(netBills));
       html += rowFn('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
-      html += rowFn('Blood Group / Genotype', d.blood_group || '—');
+      html += rowFn('Blood Group', d.blood_group || '—');
       html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
     }
+
+    // ---------- Section C ----------
     if (wantC) {
-      html += '<h2>Section C — History & Origin</h2>';
-      html += rowFn('Class Before Admission', d.class_before_admission || '—');
+      html += '<h2>Section C &mdash; History</h2>';
+      html += rowFn('Class Before Adm.', d.class_before_admission || '—');
       html += rowFn('Date of Admission', d.date_of_admission || '—');
       html += rowFn('Class Admitted Into', d.class_admitted_into || '—');
       html += rowFn('LIN', d.lin || '—');
@@ -1533,9 +1568,26 @@
       html += rowFn('3rd Phone (' + ph3.label + ')', ph3.value);
     }
 
+    // ---------- Footer ----------
+    html += '<div class="footer">Printed ' + new Date().toLocaleString() + '</div>';
+
     html += '</body></html>';
-    w.document.write(html); w.document.close();
-    setTimeout(function () { w.print(); }, 250);
+
+        if (paper === '80mm') {
+      // Hand the SAME HTML straight to RawBT so it renders at the
+      // printer's native resolution. No print dialog, no scaling.
+      rawbtPrint(html);
+      closeModal();
+      return;
+    }
+
+    // A4 path — keep the normal browser print dialog.
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function () {
+      try { w.focus(); w.print(); } catch (e) { /* user can Ctrl+P */ }
+    }, 400);
     closeModal();
   }
 
