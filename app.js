@@ -167,11 +167,18 @@
   function applyPermissionsToUI() {
     document.querySelectorAll('.nav-tab').forEach(btn => {
       const mod = btn.dataset.tab;
+      // Prospects is intentionally open to every operator.
+      // It is not permission-gated and carries no read_ / write_ /
+      // print_ authority key. Skip it here so every role sees it.
+      if (mod === 'prospects') { btn.classList.remove('hidden'); return; }
       if (hasPermission('read_' + mod)) btn.classList.remove('hidden');
       else btn.classList.add('hidden');
     });
     document.querySelectorAll('[data-perm]').forEach(btn => {
-      if (hasPermission(btn.dataset.perm)) btn.classList.remove('hidden');
+      const key = btn.dataset.perm;
+      // Same rule for any control tagged *_prospects.
+      if (key && key.indexOf('prospects') !== -1) { btn.classList.remove('hidden'); return; }
+      if (hasPermission(key)) btn.classList.remove('hidden');
       else btn.classList.add('hidden');
     });
   }
@@ -1239,14 +1246,11 @@
     let html = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.full_name) + '</title>';
     html += '<style>' + css80 + '</style></head><body>';
 
-    html += '<div class="hdr">';
-    html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="">';
-    html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="">';
+       html += '<div class="hdr">';
     html += '<h1>THE IDEAL SCHOOLS</h1>';
-    html += '<div class="sub">Scientia est potentia</div>';
+    html += '<div class="sub">The Ideal Secondary School · The Ideal Kiddies School</div>';
+    html += '<div class="sub" style="font-style:italic;">Scientia est potentia</div>';
     html += '</div>';
-
-    html += '<div class="who">' + esc(p.full_name) + '</div>';
     html += '<div class="who-sub">Proposed: ' + esc(p.proposed_class) + ' &middot; ' + esc(term.label) + '</div>';
 
     html += '<h2>Class Bill</h2>';
