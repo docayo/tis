@@ -7434,10 +7434,63 @@
   }
   window.wsLoadClass = wsLoadClass;
 
-  function wsRenderTable() {
+  // ================================================================
+  // Comment-bank cache.
+  //   Loaded once per class-load, per field, per band. Re-used by
+  //   the default preload and (Delivery 6) by the Up/Down cycler.
+  //   Key shape: "<field>|<band>" → array of { text, category }
+  // ================================================================
+  let __wsCommentBankCache = {};
+
+  async function wsEnsureCommentBank(field, band) {
+    const key = field + '|' + band;
+    if (__wsCommentBankCache[key]) return __wsCommentBankCache[key];
+    try {
+      const r = await window.TIS.getCommentBank(field, band);
+      const list = (r && r.ok && r.data ? r.data : [])
+        .filter(function (c) { return c.is_active !== false; });
+      __wsCommentBankCache[key] = list;
+      return list;
+    } catch (e) {
+      __wsCommentBankCache[key] = [];
+      return [];
+    }
+  }
+  window.wsEnsureCommentBank = wsEnsureCommentBank;
+
+  // Fill {first}, {strong1}, {weak1} placeholders. strong1/weak1 are
+  // empty here because the Workshop has no scores context — the report
+  // card renderer fills them separately.
+  function wsFillCommentTemplate(tpl, learner) {
+    const full = (learner && learner.name) || '';
+    const first = full.split(' ').slice(1).join(' ') || full.split(' ')[0] || '';
+    return String(tpl || '')
+      .replace(/\{first\}/g,   first)
+      .replace(/\{strong1\}/g, '')
+      .replace(/\{weak1\}/g,   '');
+  }
+  window.wsFillCommentTemplate = wsFillCommentTemplate;
+
+  async function wsRenderTable() {
     if (!wsState.loaded) return;
     const learners = wsState.learners;
     const termLabel = wsState.term.toUpperCase() + ' TERM ' + wsState.year;
+
+    // ---- Preload the comment bank for every (field, band) combo we
+    //      will need on this render. Two fields × up to six bands,
+    //      but only bands actually present. Cache is keyed so repeat
+    //      loads of the same class cost nothing.
+    const bandsNeeded = {};
+    learners.forEach(function (l) {
+      const avg = wsState.averages[l.id];
+      const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
+      bandsNeeded[band] = true;
+    });
+    const bandKeys = Object.keys(bandsNeeded);
+    await Promise.all([
+      Promise.all(bandKeys.map(function (b) { return wsEnsureCommentBank('teacher', b); })),
+      Promise.all(bandKeys.map(function (b) { return wsEnsureCommentBank('principal', b); }))
+    ]);
 
     let html = '<div class="card-bg" style="padding:0;overflow-x:auto;">';
     html += '<div style="padding:10px 14px;background:#0d4d26;color:#fff;font-weight:700;font-size:13px;">' +
@@ -7464,14 +7517,40 @@
     learners.forEach(function (l) {
       const rating = wsState.ratings[l.id];
       const avg = wsState.averages[l.id];
-      const band = (avg != null) ? window.TIS.bandForAverage(avg) : '—';
-      const bandLabel = band === '—' ? '—' :
-                        band.replace('_', ' ').toUpperCase();
+      const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
+      const bandLabel = (avg != null) ? band.replace('_', ' ').toUpperCase() : '—';
 
       // Pre-fill ratings
       const r = (rating && rating.ratings) ? rating.ratings : {};
       const teacherEdited   = rating && rating.teacher_edited;
       const principalEdited = rating && rating.principal_edited;
+
+      // ---- Comment defaults ----
+      // Case A: no rating row at all.
+      // Case B: rating row exists but comment is empty.
+      // Cases C and D: comment already present → leave untouched.
+      const existingTeacher   = (rating && rating.teacher_comment)   || '';
+      const existingPrincipal = (rating && rating.principal_comment) || '';
+
+      let teacherValue   = existingTeacher;
+      let principalValue = existingPrincipal;
+      let teacherIsDefault   = false;
+      let principalIsDefault = false;
+
+      if (!existingTeacher) {
+        const bank = __wsCommentBankCache['teacher|' + band] || [];
+        if (bank.length > 0) {
+          teacherValue = wsFillCommentTemplate(bank[0].text, l);
+          teacherIsDefault = true;
+        }
+      }
+      if (!existingPrincipal) {
+        const bank = __wsCommentBankCache['principal|' + band] || [];
+        if (bank.length > 0) {
+          principalValue = wsFillCommentTemplate(bank[0].text, l);
+          principalIsDefault = true;
+        }
+      }
 
       // Row background: green if there's a ratings row, grey if not.
       const rowBg = rating ? '#f7fbf7' : '#fafafa';
@@ -7499,31 +7578,35 @@
       // Teacher comment
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
       html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
+              'data-default="' + (teacherIsDefault ? '1' : '0') + '" ' +
               'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
-              'style="width:100%;font-size:11px;padding:4px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">' +
-              esc((rating && rating.teacher_comment) || '') + '</textarea>';
+              'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (teacherIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
+              esc(teacherValue) + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
-              'onclick="wsOpenCommentBank(\'teacher\', \'' + (band === '—' ? 'average' : band) + '\', ' + l.id + ', \'teacher_comment\')">' +
+              'onclick="wsOpenCommentBank(\'teacher\', \'' + band + '\', ' + l.id + ', \'teacher_comment\')">' +
               'Pick from bank</button>';
       html += '</td>';
 
       // Principal comment
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
       html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="principal_comment" ' +
+              'data-default="' + (principalIsDefault ? '1' : '0') + '" ' +
               'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
-              'style="width:100%;font-size:11px;padding:4px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">' +
-              esc((rating && rating.principal_comment) || '') + '</textarea>';
+              'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (principalIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
+              esc(principalValue) + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
-              'onclick="wsOpenCommentBank(\'principal\', \'' + (band === '—' ? 'average' : band) + '\', ' + l.id + ', \'principal_comment\')">' +
+              'onclick="wsOpenCommentBank(\'principal\', \'' + band + '\', ' + l.id + ', \'principal_comment\')">' +
               'Pick from bank</button>';
       html += '</td>';
 
-      // State chip
+      // State chip — priority: EDITED > AUTO > DEFAULT > —
       let chip = '<span style="color:#999;font-size:10px;">—</span>';
       if (teacherEdited || principalEdited) {
         chip = '<span style="background:#d4a017;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">EDITED</span>';
       } else if (rating) {
         chip = '<span style="background:#e0e0e0;color:#333;font-size:10px;padding:2px 6px;border-radius:4px;">AUTO</span>';
+      } else if (teacherIsDefault || principalIsDefault) {
+        chip = '<span style="background:#e8f5e9;color:#0d4d26;border:1px solid #c8e6c9;font-size:10px;padding:2px 6px;border-radius:4px;">DEFAULT</span>';
       }
       html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;" data-state-chip="' + l.id + '">' + chip + '</td>';
 
