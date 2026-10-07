@@ -167,18 +167,11 @@
   function applyPermissionsToUI() {
     document.querySelectorAll('.nav-tab').forEach(btn => {
       const mod = btn.dataset.tab;
-      // Prospects is intentionally open to every operator.
-      // It is not permission-gated and carries no read_ / write_ /
-      // print_ authority key. Skip it here so every role sees it.
-      if (mod === 'prospects' || mod === 'collectibles') { btn.classList.remove('hidden'); return; }
       if (hasPermission('read_' + mod)) btn.classList.remove('hidden');
       else btn.classList.add('hidden');
     });
     document.querySelectorAll('[data-perm]').forEach(btn => {
-      const key = btn.dataset.perm;
-      // Same rule for any control tagged *_prospects.
-      if (key && key.indexOf('prospects') !== -1) { btn.classList.remove('hidden'); return; }
-      if (hasPermission(key)) btn.classList.remove('hidden');
+      if (hasPermission(btn.dataset.perm)) btn.classList.remove('hidden');
       else btn.classList.add('hidden');
     });
   }
@@ -311,10 +304,8 @@
   // ================================================================
   // [S06] NAVIGATION
   // ================================================================
-     function switchTab(name) {
-    // Prospects and Collectibles are open to every operator.
-    // Every other tab keeps the existing read-permission gate.
-    if (name !== 'prospects' && name !== 'collectibles' && !hasPermission('read_' + name)) {
+  function switchTab(name) {
+    if (!hasPermission('read_' + name)) {
       showToast('You do not have access to that module.', 'warning');
       return;
     }
@@ -329,9 +320,7 @@
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
     try {
-      if (name === 'collectibles') initCollectiblesTab();
-      else if (name === 'learners') loadLearners();
-      else if (name === 'prospects') initProspectsTab();
+      if (name === 'learners') loadLearners();
       else if (name === 'staff') loadStaff();
       else if (name === 'terms') initTermsTab();
       else if (name === 'attendance') initLearnerAttendanceTab();
@@ -595,171 +584,17 @@
   //   B: admin / super_admin
   //   C: super_admin only
   // ================================================================
-  // ================================================================
-  // Resolve the fee picture for one learner × term × year.
-  //
-  // Source of truth rule:
-  //   • Before any naira hits learner_terms for that term → read
-  //     fee_schedule + fee_adjustments LIVE. Office edits to the
-  //     class bill or a learner adjustment show up immediately.
-  //   • After the first part-payment is recorded → read
-  //     learner_terms. The snapshot is now a receipt and is frozen.
-  //
-  // Returns an object with the same field names the modal and the
-  // printed card have always used, so neither has to change its
-  // shape — only where the numbers come from.
-  // ================================================================
-  function previousTermOf(termType, year) {
-    const t = String(termType || '').trim().toLowerCase();
-    if (t === '3rd') return { term_type: '2nd', year: Number(year) };
-    if (t === '2nd') return { term_type: '1st', year: Number(year) };
-    if (t === '1st') return { term_type: '3rd', year: Number(year) - 1 };
-    return null;
-  }
-  window.previousTermOf = previousTermOf;
-
-  async function resolveLearnerFeePicture(learner, termRow, term, year) {
-    const empty = {
-      source: 'none',
-      tuition: 0, scholarship: 0, additions: 0,
-      other_bills_major: 0, other_bills_minor: 0, books: 0,
-      adjusted_tuition: 0,
-      balance_bf: 0, net_bills: 0,
-      total_part_payment: 0, balance_cf: 0,
-      part_payments: [],
-      cleared: '', clearance: '',
-      schedule_found: false, adjustment_found: false
-    };
-    if (!learner || !learner.id || !term) return empty;
-
-    // Does the snapshot already carry money?
-    function snapshotHasMoney(row) {
-      if (!row) return false;
-      if (parseNum(row.total_part_payment) > 0) return true;
-      for (let n = 1; n <= 5; n++) {
-        if (parseNum(row['part_payment_' + n + '_amount']) > 0) return true;
-      }
-      return false;
-    }
-
-    const locked = snapshotHasMoney(termRow);
-
-    // ---- Pull the live sources (used when not locked) ----
-    let schedRow = null, adjRow = null;
-    if (!locked) {
-      const className = learner.class_name || (termRow && termRow.class_name) || '';
-      if (className) {
-        try {
-          const sr = await window.TIS.getFeeScheduleRow(className, term.term_type, year);
-          if (sr && sr.ok && sr.data) schedRow = sr.data;
-        } catch (e) { /* silent */ }
-      }
-      try {
-        const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
-        if (ar && ar.ok && ar.data) adjRow = ar.data;
-      } catch (e) { /* silent */ }
-    }
-
-    // ---- Assemble part-payment list (only exists on the snapshot) ----
-    const ppList = [];
-    if (termRow) {
-      for (let n = 1; n <= 5; n++) {
-        const dt = termRow['part_payment_' + n + '_date'];
-        const am = termRow['part_payment_' + n + '_amount'];
-        if ((!dt || dt === '') && (!am || am === '')) continue;
-        ppList.push({ n: n, date: dt, amount: am });
-      }
-    }
-
-    // ---- LOCKED: learner_terms is the receipt ----
-    if (locked) {
-      const tuition     = parseNum(termRow.tuition);
-      const scholarship = parseNum(termRow.scholarship);
-      const otherMajor  = parseNum(termRow.other_bills_major);
-      const otherMinor  = parseNum(termRow.other_bills_minor);
-      const books       = parseNum(termRow.books);
-      const netBills    = tuition + otherMajor + otherMinor + books;
-      return {
-        source: 'snapshot',
-        tuition: tuition,
-        scholarship: scholarship,
-        additions: parseNum(termRow.additions),
-        other_bills_major: otherMajor,
-        other_bills_minor: otherMinor,
-        books: books,
-        adjusted_tuition: tuition - scholarship,
-        balance_bf: parseNum(termRow.balance_bf),
-        net_bills: netBills,
-        total_part_payment: parseNum(termRow.total_part_payment),
-        balance_cf: parseNum(termRow.balance_cf),
-        part_payments: ppList,
-        cleared: termRow.cleared || '',
-        clearance: termRow.clearance || '',
-        schedule_found: false,
-        adjustment_found: false
-      };
-    }
-
-    // ---- NOT LOCKED: live schedule + live adjustment ----
-    const tuition     = schedRow ? parseNum(schedRow.tuition)            : parseNum(termRow && termRow.tuition);
-    const otherMajor  = schedRow ? parseNum(schedRow.other_bills_major)  : parseNum(termRow && termRow.other_bills_major);
-    const otherMinor  = schedRow ? parseNum(schedRow.other_bills_minor)  : parseNum(termRow && termRow.other_bills_minor);
-    const books       = schedRow ? parseNum(schedRow.books)              : parseNum(termRow && termRow.books);
-
-    const additions   = adjRow ? parseNum(adjRow.additions)   : 0;
-    const deductions  = adjRow ? parseNum(adjRow.deductions)  : 0;
-
-    // Balance B/F still comes from the snapshot if it exists
-    // (previous term carried it forward when the row was created).
-    const balanceBf   = parseNum(termRow && termRow.balance_bf);
-
-    // Net = class bill + additions − deductions
-    const netBills    = tuition + otherMajor + otherMinor + books + additions - deductions;
-    const adjusted    = tuition - deductions;
-
-    // No payments yet by definition of this branch.
-    const paid        = 0;
-    const balanceCf   = netBills + balanceBf - paid;
-
-    return {
-      source: 'live',
-      tuition: tuition,
-      scholarship: deductions,       // shown as Scholarship on the card
-      additions: additions,          // shown as Additions on the card
-      other_bills_major: otherMajor,
-      other_bills_minor: otherMinor,
-      books: books,
-      adjusted_tuition: adjusted,
-      balance_bf: balanceBf,
-      net_bills: netBills,
-      total_part_payment: paid,
-      balance_cf: balanceCf,
-      part_payments: [],
-      cleared: (termRow && termRow.cleared) || '',
-      clearance: (termRow && termRow.clearance) || '',
-      schedule_found: !!schedRow,
-      adjustment_found: !!adjRow
-    };
-  }
-  window.resolveLearnerFeePicture = resolveLearnerFeePicture;
-
-  // ================================================================
-  // View modal — three-tier permission gating
-  //   A: everyone
-  //   B: admin / super_admin
-  //   C: super_admin only
-  //
-  // Fee picture (Section A "Balance C/F", Section B entirely):
-  //   resolved by resolveLearnerFeePicture() above. Live from
-  //   fee_schedule + fee_adjustments until a payment is recorded,
-  //   then frozen from learner_terms.
-  // ================================================================
   async function openLearnerViewModal(pin) {
     closeModal();
     startLoader();
     const learnerR = await window.TIS.getLearnerByPin(pin);
     const termsR   = learnerR && learnerR.ok && learnerR.data
       ? await window.TIS.getLearnerTermForActive(learnerR.data.id) : null;
+    let prevTermRow = null;
+    if (learnerR && learnerR.ok && learnerR.data) {
+      const prevR = await window.TIS.getLearnerTermFor(learnerR.data.id, '3rd', 2025);
+      if (prevR && prevR.ok) prevTermRow = prevR.data;
+    }
     stopLoader();
 
     if (!learnerR || !learnerR.ok || !learnerR.data) {
@@ -771,19 +606,6 @@
     const term    = termsR && termsR.ok ? termsR.data.term : null;
     const termLabel = term ? term.label : 'No active term';
 
-    // ---- Dynamic previous term, derived from the active term ----
-    let prevTermRow = null;
-    if (term) {
-      const prev = previousTermOf(term.term_type, term.year);
-      if (prev) {
-        const prevR = await window.TIS.getLearnerTermFor(d.id, prev.term_type, prev.year);
-        if (prevR && prevR.ok) prevTermRow = prevR.data;
-      }
-    }
-
-    // ---- Resolve the fee picture for the active term ----
-    const fee = await resolveLearnerFeePicture(d, termRow, term, term ? term.year : null);
-
     const canA = true;
     const canB = isAdmin();
     const canC = isSuperAdmin();
@@ -792,25 +614,25 @@
     const ph2 = phoneFor(d, 2);
     const ph3 = phoneFor(d, 3);
 
-    // Header card shows the "Balance C/F" number, sourced from
-    // whichever side of the rule is in force.
-    const headerBalance = fee.balance_cf;
+    const tuition     = parseNum(termRow && termRow.tuition);
+    const scholarship = parseNum(termRow && termRow.scholarship);
+    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
+    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
+    const books       = parseNum(termRow && termRow.books);
+    const netBills    = tuition + otherMajor + otherMinor + books;
+    const adjusted    = tuition - scholarship;
 
     let ppRows = '';
-    if (fee.part_payments.length) {
-      fee.part_payments.forEach(function (p) {
+    if (termRow) {
+      for (let n = 1; n <= 5; n++) {
+        const dt = termRow['part_payment_' + n + '_date'];
+        const am = termRow['part_payment_' + n + '_amount'];
+        if ((!dt || dt === '') && (!am || am === '')) continue;
         ppRows += '<div class="info-row" style="background:#f7fbf7;">' +
-                  '<span class="info-label">Part Payment ' + p.n + '</span>' +
-                  '<span class="info-value">' + fmtDateOrDash(p.date) + ' — ' + moneyOrDash(p.amount) + '</span></div>';
-      });
+                  '<span class="info-label">Part Payment ' + n + '</span>' +
+                  '<span class="info-value">' + fmtDateOrDash(dt) + ' — ' + moneyOrDash(am) + '</span></div>';
+      }
     }
-
-    const sourceNote = fee.source === 'snapshot'
-      ? '<div style="font-size:10px;color:#666;margin-top:4px;">Fees from learner record (payment recorded).</div>'
-      : (fee.source === 'live'
-          ? '<div style="font-size:10px;color:#666;margin-top:4px;">Fees live from class bill' +
-            (fee.adjustment_found ? ' + adjustment' : '') + '.</div>'
-          : '');
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)closeLearnerModal()">';
     html += '<div class="modal-box wide lbModal" onclick="event.stopPropagation()">';
@@ -846,32 +668,30 @@
       html += infoRow('Gender', d.gender);
       html += infoRow('1st Phone (' + ph1.label + ')', ph1.value);
       html += infoRow('Account Number', d.account_number);
-      html += infoRow('Clearance Status', fee.cleared || '—');
-      html += infoRow('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
-      html += infoRow('Balance C/F', moneyOrDash(headerBalance));
+      html += infoRow('Clearance Status', termRow ? termRow.cleared : '—');
+      html += infoRow('Clearance Date', termRow ? fmtDateOrDash(termRow.clearance) : '—');
+      html += infoRow('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
       html += '</div></div>';
     }
 
     if (canB) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
-      html += infoRow('Previous Term Balance B/F', prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
-      html += infoRow('Current Term Tuition', moneyOrDash(fee.tuition));
-      html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
-      html += infoRow('Additions', moneyOrDash(fee.additions));
-      html += infoRow('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
+      html += infoRow('Previous Term Balance B/F', prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(termRow && termRow.balance_bf));
+      html += infoRow('Current Term Tuition', moneyOrDash(termRow && termRow.tuition));
+      html += infoRow('Scholarship Amount', moneyOrDash(termRow && termRow.scholarship));
+      html += infoRow('Adjusted Tuition Total', moneyOrDash(adjusted));
       if (ppRows) {
         html += '<div style="margin:8px 0 4px;font-weight:700;font-size:11px;color:#0d4d26;">Part Payments</div>';
         html += ppRows;
       }
-      html += infoRow('Total Paid', moneyOrDash(fee.total_part_payment));
-      html += infoRow('Other Bills Major', moneyOrDash(fee.other_bills_major));
-      html += infoRow('Books', moneyOrDash(fee.books));
-      html += infoRow('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
-      html += infoRow('Net Bills', moneyOrDash(fee.net_bills));
+      html += infoRow('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
+      html += infoRow('Books', moneyOrDash(termRow && termRow.books));
+      html += infoRow('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
+      html += infoRow('Net Bills', moneyOrDash(netBills));
+      html += infoRow('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
       html += infoRow('Blood Group / Genotype', d.blood_group);
       html += infoRow('Allergy', d.allergy);
       html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
-      html += sourceNote;
       html += '</div></div>';
     }
 
@@ -920,509 +740,6 @@
     const el = document.getElementById('lbKeysHelp');
     if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
   };
-
-  // ================================================================
-  // [S07b] PROSPECTS — prospective learners, pre-admission.
-  //   Separate from [S07] Learners: no PIN, no learner_terms.
-  //   On Admit, a real learner row is created and the learner edit
-  //   modal opens so the office can fill remaining fields.
-  //   Print: 80mm thermal, full school banner.
-  // ================================================================
-  let __prospectsCache = [];
-  let __prospectsFetchedAt = 0;
-
-  async function loadProspects() {
-    const now = Date.now();
-    if (__prospectsCache.length > 0 && (now - __prospectsFetchedAt) < 60 * 1000) {
-      renderProspects(__prospectsCache);
-      return;
-    }
-    setHTML('prospectsGrid', pageLoaderHTML('Loading prospects…'));
-    startLoader();
-    const r = await window.TIS.listProspectiveLearners();
-    stopLoader();
-    if (!r || !r.ok) {
-      setHTML('prospectsGrid', errorHTML('Could not load prospects', r && r.error));
-      return;
-    }
-    __prospectsCache = r.data || [];
-    __prospectsFetchedAt = now;
-    renderProspects(__prospectsCache);
-  }
-  window.loadProspects = loadProspects;
-
-    function renderProspects(rows) {
-    const filterEl = document.getElementById('prospectStatusFilter');
-    const filter = filterEl ? filterEl.value : '';
-    const searchEl = document.getElementById('prospectSearchInput');
-    const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
-
-    let list = rows.slice();
-    if (filter) list = list.filter(function (p) { return p.status === filter; });
-    if (q) list = list.filter(function (p) {
-      return (p.full_name || '').toLowerCase().indexOf(q) !== -1 ||
-             (p.father_phone || '').indexOf(q) !== -1 ||
-             (p.mother_phone || '').indexOf(q) !== -1 ||
-             (p.parents_name || '').toLowerCase().indexOf(q) !== -1;
-    });
-
-    // Stats always computed from the full cached set, not the filtered view.
-    const total = rows.length;
-    const byStatus = { new: 0, enrolled: 0, admitted: 0, declined: 0 };
-    rows.forEach(function (p) { if (byStatus[p.status] !== undefined) byStatus[p.status]++; });
-    setHTML('prospectStats',
-      '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div>' +
-      '<div class="stat-card gold"><div class="stat-label">New</div><div class="stat-value gold">' + byStatus.new + '</div></div>' +
-      '<div class="stat-card"><div class="stat-label">Enrolled</div><div class="stat-value">' + byStatus.enrolled + '</div></div>' +
-      '<div class="stat-card red"><div class="stat-label">Declined</div><div class="stat-value red">' + byStatus.declined + '</div></div>');
-
-    if (list.length === 0) {
-      setHTML('prospectsGrid', emptyHTML('fa-user-plus', 'No prospects to show', 'Add one to get started.'));
-      return;
-    }
-
-    let html = '<div class="card-bg" style="overflow-x:auto;">';
-    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
-            '<th style="text-align:left;padding:6px;">Name</th>' +
-            '<th style="text-align:left;padding:6px;">Class</th>' +
-            '<th style="text-align:left;padding:6px;">Parents</th>' +
-            '<th style="text-align:left;padding:6px;">Phone</th>' +
-            '<th style="text-align:left;padding:6px;">Added</th>' +
-            '<th style="padding:6px;">Status</th>' +
-            '<th style="padding:6px;">Actions</th></tr></thead><tbody>';
-
-    list.forEach(function (p) {
-      const st = p.status || 'new';
-      const chip = st === 'admitted' ? 'background:#0d4d26;color:#fff;' :
-                   st === 'enrolled' ? 'background:#d4a017;color:#fff;' :
-                   st === 'declined' ? 'background:#c0392b;color:#fff;' :
-                                       'background:#e0e0e0;color:#333;';
-
-      // Dates shown on the record: created, then whichever transition fired.
-      const created = p.created_at ? new Date(p.created_at) : null;
-      const createdStr = created && !isNaN(created.getTime())
-        ? created.toLocaleDateString() + ' ' + created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-        : '—';
-      let transStr = '';
-      if (p.enrolled_at) transStr = ' · enrolled ' + new Date(p.enrolled_at).toLocaleDateString();
-      if (p.admitted_at) transStr = ' · admitted ' + new Date(p.admitted_at).toLocaleDateString();
-      if (p.declined_at) transStr = ' · declined ' + new Date(p.declined_at).toLocaleDateString();
-
-      html += '<tr>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(p.full_name || '') + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.proposed_class || '') + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.parents_name || '') + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.mother_phone || p.father_phone || '') + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-size:11px;color:#666;">' + esc(createdStr + transStr) + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><span style="font-size:10px;padding:2px 8px;border-radius:4px;' + chip + '">' + esc(st.toUpperCase()) + '</span></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;white-space:nowrap;">';
-      html += '<button class="btn btn-sm btn-secondary" type="button" onclick="openProspectPreview(' + p.id + ')" title="Preview"><i class="fas fa-eye"></i></button> ';
-      html += '<button class="btn btn-sm btn-primary" type="button" onclick="openProspectEditModal(' + p.id + ')" title="Edit"><i class="fas fa-pen"></i></button> ';
-      if (st === 'new') {
-        html += '<button class="btn btn-sm btn-warning" type="button" onclick="prospectEnroll(' + p.id + ')" title="Enroll"><i class="fas fa-user-check"></i> Enroll</button> ';
-      }
-      if (st === 'new' || st === 'enrolled') {
-        html += '<button class="btn btn-sm btn-success" type="button" onclick="prospectAdmit(' + p.id + ')" title="Admit"><i class="fas fa-check"></i> Admit</button> ';
-      }
-      if (st !== 'declined' && st !== 'admitted') {
-        html += '<button class="btn btn-sm btn-danger" type="button" onclick="prospectDecline(' + p.id + ')" title="Decline"><i class="fas fa-times"></i></button> ';
-      }
-      if (st === 'admitted' && p.admitted_learner_id) {
-        html += '<span style="font-size:10px;color:#0d4d26;">→ learner #' + esc(String(p.admitted_learner_id)) + '</span> ';
-      }
-      html += '<button class="btn btn-sm btn-secondary" type="button" onclick="prospectDelete(' + p.id + ')" title="Delete permanently" style="color:#c0392b;"><i class="fas fa-trash"></i></button>';
-      html += '</td></tr>';
-    });
-
-    html += '</tbody></table></div>';
-    setHTML('prospectsGrid', html);
-  }
-  window.renderProspects = renderProspects;
-  function prospectSearch() {
-    renderProspects(__prospectsCache);
-  }
-  window.prospectSearch = prospectSearch;
-
-  // ---------- Add / Edit modal ----------
-  async function openProspectEditModal(id) {
-    closeModal();
-    let p = null;
-    if (id) {
-      startLoader();
-      const r = await window.TIS.getProspectiveLearner(id);
-      stopLoader();
-      if (!r || !r.ok || !r.data) { showToast('Could not load prospect.', 'error'); return; }
-      p = r.data;
-    } else {
-      p = { status: 'new', proposed_class: '' };
-    }
-
-    const classesR = await window.TIS.listClasses();
-    const classes = (classesR && classesR.ok ? classesR.data : [])
-      .filter(function (c) { return c.is_active !== false; });
-
-    const f = function (fieldId, label, value, type) {
-      const t = type || 'text';
-      return '<div class="form-group"><label>' + esc(label) + '</label>' +
-             '<input id="' + fieldId + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
-    };
-
-    let classOpts = '<option value="">— Select class —</option>';
-    classes.forEach(function (c) {
-      classOpts += '<option value="' + escAttr(c.name) + '"' + (c.name === p.proposed_class ? ' selected' : '') + '>' + esc(c.name) + '</option>';
-    });
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>' + (id ? 'Edit Prospect' : 'Add Prospect') + '</h2>' +
-            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-
-    html += '<div class="form-row">' + f('pr_name', 'Full Name', p.full_name) +
-            '<div class="form-group"><label>Proposed Class</label><select id="pr_class">' + classOpts + '</select></div></div>';
-    html += '<div class="form-row">' +
-            '<div class="form-group"><label>Gender</label><select id="pr_gender"><option value="">—</option>' +
-            '<option value="Male"' + (p.gender === 'Male' ? ' selected' : '') + '>Male</option>' +
-            '<option value="Female"' + (p.gender === 'Female' ? ' selected' : '') + '>Female</option></select></div>' +
-            f('pr_dob', 'Date of Birth', p.date_of_birth, 'date') + '</div>';
-    html += f('pr_parents', 'Parents Name', p.parents_name);
-    html += '<div class="form-row">' + f('pr_father_phone', "Father's Phone", p.father_phone) +
-            f('pr_mother_phone', "Mother's Phone", p.mother_phone) + '</div>';
-    html += '<div class="form-row">' + f('pr_guardian_phone', "Guardian's Phone", p.guardian_phone) +
-            f('pr_previous_school', 'Previous School', p.previous_school) + '</div>';
-    html += '<div class="form-group"><label>Address</label><textarea id="pr_address" rows="2">' + esc(p.address || '') + '</textarea></div>';
-    html += '<div class="form-group"><label>Notes</label><textarea id="pr_notes" rows="2">' + esc(p.notes || '') + '</textarea></div>';
-
-    html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" id="pr_submit" type="button">' + (id ? 'Save' : 'Add Prospect') + '</button>';
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-
-    const btn = document.getElementById('pr_submit');
-    if (btn) btn.addEventListener('click', function () { submitProspect(id); });
-  }
-  window.openProspectEditModal = openProspectEditModal;
-
-  async function submitProspect(id) {
-    const get = function (fid) { const el = document.getElementById(fid); return el ? String(el.value || '').trim() : ''; };
-    const row = {
-      full_name:       get('pr_name'),
-      proposed_class:  get('pr_class'),
-      gender:          get('pr_gender'),
-      date_of_birth:   get('pr_dob'),
-      parents_name:    get('pr_parents'),
-      father_phone:    get('pr_father'),
-      mother_phone:    get('pr_mother'),
-      guardian_phone:  get('pr_guardian'),
-      previous_school: get('pr_previous_school'),
-      address:         get('pr_address'),
-      notes:           get('pr_notes'),
-      created_by:      (State.profile && State.profile.name) || 'Operator'
-    };
-    if (!row.full_name) { showToast('Full name is required.', 'warning'); return; }
-
-    startLoader();
-    const r = id ? await window.TIS.updateProspectiveLearner(id, row)
-                 : await window.TIS.createProspectiveLearner(row);
-    stopLoader();
-    if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
-    showToast(id ? 'Prospect updated.' : 'Prospect added.', 'success');
-    closeModal();
-    __prospectsFetchedAt = 0;
-    loadProspects();
-  }
-  window.submitProspect = submitProspect;
-
-  // ---------- Preview modal (the CSS sheet with X toggles) ----------
-  async function openProspectPreview(id) {
-    closeModal();
-    startLoader();
-    const pr = await window.TIS.getProspectiveLearner(id);
-    const at = await window.TIS.getActiveTerm();
-    stopLoader();
-    if (!pr || !pr.ok || !pr.data) { showToast('Prospect not found.', 'error'); return; }
-    const p = pr.data;
-    const term = (at && at.ok && at.data) ? at.data : null;
-    if (!term) { showToast('No active term set.', 'error'); return; }
-
-    const feeR = await window.TIS.getProspectiveFeePreview(p.proposed_class, term.term_type, term.year);
-    if (!feeR || !feeR.ok) { showToast('Could not load fee preview.', 'error'); return; }
-    const fee = feeR.data;
-
-    window.__prospectForPrint = { prospect: p, fee: fee, term: term };
-    renderProspectPreview();
-  }
-  window.openProspectPreview = openProspectPreview;
-
-  function renderProspectPreview() {
-    const ctx = window.__prospectForPrint;
-    if (!ctx) return;
-    const p = ctx.prospect, fee = ctx.fee, term = ctx.term;
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()" style="max-width:520px;">';
-    html += '<div class="modal-header"><h2>Fee Preview — ' + esc(p.full_name) + '</h2>' +
-            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-
-    html += '<div style="background:#f7fbf7;padding:12px;border-radius:8px;font-family:Arial;color:#000;font-size:13px;line-height:1.5;">';
-    html += '<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px;">';
-    html += '<div style="font-size:16px;font-weight:900;">THE IDEAL SCHOOLS</div>';
-    html += '<div style="font-size:11px;font-style:italic;">Scientia est potentia</div>';
-    html += '<div style="font-size:11px;margin-top:4px;">' + esc(term.label) + '</div>';
-    html += '</div>';
-
-    html += '<div style="font-size:14px;font-weight:800;">' + esc(p.full_name) + '</div>';
-    html += '<div style="font-size:11px;margin-bottom:8px;">Proposed: ' + esc(p.proposed_class) + '</div>';
-
-    html += '<div style="font-weight:900;border-top:2px solid #000;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;font-size:12px;">Class Bill</div>';
-    html += '<div>Tuition ....... ₦' + Number(fee.class_bill.tuition).toLocaleString() + '</div>';
-    html += '<div>Other Major ... ₦' + Number(fee.class_bill.other_bills_major).toLocaleString() + '</div>';
-    html += '<div>Other Minor ... ₦' + Number(fee.class_bill.other_bills_minor).toLocaleString() + '</div>';
-    html += '<div>Books ......... ₦' + Number(fee.class_bill.books).toLocaleString() + '</div>';
-
-    html += '<div style="font-weight:900;border-top:2px solid #000;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;font-size:12px;margin-top:8px;">Extras</div>';
-    fee.extras.forEach(function (e, i) {
-      const on = e.default_on !== false;
-      html += '<div data-extra-index="' + i + '" style="display:flex;justify-content:space-between;padding:2px 0;' + (on ? '' : 'text-decoration:line-through;color:#999;') + '">';
-      html += '<span>' + esc(e.item_label) + '</span>';
-      html += '<span>₦' + Number(e.default_amount).toLocaleString();
-      html += ' <button type="button" class="btn btn-sm btn-danger" style="font-size:9px;padding:1px 5px;margin-left:6px;" onclick="toggleExtra(' + i + ')">X</button></span>';
-      html += '</div>';
-    });
-
-    const extrasOn = fee.extras.filter(function (e) { return e.default_on !== false; });
-    const extrasTotal = extrasOn.reduce(function (s, e) { return s + Number(e.default_amount); }, 0);
-    const grand = fee.class_bill.total + extrasTotal;
-
-    html += '<div style="font-weight:900;border-top:2px solid #000;padding-top:4px;margin-top:6px;font-size:14px;display:flex;justify-content:space-between;">';
-    html += '<span>TOTAL</span><span>₦' + grand.toLocaleString() + '</span></div>';
-
-    html += '</div>';
-
-    html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button> ';
-    html += '<button class="btn btn-gold" onclick="printProspectSheet()"><i class="fas fa-print"></i> Print 80mm</button>';
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-  }
-  window.renderProspectPreview = renderProspectPreview;
-
-  function toggleExtra(idx) {
-    const ctx = window.__prospectForPrint;
-    if (!ctx) return;
-    ctx.fee.extras[idx].default_on = !ctx.fee.extras[idx].default_on;
-    renderProspectPreview();
-  }
-  window.toggleExtra = toggleExtra;
-
-  // ---------- 80mm print ----------
-  function printProspectSheet() {
-    const ctx = window.__prospectForPrint;
-    if (!ctx) return;
-    const p = ctx.prospect, fee = ctx.fee, term = ctx.term;
-
-    const css80 =
-      '@page{size:72mm auto;margin:2mm;}' +
-      'html,body{width:72mm;margin:0;padding:0;}' +
-      'body{font-family:"Arial",sans-serif;font-size:14px;line-height:1.35;color:#000;}' +
-      '*{box-sizing:border-box;}' +
-      '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin:0 0 8px;}' +
-      '.hdr img{height:36px;}' +
-      '.hdr h1{font-size:18px;font-weight:900;margin:4px 0 2px;}' +
-      '.hdr .sub{font-size:11px;font-style:italic;}' +
-      '.who{font-size:15px;font-weight:900;margin:6px 0 2px;}' +
-      '.who-sub{font-size:11px;margin:0 0 6px;}' +
-      'h2{font-size:13px;font-weight:900;margin:8px 0 4px;padding:2px 0;border-top:2px solid #000;border-bottom:1px solid #000;text-transform:uppercase;}' +
-      '.r{display:flex;justify-content:space-between;gap:6px;font-size:12px;padding:2px 0;border-bottom:1px dotted #888;}' +
-      '.r:last-child{border-bottom:0;}' +
-      '.r .v{font-weight:800;text-align:right;white-space:nowrap;}' +
-      '.total{border-top:2px solid #000;margin-top:6px;padding-top:6px;font-weight:900;font-size:15px;display:flex;justify-content:space-between;}' +
-      '.ft{margin-top:8px;padding-top:4px;border-top:1px solid #000;font-size:10px;text-align:center;}';
-
-    const rowFn = function (label, value) {
-      return '<div class="r"><span>' + esc(label) + '</span><span class="v">' + esc(value) + '</span></div>';
-    };
-
-    let html = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.full_name) + '</title>';
-    html += '<style>' + css80 + '</style></head><body>';
-
-       html += '<div class="hdr">';
-    html += '<h1>THE IDEAL SCHOOLS</h1>';
-    html += '<div class="sub">The Ideal Secondary School · The Ideal Kiddies School</div>';
-    html += '<div class="sub" style="font-style:italic;">Scientia est potentia</div>';
-    html += '</div>';
-    html += '<div class="who-sub">Proposed: ' + esc(p.proposed_class) + ' &middot; ' + esc(term.label) + '</div>';
-
-    html += '<h2>Class Bill</h2>';
-    html += rowFn('Tuition', '₦' + Number(fee.class_bill.tuition).toLocaleString());
-    html += rowFn('Other Bills Major', '₦' + Number(fee.class_bill.other_bills_major).toLocaleString());
-    html += rowFn('Other Bills Minor', '₦' + Number(fee.class_bill.other_bills_minor).toLocaleString());
-    html += rowFn('Books', '₦' + Number(fee.class_bill.books).toLocaleString());
-    html += rowFn('Subtotal', '₦' + Number(fee.class_bill.total).toLocaleString());
-
-    html += '<h2>Extras</h2>';
-    const on = fee.extras.filter(function (e) { return e.default_on !== false; });
-    if (on.length === 0) {
-      html += rowFn('(none selected)', '—');
-    } else {
-      on.forEach(function (e) {
-        html += rowFn(e.item_label, '₦' + Number(e.default_amount).toLocaleString());
-      });
-    }
-    const extrasTotal = on.reduce(function (s, e) { return s + Number(e.default_amount); }, 0);
-
-    html += '<div class="total"><span>TOTAL</span><span>₦' + (fee.class_bill.total + extrasTotal).toLocaleString() + '</span></div>';
-    html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
-    html += '</body></html>';
-
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    setTimeout(function () {
-      try { w.focus(); w.print(); } catch (e) {}
-    }, 600);
-    closeModal();
-  }
-  window.printProspectSheet = printProspectSheet;
-
-  // ---------- Enroll / Admit / Decline ----------
-  async function prospectEnroll(id) {
-    if (!confirm('Mark this prospect as ENROLLED? No learner row is created yet.')) return;
-    startLoader();
-    const r = await window.TIS.enrollProspectiveLearner(id);
-    stopLoader();
-    if (r && r.ok) { showToast('Enrolled.', 'success'); __prospectsFetchedAt = 0; loadProspects(); }
-    else showToast('Failed: ' + ((r && r.error) || ''), 'error');
-  }
-  window.prospectEnroll = prospectEnroll;
-
-  async function prospectAdmit(id) {
-    if (!confirm('Admit this prospect? A real learner row with a PIN will be created.')) return;
-    startLoader();
-    const r = await window.TIS.admitProspectiveLearner(id);
-    stopLoader();
-    if (r && r.ok) {
-      const learner = r.data.learner || {};
-      showToast('Admitted. PIN ' + (learner.pin || '(auto)'), 'success');
-      __prospectsFetchedAt = 0;
-      loadProspects();
-      // Refresh learners cache so the new row appears immediately.
-      State.learnersFetchedAt = 0;
-      if (learner.pin) {
-        setTimeout(function () { openLearnerEditModal(learner.pin); }, 400);
-      }
-    } else {
-      showToast('Failed: ' + ((r && r.error) || ''), 'error');
-    }
-  }
-  window.prospectAdmit = prospectAdmit;
-
-  async function prospectDecline(id) {
-    if (!confirm('Mark this prospect as DECLINED?\n\nThey stay on the list for the record — use Delete to remove permanently.')) return;
-    startLoader();
-    const r = await window.TIS.declineProspectiveLearner(id);
-    stopLoader();
-    if (r && r.ok) { showToast('Declined.', 'success'); __prospectsFetchedAt = 0; loadProspects(); }
-    else showToast('Failed: ' + ((r && r.error) || ''), 'error');
-  }
-  window.prospectDecline = prospectDecline;
-
-  async function prospectDelete(id) {
-    const all = __prospectsCache || [];
-    const row = all.find(function (p) { return p.id === id; });
-    const name = row ? (row.full_name || 'this prospect') : 'this prospect';
-    if (!confirm('Permanently DELETE "' + name + '"?\n\nThis cannot be undone.')) return;
-    startLoader();
-    const r = await window.TIS.deleteProspectiveLearner(id);
-    stopLoader();
-    if (r && r.ok) {
-      showToast('Deleted.', 'success');
-      __prospectsCache = all.filter(function (p) { return p.id !== id; });
-      __prospectsFetchedAt = 0;
-      loadProspects();
-    } else {
-      showToast('Delete failed: ' + ((r && r.error) || ''), 'error');
-    }
-  }
-  window.prospectDelete = prospectDelete;
-
-  // ---------- Manage extras modal ----------
-  async function openManageExtrasModal() {
-    closeModal();
-    startLoader();
-    const r = await window.TIS.listFeeExtrasDefaults(false);
-    stopLoader();
-    if (!r || !r.ok) { showToast('Could not load extras.', 'error'); return; }
-    const extras = r.data || [];
-
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
-    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Fee Extras Defaults</h2>' +
-            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">These amounts appear on every prospectus. Amounts are shared across all classes.</p>';
-
-    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
-            '<th style="text-align:left;padding:6px;">Item</th>' +
-            '<th style="padding:6px;">Amount ₦</th>' +
-            '<th style="padding:6px;">Active</th>' +
-            '<th style="padding:6px;">Save</th></tr></thead><tbody>';
-    extras.forEach(function (e, i) {
-      html += '<tr data-extra-id="' + i + '">';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(e.item_label) + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="ext-amt" data-key="' + escAttr(e.item_key) + '" value="' + Number(e.default_amount || 0) + '" style="width:120px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="checkbox" class="ext-on" data-key="' + escAttr(e.item_key) + '"' + (e.is_active !== false ? ' checked' : '') + '></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button class="btn btn-sm btn-success" type="button" onclick="saveExtraRow(\'' + escAttr(e.item_key) + '\')">Save</button></td>';
-      html += '</tr>';
-    });
-    html += '</tbody></table>';
-
-    html += '<div style="text-align:right;margin-top:12px;">';
-    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button>';
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-  }
-  window.openManageExtrasModal = openManageExtrasModal;
-
-  async function saveExtraRow(itemKey) {
-    const amtEl = document.querySelector('.ext-amt[data-key="' + itemKey + '"]');
-    const onEl  = document.querySelector('.ext-on[data-key="' + itemKey + '"]');
-    if (!amtEl || !onEl) return;
-    startLoader();
-    const r = await window.TIS.upsertFeeExtraDefault({
-      item_key: itemKey,
-      default_amount: Number(amtEl.value || 0),
-      is_active: onEl.checked
-    });
-    stopLoader();
-    if (r && r.ok) showToast('Saved.', 'success');
-    else showToast('Save failed: ' + ((r && r.error) || ''), 'error');
-  }
-  window.saveExtraRow = saveExtraRow;
-
-  // ---------- Tab wiring ----------
-  function initProspectsTab() {
-    const add = document.getElementById('btnAddProspect');
-    if (add && !add.__wired) { add.addEventListener('click', function () { openProspectEditModal(null); }); add.__wired = true; }
-
-    const rf = document.getElementById('btnRefreshProspects');
-    if (rf && !rf.__wired) { rf.addEventListener('click', function () { __prospectsFetchedAt = 0; loadProspects(); }); rf.__wired = true; }
-
-    const mg = document.getElementById('btnManageExtras');
-    if (mg && !mg.__wired) { mg.addEventListener('click', openManageExtrasModal); mg.__wired = true; }
-
-    const sf = document.getElementById('prospectStatusFilter');
-    if (sf && !sf.__wired) { sf.addEventListener('change', prospectSearch); sf.__wired = true; }
-
-    const si = document.getElementById('prospectSearchInput');
-    if (si && !si.__wired) { si.addEventListener('input', prospectSearch); si.__wired = true; }
-
-    loadProspects();
-  }
-  window.initProspectsTab = initProspectsTab;
 
   // ================================================================
   // Edit modal — dropdowns for class / gender / religion,
@@ -2106,17 +1423,13 @@
     const ph2 = phoneFor(d, 2);
     const ph3 = phoneFor(d, 3);
 
-    // ---- Resolve the fee picture the same way the View modal does ----
-    // Modal and paper must agree. Same function, same inputs, same rule.
-    let prevTermRow = null;
-    if (term) {
-      const prev = previousTermOf(term.term_type, term.year);
-      if (prev) {
-        const prevR = await window.TIS.getLearnerTermFor(d.id, prev.term_type, prev.year);
-        if (prevR && prevR.ok) prevTermRow = prevR.data;
-      }
-    }
-    const fee = await resolveLearnerFeePicture(d, termRow, term, term ? term.year : null);
+    const tuition     = parseNum(termRow && termRow.tuition);
+    const scholarship = parseNum(termRow && termRow.scholarship);
+    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
+    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
+    const books       = parseNum(termRow && termRow.books);
+    const netBills    = tuition + otherMajor + otherMinor + books;
+    const adjusted    = tuition - scholarship;
 
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
@@ -2127,8 +1440,7 @@
                   'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
                   '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
                   '.info-label{color:#666;}.info-value{font-weight:600;}';
-
-    // 80mm thermal (RawBT / MPT-11_309F).
+      // 80mm thermal (RawBT / MPT-11_309F).
     // Printable width on an 80mm head is ~72mm — do NOT use 80mm here
     // or the driver shrinks everything to fit, which is what made the
     // previous output unreadable. Base font is 14px (~3.5mm tall).
@@ -2151,7 +1463,7 @@
       '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
       '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
 
-    const rowFn = function (label, value) {
+       const rowFn = function (label, value) {
       return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + esc(value) + '</span></div>';
     };
 
@@ -2189,31 +1501,30 @@
       html += rowFn('Gender', d.gender || '—');
       html += rowFn('1st Phone (' + ph1.label + ')', ph1.value);
       html += rowFn('Account', d.account_number || '—');
-      html += rowFn('Clearance', fee.cleared || '—');
-      html += rowFn('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
-      html += rowFn('Balance C/F', moneyOrDash(fee.balance_cf));
+      html += rowFn('Clearance', (termRow && termRow.cleared) || '—');
+      html += rowFn('Clearance Date', (termRow && fmtDateOrDash(termRow.clearance)) || '—');
+      html += rowFn('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
     }
 
     // ---------- Section B ----------
     if (wantB) {
       html += '<h2>Section B &mdash; Fees</h2>';
-      html += rowFn('Previous Term Balance B/F',
-        prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
-      html += rowFn('Current Term Tuition', moneyOrDash(fee.tuition));
-      html += rowFn('Scholarship / Deductions', moneyOrDash(fee.scholarship));
-      html += rowFn('Additions', moneyOrDash(fee.additions));
-      html += rowFn('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
-      if (fee.part_payments && fee.part_payments.length) {
-        fee.part_payments.forEach(function (p) {
-          html += rowFn('Part Pay ' + p.n,
-            (p.date ? fmtDateOrDash(p.date) : '—') + ' — ' + moneyOrDash(p.amount));
-        });
+      html += rowFn('Tuition', moneyOrDash(termRow && termRow.tuition));
+      html += rowFn('Scholarship', moneyOrDash(termRow && termRow.scholarship));
+      html += rowFn('Adjusted Tuition', moneyOrDash(adjusted));
+      if (termRow) {
+        for (let n = 1; n <= 5; n++) {
+          const dt = termRow['part_payment_' + n + '_date'];
+          const am = termRow['part_payment_' + n + '_amount'];
+          if ((!dt || dt === '') && (!am || am === '')) continue;
+          html += rowFn('Part Pay ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
+        }
       }
-      html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
-      html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
-      html += rowFn('Balance B/F', moneyOrDash(fee.balance_bf));
-      html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
-      html += rowFn('Net Bills', moneyOrDash(fee.net_bills));
+      html += rowFn('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
+      html += rowFn('Books', moneyOrDash(termRow && termRow.books));
+      html += rowFn('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
+      html += rowFn('Net Bills', moneyOrDash(netBills));
+      html += rowFn('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
       html += rowFn('Blood Group', d.blood_group || '—');
       html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
@@ -2249,7 +1560,7 @@
     w.document.close();
 
     // Give RawBT a moment to build the raster image before we ask
-    // the user agent to print. 600ms is safe for the MPT-11.
+    // the user agent to print. 250ms was too short on the MPT-11.
     setTimeout(function () {
       try { w.focus(); w.print(); } catch (e) { /* user can Ctrl+P */ }
     }, 600);
@@ -3489,71 +2800,43 @@
       byClass[r.class_name] = r;
     });
 
-    // Column definitions — same order on the table and on the save.
-    // The four core bill columns first, then the seven extras.
-    const COLS = [
-      { key: 'tuition',           label: 'Tuition ₦' },
-      { key: 'other_bills_major', label: 'Other Major ₦' },
-      { key: 'other_bills_minor', label: 'Other Minor ₦' },
-      { key: 'books',             label: 'Books ₦' },
-      { key: 'registration_fee',  label: 'Registration ₦' },
-      { key: 'uniform',           label: 'Uniform ₦' },
-      { key: 'sportswear',        label: 'Sportswear ₦' },
-      { key: 'waist_coat',        label: 'Waist Coat ₦' },
-      { key: 'tie',               label: 'Tie ₦' },
-      { key: 'extra_lesson',      label: 'Extra Lesson ₦' },
-      { key: 'special_lesson',    label: 'Special Lesson ₦' }
-    ];
-
     let html = '<div style="overflow-x:auto;">';
-    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:1400px;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
     html += '<thead><tr style="background:#1a3f8f;color:#fff;">';
-    html += '<th style="text-align:left;padding:6px;position:sticky;left:0;background:#1a3f8f;z-index:2;min-width:120px;">Class</th>';
-    COLS.forEach(function (c) {
-      html += '<th style="padding:6px;font-size:10px;min-width:100px;">' + esc(c.label) + '</th>';
-    });
-    html += '<th style="padding:6px;min-width:110px;">Total ₦</th>';
-    html += '<th style="padding:6px;min-width:80px;">Save</th>';
+    html += '<th style="text-align:left;padding:6px;">Class</th>';
+    html += '<th style="padding:6px;">Tuition ₦</th>';
+    html += '<th style="padding:6px;">Other Major ₦</th>';
+    html += '<th style="padding:6px;">Other Minor ₦</th>';
+    html += '<th style="padding:6px;">Books ₦</th>';
+    html += '<th style="padding:6px;">Total ₦</th>';
+    html += '<th style="padding:6px;">Save</th>';
     html += '</tr></thead><tbody>';
 
     classes.forEach(function (c) {
       const row = byClass[c.name] || {};
-      let total = 0;
-      COLS.forEach(function (col) { total += Number(row[col.key] || 0); });
-
+      const total =
+        Number(row.tuition || 0) +
+        Number(row.other_bills_major || 0) +
+        Number(row.other_bills_minor || 0) +
+        Number(row.books || 0);
       html += '<tr data-fee-class="' + escAttr(c.name) + '">';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;position:sticky;left:0;background:#fff;z-index:1;">' + esc(c.name) + '</td>';
-      COLS.forEach(function (col) {
-        html += '<td style="padding:4px;border-bottom:1px solid #eee;text-align:center;">' +
-                '<input type="number" step="0.01" class="fee-inp" data-field="' + col.key + '" ' +
-                'value="' + (row[col.key] || '') + '" style="width:96px;">' +
-                '</td>';
-      });
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(c.name) + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="tuition" value="' + (row.tuition || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_major" value="' + (row.other_bills_major || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_minor" value="' + (row.other_bills_minor || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="books" value="' + (row.books || '') + '" style="width:110px;"></td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:right;font-weight:700;" data-total>' + total.toLocaleString() + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveScheduleRow(\'' + escAttr(c.name) + '\')">Save</button></td>';
       html += '</tr>';
     });
 
     if (classes.length === 0) {
-      html += '<tr><td colspan="' + (COLS.length + 3) + '" style="padding:14px;text-align:center;color:#888;">No active classes.</td></tr>';
+      html += '<tr><td colspan="7" style="padding:14px;text-align:center;color:#888;">No active classes.</td></tr>';
     }
 
     html += '</tbody></table></div>';
-    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year +
-            '. A blank field is treated as 0. The seven right-hand columns are the optional extras; they print on the prospect sheet and the report card unless the office unchecks them at print time.</p>';
+    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year + '. A blank field is treated as 0.</p>';
     setHTML('feesContent', html);
-
-    // Live total: recalc the row total as the operator types.
-    document.querySelectorAll('#feesContent .fee-inp').forEach(function (inp) {
-      inp.addEventListener('input', function () {
-        const tr = inp.closest('[data-fee-class]');
-        if (!tr) return;
-        let sum = 0;
-        tr.querySelectorAll('.fee-inp').forEach(function (i) { sum += Number(i.value || 0); });
-        const totalCell = tr.querySelector('[data-total]');
-        if (totalCell) totalCell.textContent = sum.toLocaleString();
-      });
-    });
   }
 
   async function feesSaveScheduleRow(className) {
@@ -3571,14 +2854,7 @@
       tuition:           get('tuition'),
       other_bills_major: get('other_bills_major'),
       other_bills_minor: get('other_bills_minor'),
-      books:             get('books'),
-      registration_fee:  get('registration_fee'),
-      uniform:           get('uniform'),
-      sportswear:        get('sportswear'),
-      waist_coat:        get('waist_coat'),
-      tie:               get('tie'),
-      extra_lesson:      get('extra_lesson'),
-      special_lesson:    get('special_lesson')
+      books:             get('books')
     };
     startLoader();
     const r = await window.TIS.upsertFeeSchedule(payload);
@@ -3586,15 +2862,17 @@
     if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
     const totalEl = rowEl.querySelector('[data-total]');
     if (totalEl) {
-      const total = Object.keys(payload).reduce(function (s, k) {
-        if (typeof payload[k] === 'number') return s + payload[k];
-        return s;
-      }, 0);
+      const total =
+        Number(payload.tuition || 0) +
+        Number(payload.other_bills_major || 0) +
+        Number(payload.other_bills_minor || 0) +
+        Number(payload.books || 0);
       totalEl.textContent = total.toLocaleString();
     }
     showToast('Saved: ' + className, 'success');
   }
   window.feesSaveScheduleRow = feesSaveScheduleRow;
+
   // ----------------------------------------------------------------
   // ADJUSTMENTS VIEW
   //   List of learners (searchable) with per-learner additions and
@@ -7981,63 +7259,10 @@
   }
   window.wsLoadClass = wsLoadClass;
 
-  // ================================================================
-  // Comment-bank cache.
-  //   Loaded once per class-load, per field, per band. Re-used by
-  //   the default preload and (Delivery 6) by the Up/Down cycler.
-  //   Key shape: "<field>|<band>" → array of { text, category }
-  // ================================================================
-  let __wsCommentBankCache = {};
-
-  async function wsEnsureCommentBank(field, band) {
-    const key = field + '|' + band;
-    if (__wsCommentBankCache[key]) return __wsCommentBankCache[key];
-    try {
-      const r = await window.TIS.getCommentBank(field, band);
-      const list = (r && r.ok && r.data ? r.data : [])
-        .filter(function (c) { return c.is_active !== false; });
-      __wsCommentBankCache[key] = list;
-      return list;
-    } catch (e) {
-      __wsCommentBankCache[key] = [];
-      return [];
-    }
-  }
-  window.wsEnsureCommentBank = wsEnsureCommentBank;
-
-  // Fill {first}, {strong1}, {weak1} placeholders. strong1/weak1 are
-  // empty here because the Workshop has no scores context — the report
-  // card renderer fills them separately.
-  function wsFillCommentTemplate(tpl, learner) {
-    const full = (learner && learner.name) || '';
-    const first = full.split(' ').slice(1).join(' ') || full.split(' ')[0] || '';
-    return String(tpl || '')
-      .replace(/\{first\}/g,   first)
-      .replace(/\{strong1\}/g, '')
-      .replace(/\{weak1\}/g,   '');
-  }
-  window.wsFillCommentTemplate = wsFillCommentTemplate;
-
-  async function wsRenderTable() {
+  function wsRenderTable() {
     if (!wsState.loaded) return;
     const learners = wsState.learners;
     const termLabel = wsState.term.toUpperCase() + ' TERM ' + wsState.year;
-
-    // ---- Preload the comment bank for every (field, band) combo we
-    //      will need on this render. Two fields × up to six bands,
-    //      but only bands actually present. Cache is keyed so repeat
-    //      loads of the same class cost nothing.
-    const bandsNeeded = {};
-    learners.forEach(function (l) {
-      const avg = wsState.averages[l.id];
-      const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
-      bandsNeeded[band] = true;
-    });
-    const bandKeys = Object.keys(bandsNeeded);
-    await Promise.all([
-      Promise.all(bandKeys.map(function (b) { return wsEnsureCommentBank('teacher', b); })),
-      Promise.all(bandKeys.map(function (b) { return wsEnsureCommentBank('principal', b); }))
-    ]);
 
     let html = '<div class="card-bg" style="padding:0;overflow-x:auto;">';
     html += '<div style="padding:10px 14px;background:#0d4d26;color:#fff;font-weight:700;font-size:13px;">' +
@@ -8064,40 +7289,14 @@
     learners.forEach(function (l) {
       const rating = wsState.ratings[l.id];
       const avg = wsState.averages[l.id];
-      const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
-      const bandLabel = (avg != null) ? band.replace('_', ' ').toUpperCase() : '—';
+      const band = (avg != null) ? window.TIS.bandForAverage(avg) : '—';
+      const bandLabel = band === '—' ? '—' :
+                        band.replace('_', ' ').toUpperCase();
 
       // Pre-fill ratings
       const r = (rating && rating.ratings) ? rating.ratings : {};
       const teacherEdited   = rating && rating.teacher_edited;
       const principalEdited = rating && rating.principal_edited;
-
-      // ---- Comment defaults ----
-      // Case A: no rating row at all.
-      // Case B: rating row exists but comment is empty.
-      // Cases C and D: comment already present → leave untouched.
-      const existingTeacher   = (rating && rating.teacher_comment)   || '';
-      const existingPrincipal = (rating && rating.principal_comment) || '';
-
-      let teacherValue   = existingTeacher;
-      let principalValue = existingPrincipal;
-      let teacherIsDefault   = false;
-      let principalIsDefault = false;
-
-      if (!existingTeacher) {
-        const bank = __wsCommentBankCache['teacher|' + band] || [];
-        if (bank.length > 0) {
-          teacherValue = wsFillCommentTemplate(bank[0].text, l);
-          teacherIsDefault = true;
-        }
-      }
-      if (!existingPrincipal) {
-        const bank = __wsCommentBankCache['principal|' + band] || [];
-        if (bank.length > 0) {
-          principalValue = wsFillCommentTemplate(bank[0].text, l);
-          principalIsDefault = true;
-        }
-      }
 
       // Row background: green if there's a ratings row, grey if not.
       const rowBg = rating ? '#f7fbf7' : '#fafafa';
@@ -8124,36 +7323,32 @@
 
       // Teacher comment
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
-            html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
-              'data-default="' + (teacherIsDefault ? '1' : '0') + '" ' +
-              'oninput="wsOnCommentInput(this, ' + l.id + ')" rows="3" ' +
-              'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (teacherIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
-              esc(teacherValue) + '</textarea>';
+      html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
+              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'style="width:100%;font-size:11px;padding:4px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">' +
+              esc((rating && rating.teacher_comment) || '') + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
-              'onclick="wsOpenCommentBank(\'teacher\', \'' + band + '\', ' + l.id + ', \'teacher_comment\')">' +
+              'onclick="wsOpenCommentBank(\'teacher\', \'' + (band === '—' ? 'average' : band) + '\', ' + l.id + ', \'teacher_comment\')">' +
               'Pick from bank</button>';
       html += '</td>';
 
       // Principal comment
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
-              html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="principal_comment" ' +
-              'data-default="' + (principalIsDefault ? '1' : '0') + '" ' +
-              'oninput="wsOnCommentInput(this, ' + l.id + ')" rows="3" ' +
-              'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (principalIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
-              esc(principalValue) + '</textarea>';
+      html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="principal_comment" ' +
+              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'style="width:100%;font-size:11px;padding:4px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">' +
+              esc((rating && rating.principal_comment) || '') + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
-              'onclick="wsOpenCommentBank(\'principal\', \'' + band + '\', ' + l.id + ', \'principal_comment\')">' +
+              'onclick="wsOpenCommentBank(\'principal\', \'' + (band === '—' ? 'average' : band) + '\', ' + l.id + ', \'principal_comment\')">' +
               'Pick from bank</button>';
       html += '</td>';
 
-      // State chip — priority: EDITED > AUTO > DEFAULT > —
+      // State chip
       let chip = '<span style="color:#999;font-size:10px;">—</span>';
       if (teacherEdited || principalEdited) {
         chip = '<span style="background:#d4a017;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">EDITED</span>';
       } else if (rating) {
         chip = '<span style="background:#e0e0e0;color:#333;font-size:10px;padding:2px 6px;border-radius:4px;">AUTO</span>';
-      } else if (teacherIsDefault || principalIsDefault) {
-        chip = '<span style="background:#e8f5e9;color:#0d4d26;border:1px solid #c8e6c9;font-size:10px;padding:2px 6px;border-radius:4px;">DEFAULT</span>';
       }
       html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;" data-state-chip="' + l.id + '">' + chip + '</td>';
 
@@ -8280,7 +7475,7 @@
   // ----------------------------------------------------------------
   // Comment bank picker
   // ----------------------------------------------------------------
-    async function wsOpenCommentBank(field, band, learnerId, targetField) {
+  async function wsOpenCommentBank(field, band, learnerId, targetField) {
     startLoader();
     const r = await window.TIS.getCommentBank(field, band);
     stopLoader();
@@ -8291,6 +7486,7 @@
 
     const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
     const fullName = learner ? (learner.name || '') : '';
+    const firstName = firstNameOf(fullName);
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box wide" style="max-width:720px;max-height:80vh;overflow-y:auto;" onclick="event.stopPropagation()">';
@@ -8300,7 +7496,11 @@
             esc(field === 'teacher' ? "Teacher's" : "Principal's") + ' field for <b>' + esc(fullName) + '</b>.</p>';
     html += '<div style="display:grid;grid-template-columns:1fr;gap:6px;">';
     comments.forEach(function (c) {
-      const text = wsFillCommentTemplate(c.text, learner || {});
+      const text = fillCommentTemplate(c.text, {
+        first: firstName,
+        strong1: '',
+        weak1: ''
+      });
       html += '<div style="border:1px solid #e0e6e2;border-radius:8px;padding:10px;cursor:pointer;background:#f7fbf7;" ' +
               'onclick="wsApplyComment(' + learnerId + ', \'' + escAttr(targetField) + '\', \'' + escAttr(text) + '\')">' +
               '<div style="font-size:12px;color:#333;">' + esc(text) + '</div>' +
@@ -8316,162 +7516,11 @@
     const el = document.querySelector('.ws-comment[data-learner-id="' + learnerId + '"][data-field="' + targetField + '"]');
     if (el) {
       el.value = text;
-      // Field is now bank-managed again → arrows will cycle it.
-      el.setAttribute('data-default', '1');
-      el.setAttribute('data-bank-index', '0');
-      el.style.borderColor = '#d4a017';
-      wsClearCycleCounter(el);
       wsMarkDirty(learnerId);
     }
     closeModal();
   }
   window.wsApplyComment = wsApplyComment;
-
-  // ================================================================
-  // Delivery 6 — Up / Down cycler on comment textareas (Option C).
-  //
-  // Precedence, checked in order:
-  //   1. Field must be bank-managed: data-default="1".
-  //      Typing clears that flag (see wsOnCommentInput).
-  //      "Pick from bank" re-sets it (see wsApplyComment).
-  //   2. Bank for the learner's band and field must be non-empty.
-  //   3. Caret must be where the arrow naturally would not move:
-  //        Down  → cycles only when caret is at the very END
-  //        Up    → cycles only when caret is at the very START
-  //      Anywhere else, the arrow moves the caret as usual.
-  //
-  // When it cycles:
-  //   • value is replaced by the next / previous bank entry
-  //   • data-bank-index is updated
-  //   • a small "n / m" counter is painted in the textarea's corner
-  //   • wsMarkDirty fires → chip flips to UNSAVED
-  //   • caret is pushed to the end so subsequent Down keeps cycling
-  //   • nothing is written to the database — Save does that.
-  //
-  // Counter clears on blur, on input, on apply-from-bank.
-  // ================================================================
-
-  function wsBankForField(learnerId, field) {
-    const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
-    if (!learner) return [];
-    const avg = wsState.averages[learnerId];
-    const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
-    const key = (field === 'teacher_comment') ? 'teacher' : 'principal';
-    return __wsCommentBankCache[key + '|' + band] || [];
-  }
-  window.wsBankForField = wsBankForField;
-
-  function wsShowCycleCounter(ta, idx, total) {
-    if (getComputedStyle(ta.parentElement).position === 'static') {
-      ta.parentElement.style.position = 'relative';
-    }
-    let badge = ta.parentElement.querySelector('.ws-cycle-counter');
-    if (!badge) {
-      badge = document.createElement('div');
-      badge.className = 'ws-cycle-counter';
-      badge.style.cssText = 'position:absolute;top:2px;right:4px;background:#0d4d26;color:#fff;' +
-                            'font-size:9px;padding:1px 5px;border-radius:3px;opacity:0.85;pointer-events:none;';
-      ta.parentElement.appendChild(badge);
-    }
-    badge.textContent = (idx + 1) + ' / ' + total;
-  }
-
-  function wsClearCycleCounter(ta) {
-    if (!ta || !ta.parentElement) return;
-    const badge = ta.parentElement.querySelector('.ws-cycle-counter');
-    if (badge) badge.remove();
-  }
-  window.wsClearCycleCounter = wsClearCycleCounter;
-
-  function wsCycleComment(ta, dir) {
-    const learnerId = parseInt(ta.getAttribute('data-learner-id'), 10);
-    const field = ta.getAttribute('data-field');
-    if (!learnerId || !field) return false;
-
-    // Rule 1: bank-managed only.
-    if (ta.getAttribute('data-default') !== '1') return false;
-
-    // Rule 2: bank must be non-empty.
-    const bank = wsBankForField(learnerId, field);
-    if (!bank.length) return false;
-
-    // Rule 3: caret position.
-    const caret = ta.selectionStart;
-    const len = (ta.value || '').length;
-    if (dir === 'down' && caret !== len) return false;
-    if (dir === 'up'   && caret !== 0)   return false;
-
-    // Compute new index, wrapping both directions.
-    let idx = parseInt(ta.getAttribute('data-bank-index') || '0', 10);
-    if (isNaN(idx)) idx = 0;
-    if (dir === 'down') idx = (idx + 1) % bank.length;
-    else                idx = (idx - 1 + bank.length) % bank.length;
-
-    // Apply.
-    const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
-    const text = wsFillCommentTemplate(bank[idx].text, learner || {});
-    ta.value = text;
-    ta.setAttribute('data-bank-index', String(idx));
-    try { ta.setSelectionRange(text.length, text.length); } catch (e) { /* ignore */ }
-
-    wsShowCycleCounter(ta, idx, bank.length);
-    wsMarkDirty(learnerId);
-    return true;
-  }
-  window.wsCycleComment = wsCycleComment;
-
-  function wsOnCommentInput(ta, learnerId) {
-    // Typing = the human owns this text now. Exit cycle mode.
-    if (ta.getAttribute('data-default') === '1') {
-      ta.setAttribute('data-default', '0');
-      ta.style.borderColor = '#ccc';
-    }
-    wsClearCycleCounter(ta);
-    wsMarkDirty(learnerId);
-  }
-  window.wsOnCommentInput = wsOnCommentInput;
-
-  // ----------------------------------------------------------------
-  // One delegated keydown listener on document. Installs once.
-  // No dependency on #wsContent being present at install time —
-  // document is always there, and the handler filters by class.
-  // ----------------------------------------------------------------
-  (function wsInstallCycleListener() {
-    if (window.__wsCycleListenerInstalled) return;
-    window.__wsCycleListenerInstalled = true;
-
-    document.addEventListener('keydown', function (e) {
-      const ta = e.target;
-      if (!ta || ta.tagName !== 'TEXTAREA') return;
-      if (!ta.classList || !ta.classList.contains('ws-comment')) return;
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (ta.getAttribute('data-default') !== '1') return;
-
-      const learnerId = parseInt(ta.getAttribute('data-learner-id'), 10);
-      const field = ta.getAttribute('data-field');
-      if (!learnerId || !field) return;
-
-      const bank = wsBankForField(learnerId, field);
-      if (!bank.length) return;
-
-      const caret = ta.selectionStart;
-      const len = (ta.value || '').length;
-      if (e.key === 'ArrowDown' && caret !== len) return;
-      if (e.key === 'ArrowUp'   && caret !== 0)   return;
-
-      e.preventDefault();
-      wsCycleComment(ta, e.key === 'ArrowDown' ? 'down' : 'up');
-    });
-
-    // Clear the counter when the operator leaves the field.
-    document.addEventListener('focusout', function (e) {
-      const t = e.target;
-      if (t && t.tagName === 'TEXTAREA' && t.classList && t.classList.contains('ws-comment')) {
-        wsClearCycleCounter(t);
-      }
-    });
-  })();
     // ================================================================
   // [S16] CLASSES
   // ================================================================
@@ -11598,287 +10647,6 @@
       return { ok: false, error: String(err && err.message || err) };
     }
   }
-    // ================================================================
-  // [S07c] COLLECTIBLES
-  //   Checklist per learner. Textbook subs come from class_subjects.
-  //   Notebook subs are entered manually per learner.
-  // ================================================================
-  let __collectItemsCache = null;
-  let __collectCurrentLearner = null;
-  let __collectCurrentTicks = {};
-  let __collectCurrentItems = [];
-  let __collectNotebookExtra = {};   // learnerId → array of sub keys
-
-  async function loadCollectibleItems() {
-    if (__collectItemsCache) return __collectItemsCache;
-    const r = await window.TIS.listCollectibleItems();
-    __collectItemsCache = (r && r.ok) ? (r.data || []) : [];
-    return __collectItemsCache;
-  }
-  window.loadCollectibleItems = loadCollectibleItems;
-
-  function initCollectiblesTab() {
-    const s  = document.getElementById('btnCollectSearch');
-    const in_ = document.getElementById('collectSearchInput');
-    const mg = document.getElementById('btnCollectManage');
-    const pr = document.getElementById('btnCollectPrint');
-
-    if (s && !s.__wired) {
-      s.addEventListener('click', collectiblesSearch);
-      s.__wired = true;
-    }
-    if (in_ && !in_.__wired) {
-      in_.addEventListener('keypress', function (e) { if (e.key === 'Enter') collectiblesSearch(); });
-      in_.__wired = true;
-    }
-    if (mg && !mg.__wired) {
-      mg.addEventListener('click', openCollectManageModal);
-      mg.__wired = true;
-    }
-    if (pr && !pr.__wired) {
-      pr.addEventListener('click', printCollectChecklist);
-      pr.__wired = true;
-    }
-  }
-  window.initCollectiblesTab = initCollectiblesTab;
-
-  async function collectiblesSearch() {
-    const el = document.getElementById('collectSearchInput');
-    const q = el ? el.value.trim() : '';
-    const feed = document.getElementById('collectFeedback');
-    const box = document.getElementById('collectMatchList');
-
-    __collectCurrentLearner = null;
-    __collectCurrentTicks = {};
-    if (box) box.innerHTML = '';
-    document.getElementById('collectChecklist').innerHTML = '';
-
-    if (!q) { if (feed) feed.textContent = 'Type a PIN or a name.'; return; }
-
-    startLoader();
-    const r = await window.TIS.searchLearners(q);
-    stopLoader();
-
-    if (!r || !r.ok) { if (feed) feed.textContent = 'Search failed.'; return; }
-    const list = r.data || [];
-    if (list.length === 0) { if (feed) feed.textContent = 'No learner matches "' + q + '".'; return; }
-
-    if (list.length === 1) { await openCollectibleForLearner(list[0]); return; }
-
-    let html = '<div class="card-bg" style="padding:8px;">';
-    html += '<div style="font-size:12px;color:#666;margin-bottom:6px;">' + list.length + ' matches — pick one:</div>';
-    list.forEach(function (l) {
-      html += '<div style="padding:6px 8px;border-bottom:1px solid #eee;cursor:pointer;" ' +
-              'onclick="openCollectibleForLearner(window.__collectPick(' + l.id + '))">' +
-              '<b>' + esc(l.name) + '</b> — ' + esc(l.pin) + ' — ' + esc(l.class_name || '') + '</div>';
-    });
-    html += '</div>';
-    if (box) box.innerHTML = html;
-    window.__collectPick = function (id) { return list.find(function (x) { return x.id === id; }); };
-    if (feed) feed.textContent = '';
-  }
-  window.collectiblesSearch = collectiblesSearch;
-
-  async function openCollectibleForLearner(learner) {
-    if (!learner) return;
-    __collectCurrentLearner = learner;
-    const feed = document.getElementById('collectFeedback');
-    if (feed) feed.textContent = 'Loading ' + learner.name + '…';
-    setHTML('collectMatchList', '');
-    setHTML('collectChecklist', pageLoaderHTML('Loading items…'));
-
-    startLoader();
-    const [items, ticks, subjectsR] = await Promise.all([
-      loadCollectibleItems(),
-      window.TIS.listCollectibleTicksForLearner(learner.id),
-      window.TIS.getClassSubjects(learner.class_name)
-    ]);
-    stopLoader();
-
-    __collectCurrentItems = items;
-    __collectCurrentTicks = {};
-
-    const tickMap = {};
-    if (ticks && ticks.ok) {
-      (ticks.data || []).forEach(function (t) {
-        tickMap[t.item_key + '|' + (t.sub_key || '')] = t;
-      });
-    }
-
-    const subjects = (subjectsR && subjectsR.ok) ? (subjectsR.data || []) : [];
-    const subjectCodes = subjects.map(function (s) { return s.subject_code; }).filter(Boolean);
-
-    // Notebook extras — persisted in localStorage per learner, kept simple.
-    const lk = 'tis_collect_notebooks_' + learner.id;
-    let nbExtras = [];
-    try { nbExtras = JSON.parse(localStorage.getItem(lk) || '[]'); } catch (e) { nbExtras = []; }
-    __collectNotebookExtra[learner.id] = nbExtras;
-
-    const container = document.getElementById('collectChecklist');
-    if (!container) return;
-
-    let html = '<div class="card-bg">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">';
-    html += '<div><div style="font-weight:800;font-size:14px;">' + esc(learner.name) + '</div>';
-    html += '<div style="font-size:11px;color:#666;">' + esc(learner.pin) + ' · ' + esc(learner.class_name || '') + '</div></div>';
-    html += '</div>';
-
-    html += '<div style="display:grid;grid-template-columns:1fr;gap:6px;">';
-
-    items.forEach(function (item) {
-      const t = tickMap[item.item_key + '|'] || {};
-      const ticked = t.collected === true;
-      html += '<div style="border:1px solid #e0e6e2;border-radius:8px;padding:8px 10px;background:' + (ticked ? '#f0f9f0' : '#fff') + ';">';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">';
-      html += '<span style="font-weight:700;font-size:13px;">' + esc(item.item_label) + '</span>';
-      html += '<button type="button" class="btn btn-sm ' + (ticked ? 'btn-success' : 'btn-secondary') + '" ' +
-              'onclick="toggleCollectTick(' + learner.id + ', \'' + escAttr(item.item_key) + '\', \'\', ' + (ticked ? 'false' : 'true') + ')">' +
-              (ticked ? '✓ Collected' : '✗ Not collected') + '</button>';
-      html += '</div>';
-      if (t.collected_at) {
-        html += '<div style="font-size:10px;color:#666;margin-top:2px;">Marked ' + new Date(t.collected_at).toLocaleString() + '</div>';
-      }
-
-      if (item.item_key === 'textbook' && subjectCodes.length) {
-        html += '<div style="margin-top:6px;padding-left:8px;">';
-        subjectCodes.forEach(function (code) {
-          const st = tickMap['textbook|' + code] || {};
-          const stk = st.collected === true;
-          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;">';
-          html += '<span>' + esc(code.toUpperCase()) + '</span>';
-          html += '<button type="button" class="btn btn-sm ' + (stk ? 'btn-success' : 'btn-secondary') + '" style="font-size:10px;padding:2px 8px;" ' +
-                  'onclick="toggleCollectTick(' + learner.id + ', \'textbook\', \'' + escAttr(code) + '\', ' + (stk ? 'false' : 'true') + ')">' +
-                  (stk ? '✓' : '✗') + '</button>';
-          html += '</div>';
-        });
-        html += '</div>';
-      }
-
-      if (item.item_key === 'notebook') {
-        html += '<div style="margin-top:6px;padding-left:8px;">';
-        nbExtras.forEach(function (subKey, idx) {
-          const st = tickMap['notebook|' + subKey] || {};
-          const stk = st.collected === true;
-          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;">';
-          html += '<span>' + esc(subKey) + '</span>';
-          html += '<span>';
-          html += '<button type="button" class="btn btn-sm ' + (stk ? 'btn-success' : 'btn-secondary') + '" style="font-size:10px;padding:2px 8px;" ' +
-                  'onclick="toggleCollectTick(' + learner.id + ', \'notebook\', \'' + escAttr(subKey) + '\', ' + (stk ? 'false' : 'true') + ')">' +
-                  (stk ? '✓' : '✗') + '</button> ';
-          html += '<button type="button" class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px;" ' +
-                  'onclick="removeNotebookSub(' + learner.id + ', ' + idx + ')">×</button>';
-          html += '</span>';
-          html += '</div>';
-        });
-        html += '<div style="margin-top:4px;">';
-        html += '<input type="text" id="nb_new_' + learner.id + '" placeholder="e.g. Notebook 1 — 80 pages" style="width:70%;font-size:11px;padding:3px 6px;"> ';
-        html += '<button type="button" class="btn btn-sm btn-primary" style="font-size:10px;padding:3px 8px;" ' +
-                'onclick="addNotebookSub(' + learner.id + ')">Add</button>';
-        html += '</div>';
-        html += '</div>';
-      }
-
-      html += '</div>';
-    });
-
-    html += '</div></div>';
-    container.innerHTML = html;
-    if (feed) feed.textContent = 'Showing ' + learner.name + '.';
-  }
-  window.openCollectibleForLearner = openCollectibleForLearner;
-
-  async function toggleCollectTick(learnerId, itemKey, subKey, collected) {
-    startLoader();
-    const r = await window.TIS.setCollectibleTick(learnerId, itemKey, subKey, collected, null);
-    stopLoader();
-    if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || ''), 'error'); return; }
-    if (__collectCurrentLearner && __collectCurrentLearner.id === learnerId) {
-      await openCollectibleForLearner(__collectCurrentLearner);
-    }
-  }
-  window.toggleCollectTick = toggleCollectTick;
-
-  function addNotebookSub(learnerId) {
-    const inp = document.getElementById('nb_new_' + learnerId);
-    const val = inp ? inp.value.trim() : '';
-    if (!val) return;
-    const arr = __collectNotebookExtra[learnerId] || [];
-    arr.push(val);
-    __collectNotebookExtra[learnerId] = arr;
-    try { localStorage.setItem('tis_collect_notebooks_' + learnerId, JSON.stringify(arr)); } catch (e) {}
-    if (__collectCurrentLearner && __collectCurrentLearner.id === learnerId) openCollectibleForLearner(__collectCurrentLearner);
-  }
-  window.addNotebookSub = addNotebookSub;
-
-  function removeNotebookSub(learnerId, idx) {
-    const arr = __collectNotebookExtra[learnerId] || [];
-    arr.splice(idx, 1);
-    __collectNotebookExtra[learnerId] = arr;
-    try { localStorage.setItem('tis_collect_notebooks_' + learnerId, JSON.stringify(arr)); } catch (e) {}
-    if (__collectCurrentLearner && __collectCurrentLearner.id === learnerId) openCollectibleForLearner(__collectCurrentLearner);
-  }
-  window.removeNotebookSub = removeNotebookSub;
-
-  async function openCollectManageModal() {
-    closeModal();
-    const items = await loadCollectibleItems();
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
-    html += '<div class="modal-box" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Collectible Items</h2>' +
-            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">These are the items that appear on every learner\'s checklist.</p>';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr style="background:#0d4d26;color:#fff;"><th style="text-align:left;padding:6px;">Item</th><th style="padding:6px;">Category</th></tr></thead><tbody>';
-    items.forEach(function (i) {
-      html += '<tr><td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(i.item_label) + '</td>' +
-              '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(i.category || '') + '</td></tr>';
-    });
-    html += '</tbody></table>';
-    html += '<p style="font-size:11px;color:#666;margin-top:10px;">To add or remove items, use the SQL Editor. This list is small and rarely changes.</p>';
-    html += '<div style="text-align:right;margin-top:10px;"><button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button></div>';
-    html += '</div></div>';
-    setHTML('modalContainer', html);
-  }
-  window.openCollectManageModal = openCollectManageModal;
-
-  function printCollectChecklist() {
-    if (!__collectCurrentLearner) { showToast('Search a learner first.', 'warning'); return; }
-    const learner = __collectCurrentLearner;
-    const items = __collectCurrentItems;
-    const container = document.getElementById('collectChecklist');
-    if (!container) return;
-
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-
-    let html = '<html><head><title>Collectibles — ' + esc(learner.name) + '</title><style>';
-    html += 'body{font-family:Arial;padding:20px;}';
-    html += 'h1{color:#0b6623;font-size:18px;margin:0 0 4px;}';
-    html += '.sub{font-size:12px;color:#666;margin-bottom:12px;}';
-    html += 'table{width:100%;border-collapse:collapse;font-size:12px;}';
-    html += 'th{background:#0b6623;color:#fff;text-align:left;padding:6px;}';
-    html += 'td{padding:5px 6px;border-bottom:1px solid #eee;}';
-    html += '.tick{color:#0d4d26;font-weight:800;}';
-    html += '.cross{color:#c0392b;font-weight:800;}';
-    html += '</style></head><body>';
-    html += '<h1>' + esc(learner.name) + '</h1>';
-    html += '<div class="sub">' + esc(learner.pin) + ' · ' + esc(learner.class_name || '') + ' · Printed ' + new Date().toLocaleString() + '</div>';
-
-    html += '<table><thead><tr><th>Item</th><th style="width:100px;">Status</th></tr></thead><tbody>';
-    items.forEach(function (it) {
-      const st = __collectCurrentTicks[it.item_key + '|'] || {};
-      const ok = st.collected === true;
-      html += '<tr><td>' + esc(it.item_label) + '</td><td class="' + (ok ? 'tick' : 'cross') + '">' + (ok ? '✓' : '✗') + '</td></tr>';
-    });
-    html += '</tbody></table>';
-    html += '</body></html>';
-
-    w.document.write(html);
-    w.document.close();
-    setTimeout(function () { w.print(); }, 300);
-  }
-  window.printCollectChecklist = printCollectChecklist;
-
 })();
 // ================================================================
 // END OF app.js
