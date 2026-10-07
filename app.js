@@ -1442,11 +1442,28 @@
                   'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
                   '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
                   '.info-label{color:#666;}.info-value{font-weight:600;}';
-    const css80  = '@page{size:80mm auto;margin:3mm;}body{font-family:Arial;font-size:11px;color:#000;}' +
-                   '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:6px;}' +
-                   'h1{font-size:14px;margin:0;}h2{font-size:11px;margin:6px 0 2px;border-bottom:1px dotted #000;}' +
-                   '.info-row{display:flex;justify-content:space-between;font-size:10px;padding:2px 0;}' +
-                   '.info-label{color:#333;}.info-value{font-weight:700;}';
+       // 80mm thermal (RawBT / MPT-11_309F).
+    // Printable width on an 80mm head is ~72mm — do NOT use 80mm here
+    // or the driver shrinks everything to fit, which is what made the
+    // previous output unreadable. Base font is 14px (~3.5mm tall).
+    const css80 =
+      '@page{size:72mm auto;margin:2mm;}' +
+      'html,body{width:72mm;margin:0;padding:0;}' +
+      'body{font-family:"Arial","Helvetica",sans-serif;font-size:14px;line-height:1.35;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+      '*{box-sizing:border-box;}' +
+      '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin:0 0 8px;}' +
+      '.hdr h1{font-size:20px;font-weight:900;letter-spacing:.5px;margin:0 0 2px;}' +
+      '.hdr .sub{font-size:12px;font-style:italic;}' +
+      '.who{font-size:16px;font-weight:900;margin:6px 0 2px;}' +
+      '.who-sub{font-size:12px;margin:0 0 6px;}' +
+      'h2{font-size:15px;font-weight:900;margin:8px 0 4px;padding:2px 0;border-top:2px solid #000;border-bottom:1px solid #000;text-transform:uppercase;letter-spacing:.5px;}' +
+      '.info-row{display:flex;justify-content:space-between;gap:6px;font-size:13px;padding:3px 0;border-bottom:1px dotted #888;}' +
+      '.info-row:last-child{border-bottom:0;}' +
+      '.info-label{color:#000;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+      '.info-label::after{content:":";}' +
+      '.info-value{font-weight:800;flex:0 0 auto;text-align:right;white-space:nowrap;}' +
+      '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
+      '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
 
     let html = '<html><head><title>' + esc(d.name) + '</title><style>' + (paper === '80mm' ? css80 : cssA4) + '</style></head><body>';
     html += '<div class="hdr">';
