@@ -489,33 +489,15 @@
     applyLearnerFilter();
   }
 
-   // ================================================================
-  // Single source of truth for "is this learner inactive?"
-  // A learner is INACTIVE if ANY of the following is present:
-  //   • date_of_withdrawal (the canonical exit date)
-  //   • class_at_withdrawal (they were assigned an exit class)
-  //   • exit_reason (they were given a reason to leave)
-  // This matches how the office actually uses the form: sometimes
-  // only the reason is recorded, sometimes only the date.
-  // ================================================================
-  function learnerIsInactive(l) {
-    const date   = (l.date_of_withdrawal   || '').toString().trim();
-    const klass  = (l.class_at_withdrawal  || '').toString().trim();
-    const reason = (l.exit_reason          || '').toString().trim();
-    const hasDate   = date   && date   !== 'N/A';
-    const hasClass  = klass  && klass  !== 'N/A';
-    const hasReason = reason && reason !== 'N/A';
-    return !!(hasDate || hasClass || hasReason);
-  }
-  window.learnerIsInactive = learnerIsInactive;
-
   // Filter the cached learners based on the "show inactive" flag and
   // hand off to the renderer.
   function applyLearnerFilter() {
     const all = State.cachedLearners || [];
-    const filtered = __learnersShowInactive
-      ? all
-      : all.filter(function (l) { return !learnerIsInactive(l); });
+    const inactive = function (l) {
+      const w = (l.date_of_withdrawal || '').toString().trim();
+      return (w && w !== '' && w !== 'N/A');
+    };
+    const filtered = __learnersShowInactive ? all : all.filter(function (l) { return !inactive(l); });
     renderLearners(filtered);
     renderLearnerStats(all);
   }
@@ -571,7 +553,8 @@
     const total = rows.length;
     let exited = 0;
     rows.forEach(function (r) {
-      if (learnerIsInactive(r)) exited++;
+      const w = (r.date_of_withdrawal || '').toString().trim();
+      if (w && w !== '' && w !== 'N/A') exited++;
     });
     setHTML('learnerStats',
       '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div>' +
@@ -882,19 +865,11 @@
       textField('ed_lga_of_birth',   'LGA of Birth',   d.lga_of_birth) + '</div>';
     html += textField('ed_lin', 'LIN', d.lin);
 
-       let exitOpts = '<option value="">— none —</option>';
+    let exitOpts = '<option value="">— none —</option>';
     EXIT_REASONS.forEach(function (rs) {
       exitOpts += '<option value="' + escAttr(rs) + '"' + (rs === d.exit_reason ? ' selected' : '') + '>' + esc(rs) + '</option>';
     });
-    html += '<div class="form-row">' +
-      '<div class="form-group"><label>Exit Reason</label><select id="ed_exit_reason">' + exitOpts + '</select></div>' +
-      '<div class="form-group"><label>Date of Withdrawal</label>' +
-      '<input id="ed_date_of_withdrawal" type="date" value="' + escAttr(isoToDateInput(d.date_of_withdrawal)) + '"></div>' +
-      '</div>';
-    html += '<div class="form-row">' +
-      '<div class="form-group"><label>Exit Class</label>' +
-      '<input id="ed_class_at_withdrawal" type="text" value="' + escAttr(d.class_at_withdrawal || '') + '" placeholder="e.g. JSS 3"></div>' +
-      '</div>';
+    html += '<div class="form-group"><label>Exit Reason</label><select id="ed_exit_reason">' + exitOpts + '</select></div>';
 
     html += '<div id="ed_feedback" style="margin-top:8px;font-size:12px;color:#c0392b;"></div>';
 
@@ -909,28 +884,26 @@
     const get = function (fid) { const el = document.getElementById(fid); return el ? String(el.value || '').trim() : ''; };
 
     // ---- Read the plain text fields ----
-       const fields = {
-      name:                  get('ed_name'),
-      class_name:            get('ed_class_name'),
-      gender:                get('ed_gender'),
-      date_of_birth:         get('ed_date_of_birth'),
-      father_phone:          get('ed_num_father'),
-      mother_phone:          get('ed_num_mother'),
-      guardian_phone:        get('ed_num_guardian'),
-      account_number:        get('ed_account_number'),
-      blood_group:           get('ed_blood_group'),
-      religion:              get('ed_religion'),
-      allergy:               get('ed_allergy'),
-      parents_name:          get('ed_parents_name'),
-      address:               get('ed_address'),
-      state_of_origin:       get('ed_state_of_origin'),
-      lga_of_origin:         get('ed_lga_of_origin'),
-      state_of_birth:        get('ed_state_of_birth'),
-      lga_of_birth:          get('ed_lga_of_birth'),
-      lin:                   get('ed_lin'),
-      exit_reason:           get('ed_exit_reason'),
-      date_of_withdrawal:    get('ed_date_of_withdrawal'),
-      class_at_withdrawal:   get('ed_class_at_withdrawal')
+    const fields = {
+      name:             get('ed_name'),
+      class_name:       get('ed_class_name'),
+      gender:           get('ed_gender'),
+      date_of_birth:    get('ed_date_of_birth'),
+      father_phone:     get('ed_num_father'),
+      mother_phone:     get('ed_num_mother'),
+      guardian_phone:   get('ed_num_guardian'),
+      account_number:   get('ed_account_number'),
+      blood_group:      get('ed_blood_group'),
+      religion:         get('ed_religion'),
+      allergy:          get('ed_allergy'),
+      parents_name:     get('ed_parents_name'),
+      address:          get('ed_address'),
+      state_of_origin:  get('ed_state_of_origin'),
+      lga_of_origin:    get('ed_lga_of_origin'),
+      state_of_birth:   get('ed_state_of_birth'),
+      lga_of_birth:     get('ed_lga_of_birth'),
+      lin:              get('ed_lin'),
+      exit_reason:      get('ed_exit_reason')
     };
 
     // ---- Read the priority dropdowns ----
@@ -1400,6 +1373,7 @@
     html += '</div></div></div>';
     setHTML('modalContainer', html);
   }
+
   async function printLearnerCard(pin) {
     const secA = document.getElementById('pp_secA');
     const secB = document.getElementById('pp_secB');
@@ -1441,61 +1415,29 @@
                   'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
                   '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
                   '.info-label{color:#666;}.info-value{font-weight:600;}';
-       // 80mm thermal (RawBT / MPT-11_309F).
-    // Printable width on an 80mm head is ~72mm — do NOT use 80mm here
-    // or the driver shrinks everything to fit, which is what made the
-    // previous output unreadable. Base font is 14px (~3.5mm tall).
-    const css80 =
-      '@page{size:72mm auto;margin:2mm;}' +
-      'html,body{width:72mm;margin:0;padding:0;}' +
-      'body{font-family:"Arial","Helvetica",sans-serif;font-size:14px;line-height:1.35;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
-      '*{box-sizing:border-box;}' +
-      '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin:0 0 8px;}' +
-      '.hdr h1{font-size:20px;font-weight:900;letter-spacing:.5px;margin:0 0 2px;}' +
-      '.hdr .sub{font-size:12px;font-style:italic;}' +
-      '.who{font-size:16px;font-weight:900;margin:6px 0 2px;}' +
-      '.who-sub{font-size:12px;margin:0 0 6px;}' +
-      'h2{font-size:15px;font-weight:900;margin:8px 0 4px;padding:2px 0;border-top:2px solid #000;border-bottom:1px solid #000;text-transform:uppercase;letter-spacing:.5px;}' +
-      '.info-row{display:flex;justify-content:space-between;gap:6px;font-size:13px;padding:3px 0;border-bottom:1px dotted #888;}' +
-      '.info-row:last-child{border-bottom:0;}' +
-      '.info-label{color:#000;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
-      '.info-label::after{content:":";}' +
-      '.info-value{font-weight:800;flex:0 0 auto;text-align:right;white-space:nowrap;}' +
-      '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
-      '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
+    const css80  = '@page{size:80mm auto;margin:3mm;}body{font-family:Arial;font-size:11px;color:#000;}' +
+                   '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:6px;}' +
+                   'h1{font-size:14px;margin:0;}h2{font-size:11px;margin:6px 0 2px;border-bottom:1px dotted #000;}' +
+                   '.info-row{display:flex;justify-content:space-between;font-size:10px;padding:2px 0;}' +
+                   '.info-label{color:#333;}.info-value{font-weight:700;}';
 
-      const rowFn = function (label, value) {
+    let html = '<html><head><title>' + esc(d.name) + '</title><style>' + (paper === '80mm' ? css80 : cssA4) + '</style></head><body>';
+    html += '<div class="hdr">';
+    if (paper === 'A4') html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
+    html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
+            (paper === 'A4' ? '<div style="font-style:italic;color:#666;font-size:12px;">Scientia est potentia</div>' : '') +
+            '</div>';
+    if (paper === 'A4') html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
+    html += '</div>';
+    html += '<h2 style="margin-top:14px;">' + esc(d.name) + ' — ' + esc(d.pin) + '</h2>';
+    html += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Class: ' + esc(d.class_name) + ' · Active Term: ' + esc(termLabel) + '</div>';
+
+    const rowFn = function (label, value) {
       return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + esc(value) + '</span></div>';
     };
 
-    let html = '<!doctype html><html><head><meta charset="utf-8">' +
-               '<title>' + esc(d.name) + '</title>' +
-               '<style>' + (paper === '80mm' ? css80 : cssA4) + '</style>' +
-               '</head><body>';
-
-    // ---------- Header ----------
-    html += '<div class="hdr">';
-    if (paper === 'A4') {
-      html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
-      html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
-              '<div class="sub" style="font-style:italic;color:#666;">Scientia est potentia</div></div>';
-      html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
-    } else {
-      // 80mm: text-only, big, centred. No logos — they waste vertical paper.
-      html += '<h1>THE IDEAL SCHOOLS</h1>';
-      html += '<div class="sub">Scientia est potentia</div>';
-    }
-    html += '</div>';
-
-    // ---------- Who ----------
-    html += '<div class="who">' + esc(d.name || '') + '</div>';
-    html += '<div class="who-sub">PIN ' + esc(d.pin || '') +
-            ' &middot; ' + esc(d.class_name || '') +
-            ' &middot; ' + esc(termLabel) + '</div>';
-
-    // ---------- Section A ----------
     if (wantA) {
-      html += '<h2>Section A &mdash; Identity</h2>';
+      html += '<h2>Section A — Identity</h2>';
       html += rowFn('Class', d.class_name || '—');
       html += rowFn('PIN', d.pin || '—');
       html += rowFn('Name', d.name || '—');
@@ -1506,10 +1448,8 @@
       html += rowFn('Clearance Date', (termRow && fmtDateOrDash(termRow.clearance)) || '—');
       html += rowFn('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
     }
-
-    // ---------- Section B ----------
     if (wantB) {
-      html += '<h2>Section B &mdash; Fees</h2>';
+      html += '<h2>Section B — Fees (' + termLabel + ')</h2>';
       html += rowFn('Tuition', moneyOrDash(termRow && termRow.tuition));
       html += rowFn('Scholarship', moneyOrDash(termRow && termRow.scholarship));
       html += rowFn('Adjusted Tuition', moneyOrDash(adjusted));
@@ -1518,7 +1458,7 @@
           const dt = termRow['part_payment_' + n + '_date'];
           const am = termRow['part_payment_' + n + '_amount'];
           if ((!dt || dt === '') && (!am || am === '')) continue;
-          html += rowFn('Part Pay ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
+          html += rowFn('Part Payment ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
         }
       }
       html += rowFn('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
@@ -1526,15 +1466,13 @@
       html += rowFn('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
       html += rowFn('Net Bills', moneyOrDash(netBills));
       html += rowFn('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
-      html += rowFn('Blood Group', d.blood_group || '—');
+      html += rowFn('Blood Group / Genotype', d.blood_group || '—');
       html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
     }
-
-    // ---------- Section C ----------
     if (wantC) {
-      html += '<h2>Section C &mdash; History</h2>';
-      html += rowFn('Class Before Adm.', d.class_before_admission || '—');
+      html += '<h2>Section C — History & Origin</h2>';
+      html += rowFn('Class Before Admission', d.class_before_admission || '—');
       html += rowFn('Date of Admission', d.date_of_admission || '—');
       html += rowFn('Class Admitted Into', d.class_admitted_into || '—');
       html += rowFn('LIN', d.lin || '—');
@@ -1551,12 +1489,12 @@
       html += rowFn('3rd Phone (' + ph3.label + ')', ph3.value);
     }
 
-    // ---------- Footer ----------
-    html += '<div class="footer">Printed ' + new Date().toLocaleString() + '</div>';
-
     html += '</body></html>';
+    w.document.write(html); w.document.close();
+    setTimeout(function () { w.print(); }, 250);
+    closeModal();
+  }
 
-       
   // ================================================================
   // Live search
   // ================================================================
