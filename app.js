@@ -311,13 +311,12 @@
   // ================================================================
   // [S06] NAVIGATION
   // ================================================================
-    function switchTab(name) {
-    // Prospects is intentionally open to every operator (read + write + print).
+     function switchTab(name) {
+    // Prospects and Collectibles are open to every operator.
     // Every other tab keeps the existing read-permission gate.
-      if (name !== 'prospects' && name !== 'collectibles' && !hasPermission('read_' + name)) {
+    if (name !== 'prospects' && name !== 'collectibles' && !hasPermission('read_' + name)) {
       showToast('You do not have access to that module.', 'warning');
       return;
-    }
     }
     document.querySelectorAll('.nav-tab').forEach(b => {
       b.classList.toggle('active', b.dataset.tab === name);
@@ -330,7 +329,7 @@
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
     try {
-        if (name === 'collectibles') initCollectiblesTab();
+      if (name === 'collectibles') initCollectiblesTab();
       else if (name === 'learners') loadLearners();
       else if (name === 'prospects') initProspectsTab();
       else if (name === 'staff') loadStaff();
