@@ -536,6 +536,13 @@
         other_bills_major: Number(row.other_bills_major || 0),
         other_bills_minor: Number(row.other_bills_minor || 0),
         books:             Number(row.books || 0),
+        registration_fee:  Number(row.registration_fee  || 0),
+        uniform:           Number(row.uniform           || 0),
+        sportswear:        Number(row.sportswear        || 0),
+        waist_coat:        Number(row.waist_coat        || 0),
+        tie:               Number(row.tie               || 0),
+        extra_lesson:      Number(row.extra_lesson      || 0),
+        special_lesson:    Number(row.special_lesson    || 0),
         notes:             row.notes ? String(row.notes).slice(0, 500) : null,
         updated_at:        new Date().toISOString()
       };
@@ -551,7 +558,29 @@
       return ok(data);
     } catch (err) { return fail(err); }
   };
-
+  // ================================================================
+  // [FEE_EXTRAS] — the seven optional items on a class bill.
+  // Reads the class's row from fee_schedule and returns just the
+  // extras slice, ordered the way the office prints them.
+  // Used by the prospect sheet and the report card fee block.
+  // ================================================================
+  TIS.getFeeExtrasForClass = async function (className, termType, year) {
+    try {
+      const r = await TIS.getFeeScheduleRow(className, termType, year);
+      if (!r.ok) return r;
+      const row = r.data || {};
+      const extras = [
+        { item_key: 'registration_fee', item_label: 'Registration Fee',                default_amount: Number(row.registration_fee || 0), sort_order: 10, default_on: true },
+        { item_key: 'uniform',          item_label: 'Uniform',                          default_amount: Number(row.uniform           || 0), sort_order: 20, default_on: true },
+        { item_key: 'sportswear',       item_label: 'Sportswear',                       default_amount: Number(row.sportswear        || 0), sort_order: 30, default_on: true },
+        { item_key: 'waist_coat',       item_label: 'Waist Coat',                       default_amount: Number(row.waist_coat        || 0), sort_order: 40, default_on: true },
+        { item_key: 'tie',              item_label: 'Tie',                              default_amount: Number(row.tie               || 0), sort_order: 50, default_on: true },
+        { item_key: 'extra_lesson',     item_label: 'Extra Lesson (3:00 – 4:30)',       default_amount: Number(row.extra_lesson      || 0), sort_order: 60, default_on: true },
+        { item_key: 'special_lesson',   item_label: 'Special Lesson (4:30 – 5:30)',     default_amount: Number(row.special_lesson    || 0), sort_order: 70, default_on: true }
+      ];
+      return ok(extras);
+    } catch (err) { return fail(err); }
+  };
   TIS.deleteFeeSchedule = async function (id) {
     try {
       const sb = await loadSdk();
@@ -2750,21 +2779,19 @@
           const on = Number(sr.data.other_bills_minor || 0);
           const bk = Number(sr.data.books || 0);
           out.class_bill = { tuition: t, other_bills_major: om, other_bills_minor: on, books: bk, total: t + om + on + bk };
-        }
-      }
 
-      const er = await TIS.listFeeExtrasDefaults(true);
-      if (er.ok && er.data) {
-        out.extras = er.data.map(function (e) {
-          return {
-            item_key: e.item_key,
-            item_label: e.item_label,
-            default_amount: Number(e.default_amount || 0),
-            sort_order: e.sort_order || 100,
-            default_on: true
-          };
-        });
-        out.extras_total = out.extras.reduce(function (s, e) { return s + e.default_amount; }, 0);
+          // Extras now come from the class bill itself.
+          out.extras = [
+            { item_key: 'registration_fee', item_label: 'Registration Fee',              default_amount: Number(sr.data.registration_fee || 0), sort_order: 10, default_on: true },
+            { item_key: 'uniform',          item_label: 'Uniform',                        default_amount: Number(sr.data.uniform           || 0), sort_order: 20, default_on: true },
+            { item_key: 'sportswear',       item_label: 'Sportswear',                     default_amount: Number(sr.data.sportswear        || 0), sort_order: 30, default_on: true },
+            { item_key: 'waist_coat',       item_label: 'Waist Coat',                     default_amount: Number(sr.data.waist_coat        || 0), sort_order: 40, default_on: true },
+            { item_key: 'tie',              item_label: 'Tie',                            default_amount: Number(sr.data.tie               || 0), sort_order: 50, default_on: true },
+            { item_key: 'extra_lesson',     item_label: 'Extra Lesson (3:00 – 4:30)',     default_amount: Number(sr.data.extra_lesson      || 0), sort_order: 60, default_on: true },
+            { item_key: 'special_lesson',   item_label: 'Special Lesson (4:30 – 5:30)',   default_amount: Number(sr.data.special_lesson    || 0), sort_order: 70, default_on: true }
+          ];
+          out.extras_total = out.extras.reduce(function (s, e) { return s + e.default_amount; }, 0);
+        }
       }
 
       out.grand_total = out.class_bill.total + out.extras_total;
