@@ -489,15 +489,33 @@
     applyLearnerFilter();
   }
 
+   // ================================================================
+  // Single source of truth for "is this learner inactive?"
+  // A learner is INACTIVE if ANY of the following is present:
+  //   • date_of_withdrawal (the canonical exit date)
+  //   • class_at_withdrawal (they were assigned an exit class)
+  //   • exit_reason (they were given a reason to leave)
+  // This matches how the office actually uses the form: sometimes
+  // only the reason is recorded, sometimes only the date.
+  // ================================================================
+  function learnerIsInactive(l) {
+    const date   = (l.date_of_withdrawal   || '').toString().trim();
+    const klass  = (l.class_at_withdrawal  || '').toString().trim();
+    const reason = (l.exit_reason          || '').toString().trim();
+    const hasDate   = date   && date   !== 'N/A';
+    const hasClass  = klass  && klass  !== 'N/A';
+    const hasReason = reason && reason !== 'N/A';
+    return !!(hasDate || hasClass || hasReason);
+  }
+  window.learnerIsInactive = learnerIsInactive;
+
   // Filter the cached learners based on the "show inactive" flag and
   // hand off to the renderer.
   function applyLearnerFilter() {
     const all = State.cachedLearners || [];
-    const inactive = function (l) {
-      const w = (l.date_of_withdrawal || '').toString().trim();
-      return (w && w !== '' && w !== 'N/A');
-    };
-    const filtered = __learnersShowInactive ? all : all.filter(function (l) { return !inactive(l); });
+    const filtered = __learnersShowInactive
+      ? all
+      : all.filter(function (l) { return !learnerIsInactive(l); });
     renderLearners(filtered);
     renderLearnerStats(all);
   }
@@ -549,19 +567,17 @@
     });
   }
 
-    function renderLearnerStats(rows) {
+     function renderLearnerStats(rows) {
     const total = rows.length;
     let exited = 0;
     rows.forEach(function (r) {
-      const w = (r.date_of_withdrawal || '').toString().trim();
-      if (w && w !== '' && w !== 'N/A') exited++;
+      if (learnerIsInactive(r)) exited++;
     });
     setHTML('learnerStats',
       '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div>' +
       '<div class="stat-card gold"><div class="stat-label">Active</div><div class="stat-value gold">' + (total - exited) + '</div></div>' +
       '<div class="stat-card red"><div class="stat-label">Inactive</div><div class="stat-value red">' + exited + '</div></div>');
   }
-
   // ================================================================
   // View modal — three-tier permission gating
   //   A: everyone
@@ -865,11 +881,19 @@
       textField('ed_lga_of_birth',   'LGA of Birth',   d.lga_of_birth) + '</div>';
     html += textField('ed_lin', 'LIN', d.lin);
 
-    let exitOpts = '<option value="">— none —</option>';
+       let exitOpts = '<option value="">— none —</option>';
     EXIT_REASONS.forEach(function (rs) {
       exitOpts += '<option value="' + escAttr(rs) + '"' + (rs === d.exit_reason ? ' selected' : '') + '>' + esc(rs) + '</option>';
     });
-    html += '<div class="form-group"><label>Exit Reason</label><select id="ed_exit_reason">' + exitOpts + '</select></div>';
+    html += '<div class="form-row">' +
+      '<div class="form-group"><label>Exit Reason</label><select id="ed_exit_reason">' + exitOpts + '</select></div>' +
+      '<div class="form-group"><label>Date of Withdrawal</label>' +
+      '<input id="ed_date_of_withdrawal" type="date" value="' + escAttr(isoToDateInput(d.date_of_withdrawal)) + '"></div>' +
+      '</div>';
+    html += '<div class="form-row">' +
+      '<div class="form-group"><label>Exit Class</label>' +
+      '<input id="ed_class_at_withdrawal" type="text" value="' + escAttr(d.class_at_withdrawal || '') + '" placeholder="e.g. JSS 3"></div>' +
+      '</div>';
 
     html += '<div id="ed_feedback" style="margin-top:8px;font-size:12px;color:#c0392b;"></div>';
 
@@ -884,28 +908,29 @@
     const get = function (fid) { const el = document.getElementById(fid); return el ? String(el.value || '').trim() : ''; };
 
     // ---- Read the plain text fields ----
-    const fields = {
-      name:             get('ed_name'),
-      class_name:       get('ed_class_name'),
-      gender:           get('ed_gender'),
-      date_of_birth:    get('ed_date_of_birth'),
-      father_phone:     get('ed_num_father'),
-      mother_phone:     get('ed_num_mother'),
-      guardian_phone:   get('ed_num_guardian'),
-      account_number:   get('ed_account_number'),
-      blood_group:      get('ed_blood_group'),
-      religion:         get('ed_religion'),
-      allergy:          get('ed_allergy'),
-      parents_name:     get('ed_parents_name'),
-      address:          get('ed_address'),
-      state_of_origin:  get('ed_state_of_origin'),
-      lga_of_origin:    get('ed_lga_of_origin'),
-      state_of_birth:   get('ed_state_of_birth'),
-      lga_of_birth:     get('ed_lga_of_birth'),
-      lin:              get('ed_lin'),
-      exit_reason:      get('ed_exit_reason')
+      const fields = {
+      name:                  get('ed_name'),
+      class_name:            get('ed_class_name'),
+      gender:                get('ed_gender'),
+      date_of_birth:         get('ed_date_of_birth'),
+      father_phone:          get('ed_num_father'),
+      mother_phone:          get('ed_num_mother'),
+      guardian_phone:        get('ed_num_guardian'),
+      account_number:        get('ed_account_number'),
+      blood_group:           get('ed_blood_group'),
+      religion:              get('ed_religion'),
+      allergy:               get('ed_allergy'),
+      parents_name:          get('ed_parents_name'),
+      address:               get('ed_address'),
+      state_of_origin:       get('ed_state_of_origin'),
+      lga_of_origin:         get('ed_lga_of_origin'),
+      state_of_birth:        get('ed_state_of_birth'),
+      lga_of_birth:          get('ed_lga_of_birth'),
+      lin:                   get('ed_lin'),
+      exit_reason:           get('ed_exit_reason'),
+      date_of_withdrawal:    get('ed_date_of_withdrawal'),
+      class_at_withdrawal:   get('ed_class_at_withdrawal')
     };
-
     // ---- Read the priority dropdowns ----
     const raw1 = get('ed_prio_1') || 'father';
     const raw2 = get('ed_prio_2') || 'mother';
