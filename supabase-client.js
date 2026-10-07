@@ -2584,7 +2584,193 @@
     });
     return auth;
   }
-  TIS.roleDefaults = roleDefaults;
+   TIS.roleDefaults = roleDefaults;
+
+  // ================================================================
+  // [PROSPECTIVE_LEARNERS]
+  // Prospective learners + fee extras defaults.
+  // ================================================================
+  TIS.listProspectiveLearners = async function (statusFilter) {
+    try {
+      const sb = await loadSdk();
+      let q = sb.from('prospective_learners').select('*');
+      if (statusFilter) q = q.eq('status', statusFilter);
+      const { data, error } = await q.order('created_at', { ascending: false });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getProspectiveLearner = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('prospective_learners')
+        .select('*').eq('id', id).maybeSingle();
+      if (error) return fail(error.message);
+      return ok(data || null);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.createProspectiveLearner = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = Object.assign({}, row || {});
+      payload.status = payload.status || 'new';
+      payload.created_at = new Date().toISOString();
+      payload.updated_at = new Date().toISOString();
+      const { data, error } = await sb.from('prospective_learners')
+        .insert(payload).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.updateProspectiveLearner = async function (id, patch) {
+    try {
+      const sb = await loadSdk();
+      const payload = Object.assign({}, patch || {});
+      payload.updated_at = new Date().toISOString();
+      const { data, error } = await sb.from('prospective_learners')
+        .update(payload).eq('id', id).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteProspectiveLearner = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('prospective_learners').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({ id: id });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.enrollProspectiveLearner = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const now = new Date().toISOString();
+      const { data, error } = await sb.from('prospective_learners')
+        .update({ status: 'enrolled', enrolled_at: now, updated_at: now })
+        .eq('id', id).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.declineProspectiveLearner = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const now = new Date().toISOString();
+      const { data, error } = await sb.from('prospective_learners')
+        .update({ status: 'declined', declined_at: now, updated_at: now })
+        .eq('id', id).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.admitProspectiveLearner = async function (id) {
+    try {
+      const pr = await TIS.getProspectiveLearner(id);
+      if (!pr.ok || !pr.data) return fail('Prospect not found.');
+      const p = pr.data;
+      if (p.status === 'admitted' && p.admitted_learner_id) {
+        return fail('Already admitted (learner id ' + p.admitted_learner_id + ').');
+      }
+
+      const cr = await TIS.createLearner({
+        name:           p.full_name || '',
+        class_name:     p.proposed_class || '',
+        gender:         p.gender || '',
+        date_of_birth:  p.date_of_birth || '',
+        parents_name:   p.parents_name || '',
+        father_phone:   p.father_phone || '',
+        mother_phone:   p.mother_phone || '',
+        guardian_phone: p.guardian_phone || '',
+        address:        p.address || ''
+      });
+      if (!cr.ok) return fail('Learner create failed: ' + (cr.error || 'unknown'));
+
+      const learner = Array.isArray(cr.data) ? cr.data[0] : cr.data;
+      const learnerId = learner && learner.id ? learner.id : null;
+
+      const sb = await loadSdk();
+      const now = new Date().toISOString();
+      const ur = await sb.from('prospective_learners')
+        .update({ status: 'admitted', admitted_at: now, admitted_learner_id: learnerId, updated_at: now })
+        .eq('id', id).select().single();
+      if (ur.error) return fail('Learner created but prospect update failed: ' + ur.error.message);
+
+      return ok({ prospect: ur.data, learner: learner });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listFeeExtrasDefaults = async function (onlyActive) {
+    try {
+      const sb = await loadSdk();
+      let q = sb.from('fee_extras_defaults').select('*');
+      if (onlyActive) q = q.eq('is_active', true);
+      const { data, error } = await q.order('sort_order', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertFeeExtraDefault = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = Object.assign({}, row || {});
+      payload.updated_at = new Date().toISOString();
+      const { data, error } = await sb.from('fee_extras_defaults')
+        .upsert(payload, { onConflict: 'item_key' }).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getProspectiveFeePreview = async function (className, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const out = {
+        class_name: className, term_type: termType, year: year,
+        schedule_found: false,
+        class_bill: { tuition: 0, other_bills_major: 0, other_bills_minor: 0, books: 0, total: 0 },
+        extras: [], extras_total: 0, grand_total: 0
+      };
+
+      if (className && termType && year) {
+        const sr = await sb.from('fee_schedule').select('*')
+          .eq('class_name', className).eq('term_type', termType).eq('year', year)
+          .maybeSingle();
+        if (!sr.error && sr.data) {
+          out.schedule_found = true;
+          const t  = Number(sr.data.tuition || 0);
+          const om = Number(sr.data.other_bills_major || 0);
+          const on = Number(sr.data.other_bills_minor || 0);
+          const bk = Number(sr.data.books || 0);
+          out.class_bill = { tuition: t, other_bills_major: om, other_bills_minor: on, books: bk, total: t + om + on + bk };
+        }
+      }
+
+      const er = await TIS.listFeeExtrasDefaults(true);
+      if (er.ok && er.data) {
+        out.extras = er.data.map(function (e) {
+          return {
+            item_key: e.item_key,
+            item_label: e.item_label,
+            default_amount: Number(e.default_amount || 0),
+            sort_order: e.sort_order || 100,
+            default_on: true
+          };
+        });
+        out.extras_total = out.extras.reduce(function (s, e) { return s + e.default_amount; }, 0);
+      }
+
+      out.grand_total = out.class_bill.total + out.extras_total;
+      return ok(out);
+    } catch (err) { return fail(err); }
+  };
 
   // ================================================================
   // Expose + boot
