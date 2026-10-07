@@ -1573,23 +1573,17 @@
 
     html += '</body></html>';
 
-        if (paper === '80mm') {
-      // Hand the SAME HTML straight to RawBT so it renders at the
-      // printer's native resolution. No print dialog, no scaling.
-      rawbtPrint(html);
-      closeModal();
-      return;
-    }
-
-    // A4 path — keep the normal browser print dialog.
-    w.document.open();
+        w.document.open();
     w.document.write(html);
     w.document.close();
+
+    // Give RawBT a moment to build the raster image before we ask
+    // the user agent to print. 250ms was too short on the MPT-11.
     setTimeout(function () {
       try { w.focus(); w.print(); } catch (e) { /* user can Ctrl+P */ }
-    }, 400);
+    }, 600);
+
     closeModal();
-  }
 
   // ================================================================
   // Live search
