@@ -170,7 +170,7 @@
       // Prospects is intentionally open to every operator.
       // It is not permission-gated and carries no read_ / write_ /
       // print_ authority key. Skip it here so every role sees it.
-      if (mod === 'prospects') { btn.classList.remove('hidden'); return; }
+      if (mod === 'prospects' || mod === 'collectibles') { btn.classList.remove('hidden'); return; }
       if (hasPermission('read_' + mod)) btn.classList.remove('hidden');
       else btn.classList.add('hidden');
     });
@@ -329,8 +329,9 @@
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
     try {
-      if (name === 'prospects') initProspectsTab();
+        if (name === 'collectibles') initCollectiblesTab();
       else if (name === 'learners') loadLearners();
+      else if (name === 'prospects') initProspectsTab();
       else if (name === 'staff') loadStaff();
       else if (name === 'terms') initTermsTab();
       else if (name === 'attendance') initLearnerAttendanceTab();
