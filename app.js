@@ -7733,7 +7733,7 @@
   // ----------------------------------------------------------------
   // Comment bank picker
   // ----------------------------------------------------------------
-   async function wsOpenCommentBank(field, band, learnerId, targetField) {
+    async function wsOpenCommentBank(field, band, learnerId, targetField) {
     startLoader();
     const r = await window.TIS.getCommentBank(field, band);
     stopLoader();
@@ -7771,8 +7771,9 @@
       el.value = text;
       // Field is now bank-managed again → arrows will cycle it.
       el.setAttribute('data-default', '1');
-      el.style.borderColor = '#d4a017';
       el.setAttribute('data-bank-index', '0');
+      el.style.borderColor = '#d4a017';
+      wsClearCycleCounter(el);
       wsMarkDirty(learnerId);
     }
     closeModal();
@@ -7782,26 +7783,25 @@
   // ================================================================
   // Delivery 6 — Up / Down cycler on comment textareas (Option C).
   //
-  // Rules, in order of precedence:
-  //   1. Field must be bank-managed: data-default="1" and NOT
-  //      hand-edited. Hand-editing clears data-default (see the
-  //      oninput handler below).
+  // Precedence, checked in order:
+  //   1. Field must be bank-managed: data-default="1".
+  //      Typing clears that flag (see wsOnCommentInput).
+  //      "Pick from bank" re-sets it (see wsApplyComment).
   //   2. Bank for the learner's band and field must be non-empty.
-  //   3. Caret must sit where the arrow naturally would NOT move:
-  //        Down  → cycle only when caret is at the very END.
-  //        Up    → cycle only when caret is at the very START.
+  //   3. Caret must be where the arrow naturally would not move:
+  //        Down  → cycles only when caret is at the very END
+  //        Up    → cycles only when caret is at the very START
   //      Anywhere else, the arrow moves the caret as usual.
   //
   // When it cycles:
   //   • value is replaced by the next / previous bank entry
   //   • data-bank-index is updated
-  //   • a small "n / m" counter is shown in the textarea's corner
-  //   • wsMarkDirty fires, chip flips to UNSAVED
-  //   • the caret is pushed to the end so subsequent Down presses
-  //     keep cycling
+  //   • a small "n / m" counter is painted in the textarea's corner
+  //   • wsMarkDirty fires → chip flips to UNSAVED
+  //   • caret is pushed to the end so subsequent Down keeps cycling
   //   • nothing is written to the database — Save does that.
   //
-  // Counter clears on blur, on save, on re-render.
+  // Counter clears on blur, on input, on apply-from-bank.
   // ================================================================
 
   function wsBankForField(learnerId, field) {
@@ -7812,29 +7812,31 @@
     const key = (field === 'teacher_comment') ? 'teacher' : 'principal';
     return __wsCommentBankCache[key + '|' + band] || [];
   }
+  window.wsBankForField = wsBankForField;
 
   function wsShowCycleCounter(ta, idx, total) {
+    if (getComputedStyle(ta.parentElement).position === 'static') {
+      ta.parentElement.style.position = 'relative';
+    }
     let badge = ta.parentElement.querySelector('.ws-cycle-counter');
     if (!badge) {
       badge = document.createElement('div');
       badge.className = 'ws-cycle-counter';
       badge.style.cssText = 'position:absolute;top:2px;right:4px;background:#0d4d26;color:#fff;' +
                             'font-size:9px;padding:1px 5px;border-radius:3px;opacity:0.85;pointer-events:none;';
-      // Ensure the wrapping <td> is a positioning context.
-      if (getComputedStyle(ta.parentElement).position === 'static') {
-        ta.parentElement.style.position = 'relative';
-      }
       ta.parentElement.appendChild(badge);
     }
     badge.textContent = (idx + 1) + ' / ' + total;
   }
 
   function wsClearCycleCounter(ta) {
+    if (!ta || !ta.parentElement) return;
     const badge = ta.parentElement.querySelector('.ws-cycle-counter');
     if (badge) badge.remove();
   }
+  window.wsClearCycleCounter = wsClearCycleCounter;
 
-  async function wsCycleComment(ta, dir) {
+  function wsCycleComment(ta, dir) {
     const learnerId = parseInt(ta.getAttribute('data-learner-id'), 10);
     const field = ta.getAttribute('data-field');
     if (!learnerId || !field) return false;
@@ -7842,18 +7844,8 @@
     // Rule 1: bank-managed only.
     if (ta.getAttribute('data-default') !== '1') return false;
 
-    // Rule 2: bank must be non-empty. If not loaded yet, try once.
-    let bank = wsBankForField(learnerId, field);
-    if (!bank.length) {
-      const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
-      if (learner) {
-        const avg = wsState.averages[learnerId];
-        const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
-        const key = (field === 'teacher_comment') ? 'teacher' : 'principal';
-        await wsEnsureCommentBank(key, band);
-        bank = wsBankForField(learnerId, field);
-      }
-    }
+    // Rule 2: bank must be non-empty.
+    const bank = wsBankForField(learnerId, field);
     if (!bank.length) return false;
 
     // Rule 3: caret position.
@@ -7862,7 +7854,7 @@
     if (dir === 'down' && caret !== len) return false;
     if (dir === 'up'   && caret !== 0)   return false;
 
-    // Compute new index.
+    // Compute new index, wrapping both directions.
     let idx = parseInt(ta.getAttribute('data-bank-index') || '0', 10);
     if (isNaN(idx)) idx = 0;
     if (dir === 'down') idx = (idx + 1) % bank.length;
@@ -7873,8 +7865,6 @@
     const text = wsFillCommentTemplate(bank[idx].text, learner || {});
     ta.value = text;
     ta.setAttribute('data-bank-index', String(idx));
-
-    // Caret to the end so Down continues cycling.
     try { ta.setSelectionRange(text.length, text.length); } catch (e) { /* ignore */ }
 
     wsShowCycleCounter(ta, idx, bank.length);
@@ -7883,71 +7873,58 @@
   }
   window.wsCycleComment = wsCycleComment;
 
-  // Delegated keydown: one listener on the whole content container.
-  // Safe to install multiple times — guarded by __wired flag.
-  function wsInstallCycleListener() {
-    const container = document.getElementById('wsContent');
-    if (!container || container.__cycleWired) return;
-    container.addEventListener('keydown', function (e) {
+  function wsOnCommentInput(ta, learnerId) {
+    // Typing = the human owns this text now. Exit cycle mode.
+    if (ta.getAttribute('data-default') === '1') {
+      ta.setAttribute('data-default', '0');
+      ta.style.borderColor = '#ccc';
+    }
+    wsClearCycleCounter(ta);
+    wsMarkDirty(learnerId);
+  }
+  window.wsOnCommentInput = wsOnCommentInput;
+
+  // ----------------------------------------------------------------
+  // One delegated keydown listener on document. Installs once.
+  // No dependency on #wsContent being present at install time —
+  // document is always there, and the handler filters by class.
+  // ----------------------------------------------------------------
+  (function wsInstallCycleListener() {
+    if (window.__wsCycleListenerInstalled) return;
+    window.__wsCycleListenerInstalled = true;
+
+    document.addEventListener('keydown', function (e) {
       const ta = e.target;
       if (!ta || ta.tagName !== 'TEXTAREA') return;
       if (!ta.classList || !ta.classList.contains('ws-comment')) return;
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (ta.getAttribute('data-default') !== '1') return;
 
-      const dir = (e.key === 'ArrowDown') ? 'down' : 'up';
-      // wsCycleComment is async but for our purpose the sync result
-      // matters: did we consume the key? We optimistically prevent
-      // default only when the preconditions the sync part checks are
-      // met. To keep it simple and correct, do a synchronous pre-check
-      // then call the async version.
       const learnerId = parseInt(ta.getAttribute('data-learner-id'), 10);
       const field = ta.getAttribute('data-field');
       if (!learnerId || !field) return;
-      if (ta.getAttribute('data-default') !== '1') return;
 
       const bank = wsBankForField(learnerId, field);
       if (!bank.length) return;
 
       const caret = ta.selectionStart;
       const len = (ta.value || '').length;
-      if (dir === 'down' && caret !== len) return;
-      if (dir === 'up'   && caret !== 0)   return;
+      if (e.key === 'ArrowDown' && caret !== len) return;
+      if (e.key === 'ArrowUp'   && caret !== 0)   return;
 
       e.preventDefault();
-      wsCycleComment(ta, dir);
+      wsCycleComment(ta, e.key === 'ArrowDown' ? 'down' : 'up');
     });
-    container.__cycleWired = true;
-  }
-  window.wsInstallCycleListener = wsInstallCycleListener;
 
-  // Clear the counter when the operator leaves the field.
-  document.addEventListener('focusout', function (e) {
-    const t = e.target;
-    if (t && t.tagName === 'TEXTAREA' && t.classList && t.classList.contains('ws-comment')) {
-      wsClearCycleCounter(t);
-    }
-  });
-      html += '<div style="border:1px solid #e0e6e2;border-radius:8px;padding:10px;cursor:pointer;background:#f7fbf7;" ' +
-              'onclick="wsApplyComment(' + learnerId + ', \'' + escAttr(targetField) + '\', \'' + escAttr(text) + '\')">' +
-              '<div style="font-size:12px;color:#333;">' + esc(text) + '</div>' +
-              '<div style="font-size:10px;color:#999;margin-top:4px;">' + esc(c.category || 'general') + '</div>' +
-              '</div>';
+    // Clear the counter when the operator leaves the field.
+    document.addEventListener('focusout', function (e) {
+      const t = e.target;
+      if (t && t.tagName === 'TEXTAREA' && t.classList && t.classList.contains('ws-comment')) {
+        wsClearCycleCounter(t);
+      }
     });
-    html += '</div></div></div>';
-    setHTML('modalContainer', html);
-  }
-  window.wsOpenCommentBank = wsOpenCommentBank;
-
-  function wsApplyComment(learnerId, targetField, text) {
-    const el = document.querySelector('.ws-comment[data-learner-id="' + learnerId + '"][data-field="' + targetField + '"]');
-    if (el) {
-      el.value = text;
-      wsMarkDirty(learnerId);
-    }
-    closeModal();
-  }
-  window.wsApplyComment = wsApplyComment;
+  })();
     // ================================================================
   // [S16] CLASSES
   // ================================================================
