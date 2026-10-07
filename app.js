@@ -1400,23 +1400,6 @@
     html += '</div></div></div>';
     setHTML('modalContainer', html);
   }
-  // Build an intent:// URL that hands HTML to RawBT for direct thermal
-  // printing. RawBT renders it at the receipt's native 203 dpi — no
-  // Chrome print-dialog downscaling, which is what was making the text tiny.
-  function rawbtPrint(htmlString) {
-    // RawBT accepts base64 in the `base64` extra; encode as UTF-8 safe base64.
-    const utf8 = unescape(encodeURIComponent(htmlString));
-    const b64  = btoa(utf8);
-    const intent =
-      'intent:base64,' + b64 +
-      '#Intent;scheme=rawbt;' +
-      'package=ru.a402d.rawbtprinter;' +
-      'S.title=' + encodeURIComponent('TIS Learner Card') + ';' +
-      'end;';
-    // Fire the intent — Android will route it to RawBT.
-    window.location.href = intent;
-  }
-  window.rawbtPrint = rawbtPrint;
   async function printLearnerCard(pin) {
     const secA = document.getElementById('pp_secA');
     const secB = document.getElementById('pp_secB');
@@ -1573,18 +1556,7 @@
 
     html += '</body></html>';
 
-        w.document.open();
-    w.document.write(html);
-    w.document.close();
-
-    // Give RawBT a moment to build the raster image before we ask
-    // the user agent to print. 250ms was too short on the MPT-11.
-    setTimeout(function () {
-      try { w.focus(); w.print(); } catch (e) { /* user can Ctrl+P */ }
-    }, 600);
-
-    closeModal();
-
+       
   // ================================================================
   // Live search
   // ================================================================
