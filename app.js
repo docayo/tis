@@ -7577,9 +7577,9 @@
 
       // Teacher comment
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
-      html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
+           html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
               'data-default="' + (teacherIsDefault ? '1' : '0') + '" ' +
-              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'oninput="wsOnCommentInput(this, ' + l.id + ')" rows="3" ' +
               'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (teacherIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
               esc(teacherValue) + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
@@ -7589,9 +7589,9 @@
 
       // Principal comment
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
-      html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="principal_comment" ' +
+           html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="principal_comment" ' +
               'data-default="' + (principalIsDefault ? '1' : '0') + '" ' +
-              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'oninput="wsOnCommentInput(this, ' + l.id + ')" rows="3" ' +
               'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (principalIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
               esc(principalValue) + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
