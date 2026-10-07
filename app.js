@@ -304,8 +304,10 @@
   // ================================================================
   // [S06] NAVIGATION
   // ================================================================
-  function switchTab(name) {
-    if (!hasPermission('read_' + name)) {
+    function switchTab(name) {
+    // Prospects is intentionally open to every operator (read + write + print).
+    // Every other tab keeps the existing read-permission gate.
+    if (name !== 'prospects' && !hasPermission('read_' + name)) {
       showToast('You do not have access to that module.', 'warning');
       return;
     }
@@ -320,7 +322,8 @@
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
     try {
-      if (name === 'learners') loadLearners();
+      if (name === 'prospects') initProspectsTab();
+      else if (name === 'learners') loadLearners();
       else if (name === 'staff') loadStaff();
       else if (name === 'terms') initTermsTab();
       else if (name === 'attendance') initLearnerAttendanceTab();
@@ -909,6 +912,512 @@
     const el = document.getElementById('lbKeysHelp');
     if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
   };
+
+  // ================================================================
+  // [S07b] PROSPECTS — prospective learners, pre-admission.
+  //   Separate from [S07] Learners: no PIN, no learner_terms.
+  //   On Admit, a real learner row is created and the learner edit
+  //   modal opens so the office can fill remaining fields.
+  //   Print: 80mm thermal, full school banner.
+  // ================================================================
+  let __prospectsCache = [];
+  let __prospectsFetchedAt = 0;
+
+  async function loadProspects() {
+    const now = Date.now();
+    if (__prospectsCache.length > 0 && (now - __prospectsFetchedAt) < 60 * 1000) {
+      renderProspects(__prospectsCache);
+      return;
+    }
+    setHTML('prospectsGrid', pageLoaderHTML('Loading prospects…'));
+    startLoader();
+    const r = await window.TIS.listProspectiveLearners();
+    stopLoader();
+    if (!r || !r.ok) {
+      setHTML('prospectsGrid', errorHTML('Could not load prospects', r && r.error));
+      return;
+    }
+    __prospectsCache = r.data || [];
+    __prospectsFetchedAt = now;
+    renderProspects(__prospectsCache);
+  }
+  window.loadProspects = loadProspects;
+
+    function renderProspects(rows) {
+    const filterEl = document.getElementById('prospectStatusFilter');
+    const filter = filterEl ? filterEl.value : '';
+    const searchEl = document.getElementById('prospectSearchInput');
+    const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+
+    let list = rows.slice();
+    if (filter) list = list.filter(function (p) { return p.status === filter; });
+    if (q) list = list.filter(function (p) {
+      return (p.full_name || '').toLowerCase().indexOf(q) !== -1 ||
+             (p.father_phone || '').indexOf(q) !== -1 ||
+             (p.mother_phone || '').indexOf(q) !== -1 ||
+             (p.parents_name || '').toLowerCase().indexOf(q) !== -1;
+    });
+
+    // Stats always computed from the full cached set, not the filtered view.
+    const total = rows.length;
+    const byStatus = { new: 0, enrolled: 0, admitted: 0, declined: 0 };
+    rows.forEach(function (p) { if (byStatus[p.status] !== undefined) byStatus[p.status]++; });
+    setHTML('prospectStats',
+      '<div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div>' +
+      '<div class="stat-card gold"><div class="stat-label">New</div><div class="stat-value gold">' + byStatus.new + '</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Enrolled</div><div class="stat-value">' + byStatus.enrolled + '</div></div>' +
+      '<div class="stat-card red"><div class="stat-label">Declined</div><div class="stat-value red">' + byStatus.declined + '</div></div>');
+
+    if (list.length === 0) {
+      setHTML('prospectsGrid', emptyHTML('fa-user-plus', 'No prospects to show', 'Add one to get started.'));
+      return;
+    }
+
+    let html = '<div class="card-bg" style="overflow-x:auto;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
+            '<th style="text-align:left;padding:6px;">Name</th>' +
+            '<th style="text-align:left;padding:6px;">Class</th>' +
+            '<th style="text-align:left;padding:6px;">Parents</th>' +
+            '<th style="text-align:left;padding:6px;">Phone</th>' +
+            '<th style="text-align:left;padding:6px;">Added</th>' +
+            '<th style="padding:6px;">Status</th>' +
+            '<th style="padding:6px;">Actions</th></tr></thead><tbody>';
+
+    list.forEach(function (p) {
+      const st = p.status || 'new';
+      const chip = st === 'admitted' ? 'background:#0d4d26;color:#fff;' :
+                   st === 'enrolled' ? 'background:#d4a017;color:#fff;' :
+                   st === 'declined' ? 'background:#c0392b;color:#fff;' :
+                                       'background:#e0e0e0;color:#333;';
+
+      // Dates shown on the record: created, then whichever transition fired.
+      const created = p.created_at ? new Date(p.created_at) : null;
+      const createdStr = created && !isNaN(created.getTime())
+        ? created.toLocaleDateString() + ' ' + created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+        : '—';
+      let transStr = '';
+      if (p.enrolled_at) transStr = ' · enrolled ' + new Date(p.enrolled_at).toLocaleDateString();
+      if (p.admitted_at) transStr = ' · admitted ' + new Date(p.admitted_at).toLocaleDateString();
+      if (p.declined_at) transStr = ' · declined ' + new Date(p.declined_at).toLocaleDateString();
+
+      html += '<tr>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(p.full_name || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.proposed_class || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.parents_name || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.mother_phone || p.father_phone || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-size:11px;color:#666;">' + esc(createdStr + transStr) + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><span style="font-size:10px;padding:2px 8px;border-radius:4px;' + chip + '">' + esc(st.toUpperCase()) + '</span></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;white-space:nowrap;">';
+      html += '<button class="btn btn-sm btn-secondary" type="button" onclick="openProspectPreview(' + p.id + ')" title="Preview"><i class="fas fa-eye"></i></button> ';
+      html += '<button class="btn btn-sm btn-primary" type="button" onclick="openProspectEditModal(' + p.id + ')" title="Edit"><i class="fas fa-pen"></i></button> ';
+      if (st === 'new') {
+        html += '<button class="btn btn-sm btn-warning" type="button" onclick="prospectEnroll(' + p.id + ')" title="Enroll"><i class="fas fa-user-check"></i> Enroll</button> ';
+      }
+      if (st === 'new' || st === 'enrolled') {
+        html += '<button class="btn btn-sm btn-success" type="button" onclick="prospectAdmit(' + p.id + ')" title="Admit"><i class="fas fa-check"></i> Admit</button> ';
+      }
+      if (st !== 'declined' && st !== 'admitted') {
+        html += '<button class="btn btn-sm btn-danger" type="button" onclick="prospectDecline(' + p.id + ')" title="Decline"><i class="fas fa-times"></i></button> ';
+      }
+      if (st === 'admitted' && p.admitted_learner_id) {
+        html += '<span style="font-size:10px;color:#0d4d26;">→ learner #' + esc(String(p.admitted_learner_id)) + '</span> ';
+      }
+      html += '<button class="btn btn-sm btn-secondary" type="button" onclick="prospectDelete(' + p.id + ')" title="Delete permanently" style="color:#c0392b;"><i class="fas fa-trash"></i></button>';
+      html += '</td></tr>';
+    });
+
+    html += '</tbody></table></div>';
+    setHTML('prospectsGrid', html);
+  }
+  window.renderProspects = renderProspects;
+  function prospectSearch() {
+    renderProspects(__prospectsCache);
+  }
+  window.prospectSearch = prospectSearch;
+
+  // ---------- Add / Edit modal ----------
+  async function openProspectEditModal(id) {
+    closeModal();
+    let p = null;
+    if (id) {
+      startLoader();
+      const r = await window.TIS.getProspectiveLearner(id);
+      stopLoader();
+      if (!r || !r.ok || !r.data) { showToast('Could not load prospect.', 'error'); return; }
+      p = r.data;
+    } else {
+      p = { status: 'new', proposed_class: '' };
+    }
+
+    const classesR = await window.TIS.listClasses();
+    const classes = (classesR && classesR.ok ? classesR.data : [])
+      .filter(function (c) { return c.is_active !== false; });
+
+    const f = function (fieldId, label, value, type) {
+      const t = type || 'text';
+      return '<div class="form-group"><label>' + esc(label) + '</label>' +
+             '<input id="' + fieldId + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
+    };
+
+    let classOpts = '<option value="">— Select class —</option>';
+    classes.forEach(function (c) {
+      classOpts += '<option value="' + escAttr(c.name) + '"' + (c.name === p.proposed_class ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    });
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>' + (id ? 'Edit Prospect' : 'Add Prospect') + '</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    html += '<div class="form-row">' + f('pr_name', 'Full Name', p.full_name) +
+            '<div class="form-group"><label>Proposed Class</label><select id="pr_class">' + classOpts + '</select></div></div>';
+    html += '<div class="form-row">' +
+            '<div class="form-group"><label>Gender</label><select id="pr_gender"><option value="">—</option>' +
+            '<option value="Male"' + (p.gender === 'Male' ? ' selected' : '') + '>Male</option>' +
+            '<option value="Female"' + (p.gender === 'Female' ? ' selected' : '') + '>Female</option></select></div>' +
+            f('pr_dob', 'Date of Birth', p.date_of_birth, 'date') + '</div>';
+    html += f('pr_parents', 'Parents Name', p.parents_name);
+    html += '<div class="form-row">' + f('pr_father_phone', "Father's Phone", p.father_phone) +
+            f('pr_mother_phone', "Mother's Phone", p.mother_phone) + '</div>';
+    html += '<div class="form-row">' + f('pr_guardian_phone', "Guardian's Phone", p.guardian_phone) +
+            f('pr_previous_school', 'Previous School', p.previous_school) + '</div>';
+    html += '<div class="form-group"><label>Address</label><textarea id="pr_address" rows="2">' + esc(p.address || '') + '</textarea></div>';
+    html += '<div class="form-group"><label>Notes</label><textarea id="pr_notes" rows="2">' + esc(p.notes || '') + '</textarea></div>';
+
+    html += '<div style="text-align:right;margin-top:12px;">';
+    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Cancel</button> ';
+    html += '<button class="btn btn-success" id="pr_submit" type="button">' + (id ? 'Save' : 'Add Prospect') + '</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+
+    const btn = document.getElementById('pr_submit');
+    if (btn) btn.addEventListener('click', function () { submitProspect(id); });
+  }
+  window.openProspectEditModal = openProspectEditModal;
+
+  async function submitProspect(id) {
+    const get = function (fid) { const el = document.getElementById(fid); return el ? String(el.value || '').trim() : ''; };
+    const row = {
+      full_name:       get('pr_name'),
+      proposed_class:  get('pr_class'),
+      gender:          get('pr_gender'),
+      date_of_birth:   get('pr_dob'),
+      parents_name:    get('pr_parents'),
+      father_phone:    get('pr_father'),
+      mother_phone:    get('pr_mother'),
+      guardian_phone:  get('pr_guardian'),
+      previous_school: get('pr_previous_school'),
+      address:         get('pr_address'),
+      notes:           get('pr_notes'),
+      created_by:      (State.profile && State.profile.name) || 'Operator'
+    };
+    if (!row.full_name) { showToast('Full name is required.', 'warning'); return; }
+
+    startLoader();
+    const r = id ? await window.TIS.updateProspectiveLearner(id, row)
+                 : await window.TIS.createProspectiveLearner(row);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
+    showToast(id ? 'Prospect updated.' : 'Prospect added.', 'success');
+    closeModal();
+    __prospectsFetchedAt = 0;
+    loadProspects();
+  }
+  window.submitProspect = submitProspect;
+
+  // ---------- Preview modal (the CSS sheet with X toggles) ----------
+  async function openProspectPreview(id) {
+    closeModal();
+    startLoader();
+    const pr = await window.TIS.getProspectiveLearner(id);
+    const at = await window.TIS.getActiveTerm();
+    stopLoader();
+    if (!pr || !pr.ok || !pr.data) { showToast('Prospect not found.', 'error'); return; }
+    const p = pr.data;
+    const term = (at && at.ok && at.data) ? at.data : null;
+    if (!term) { showToast('No active term set.', 'error'); return; }
+
+    const feeR = await window.TIS.getProspectiveFeePreview(p.proposed_class, term.term_type, term.year);
+    if (!feeR || !feeR.ok) { showToast('Could not load fee preview.', 'error'); return; }
+    const fee = feeR.data;
+
+    window.__prospectForPrint = { prospect: p, fee: fee, term: term };
+    renderProspectPreview();
+  }
+  window.openProspectPreview = openProspectPreview;
+
+  function renderProspectPreview() {
+    const ctx = window.__prospectForPrint;
+    if (!ctx) return;
+    const p = ctx.prospect, fee = ctx.fee, term = ctx.term;
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()" style="max-width:520px;">';
+    html += '<div class="modal-header"><h2>Fee Preview — ' + esc(p.full_name) + '</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    html += '<div style="background:#f7fbf7;padding:12px;border-radius:8px;font-family:Arial;color:#000;font-size:13px;line-height:1.5;">';
+    html += '<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px;">';
+    html += '<div style="font-size:16px;font-weight:900;">THE IDEAL SCHOOLS</div>';
+    html += '<div style="font-size:11px;font-style:italic;">Scientia est potentia</div>';
+    html += '<div style="font-size:11px;margin-top:4px;">' + esc(term.label) + '</div>';
+    html += '</div>';
+
+    html += '<div style="font-size:14px;font-weight:800;">' + esc(p.full_name) + '</div>';
+    html += '<div style="font-size:11px;margin-bottom:8px;">Proposed: ' + esc(p.proposed_class) + '</div>';
+
+    html += '<div style="font-weight:900;border-top:2px solid #000;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;font-size:12px;">Class Bill</div>';
+    html += '<div>Tuition ....... ₦' + Number(fee.class_bill.tuition).toLocaleString() + '</div>';
+    html += '<div>Other Major ... ₦' + Number(fee.class_bill.other_bills_major).toLocaleString() + '</div>';
+    html += '<div>Other Minor ... ₦' + Number(fee.class_bill.other_bills_minor).toLocaleString() + '</div>';
+    html += '<div>Books ......... ₦' + Number(fee.class_bill.books).toLocaleString() + '</div>';
+
+    html += '<div style="font-weight:900;border-top:2px solid #000;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;font-size:12px;margin-top:8px;">Extras</div>';
+    fee.extras.forEach(function (e, i) {
+      const on = e.default_on !== false;
+      html += '<div data-extra-index="' + i + '" style="display:flex;justify-content:space-between;padding:2px 0;' + (on ? '' : 'text-decoration:line-through;color:#999;') + '">';
+      html += '<span>' + esc(e.item_label) + '</span>';
+      html += '<span>₦' + Number(e.default_amount).toLocaleString();
+      html += ' <button type="button" class="btn btn-sm btn-danger" style="font-size:9px;padding:1px 5px;margin-left:6px;" onclick="toggleExtra(' + i + ')">X</button></span>';
+      html += '</div>';
+    });
+
+    const extrasOn = fee.extras.filter(function (e) { return e.default_on !== false; });
+    const extrasTotal = extrasOn.reduce(function (s, e) { return s + Number(e.default_amount); }, 0);
+    const grand = fee.class_bill.total + extrasTotal;
+
+    html += '<div style="font-weight:900;border-top:2px solid #000;padding-top:4px;margin-top:6px;font-size:14px;display:flex;justify-content:space-between;">';
+    html += '<span>TOTAL</span><span>₦' + grand.toLocaleString() + '</span></div>';
+
+    html += '</div>';
+
+    html += '<div style="text-align:right;margin-top:12px;">';
+    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button> ';
+    html += '<button class="btn btn-gold" onclick="printProspectSheet()"><i class="fas fa-print"></i> Print 80mm</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+  }
+  window.renderProspectPreview = renderProspectPreview;
+
+  function toggleExtra(idx) {
+    const ctx = window.__prospectForPrint;
+    if (!ctx) return;
+    ctx.fee.extras[idx].default_on = !ctx.fee.extras[idx].default_on;
+    renderProspectPreview();
+  }
+  window.toggleExtra = toggleExtra;
+
+  // ---------- 80mm print ----------
+  function printProspectSheet() {
+    const ctx = window.__prospectForPrint;
+    if (!ctx) return;
+    const p = ctx.prospect, fee = ctx.fee, term = ctx.term;
+
+    const css80 =
+      '@page{size:72mm auto;margin:2mm;}' +
+      'html,body{width:72mm;margin:0;padding:0;}' +
+      'body{font-family:"Arial",sans-serif;font-size:14px;line-height:1.35;color:#000;}' +
+      '*{box-sizing:border-box;}' +
+      '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin:0 0 8px;}' +
+      '.hdr img{height:36px;}' +
+      '.hdr h1{font-size:18px;font-weight:900;margin:4px 0 2px;}' +
+      '.hdr .sub{font-size:11px;font-style:italic;}' +
+      '.who{font-size:15px;font-weight:900;margin:6px 0 2px;}' +
+      '.who-sub{font-size:11px;margin:0 0 6px;}' +
+      'h2{font-size:13px;font-weight:900;margin:8px 0 4px;padding:2px 0;border-top:2px solid #000;border-bottom:1px solid #000;text-transform:uppercase;}' +
+      '.r{display:flex;justify-content:space-between;gap:6px;font-size:12px;padding:2px 0;border-bottom:1px dotted #888;}' +
+      '.r:last-child{border-bottom:0;}' +
+      '.r .v{font-weight:800;text-align:right;white-space:nowrap;}' +
+      '.total{border-top:2px solid #000;margin-top:6px;padding-top:6px;font-weight:900;font-size:15px;display:flex;justify-content:space-between;}' +
+      '.ft{margin-top:8px;padding-top:4px;border-top:1px solid #000;font-size:10px;text-align:center;}';
+
+    const rowFn = function (label, value) {
+      return '<div class="r"><span>' + esc(label) + '</span><span class="v">' + esc(value) + '</span></div>';
+    };
+
+    let html = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.full_name) + '</title>';
+    html += '<style>' + css80 + '</style></head><body>';
+
+    html += '<div class="hdr">';
+    html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w200" alt="">';
+    html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w200" alt="">';
+    html += '<h1>THE IDEAL SCHOOLS</h1>';
+    html += '<div class="sub">Scientia est potentia</div>';
+    html += '</div>';
+
+    html += '<div class="who">' + esc(p.full_name) + '</div>';
+    html += '<div class="who-sub">Proposed: ' + esc(p.proposed_class) + ' &middot; ' + esc(term.label) + '</div>';
+
+    html += '<h2>Class Bill</h2>';
+    html += rowFn('Tuition', '₦' + Number(fee.class_bill.tuition).toLocaleString());
+    html += rowFn('Other Bills Major', '₦' + Number(fee.class_bill.other_bills_major).toLocaleString());
+    html += rowFn('Other Bills Minor', '₦' + Number(fee.class_bill.other_bills_minor).toLocaleString());
+    html += rowFn('Books', '₦' + Number(fee.class_bill.books).toLocaleString());
+    html += rowFn('Subtotal', '₦' + Number(fee.class_bill.total).toLocaleString());
+
+    html += '<h2>Extras</h2>';
+    const on = fee.extras.filter(function (e) { return e.default_on !== false; });
+    if (on.length === 0) {
+      html += rowFn('(none selected)', '—');
+    } else {
+      on.forEach(function (e) {
+        html += rowFn(e.item_label, '₦' + Number(e.default_amount).toLocaleString());
+      });
+    }
+    const extrasTotal = on.reduce(function (s, e) { return s + Number(e.default_amount); }, 0);
+
+    html += '<div class="total"><span>TOTAL</span><span>₦' + (fee.class_bill.total + extrasTotal).toLocaleString() + '</span></div>';
+    html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
+    html += '</body></html>';
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function () {
+      try { w.focus(); w.print(); } catch (e) {}
+    }, 600);
+    closeModal();
+  }
+  window.printProspectSheet = printProspectSheet;
+
+  // ---------- Enroll / Admit / Decline ----------
+  async function prospectEnroll(id) {
+    if (!confirm('Mark this prospect as ENROLLED? No learner row is created yet.')) return;
+    startLoader();
+    const r = await window.TIS.enrollProspectiveLearner(id);
+    stopLoader();
+    if (r && r.ok) { showToast('Enrolled.', 'success'); __prospectsFetchedAt = 0; loadProspects(); }
+    else showToast('Failed: ' + ((r && r.error) || ''), 'error');
+  }
+  window.prospectEnroll = prospectEnroll;
+
+  async function prospectAdmit(id) {
+    if (!confirm('Admit this prospect? A real learner row with a PIN will be created.')) return;
+    startLoader();
+    const r = await window.TIS.admitProspectiveLearner(id);
+    stopLoader();
+    if (r && r.ok) {
+      const learner = r.data.learner || {};
+      showToast('Admitted. PIN ' + (learner.pin || '(auto)'), 'success');
+      __prospectsFetchedAt = 0;
+      loadProspects();
+      // Refresh learners cache so the new row appears immediately.
+      State.learnersFetchedAt = 0;
+      if (learner.pin) {
+        setTimeout(function () { openLearnerEditModal(learner.pin); }, 400);
+      }
+    } else {
+      showToast('Failed: ' + ((r && r.error) || ''), 'error');
+    }
+  }
+  window.prospectAdmit = prospectAdmit;
+
+  async function prospectDecline(id) {
+    if (!confirm('Mark this prospect as DECLINED?\n\nThey stay on the list for the record — use Delete to remove permanently.')) return;
+    startLoader();
+    const r = await window.TIS.declineProspectiveLearner(id);
+    stopLoader();
+    if (r && r.ok) { showToast('Declined.', 'success'); __prospectsFetchedAt = 0; loadProspects(); }
+    else showToast('Failed: ' + ((r && r.error) || ''), 'error');
+  }
+  window.prospectDecline = prospectDecline;
+
+  async function prospectDelete(id) {
+    const all = __prospectsCache || [];
+    const row = all.find(function (p) { return p.id === id; });
+    const name = row ? (row.full_name || 'this prospect') : 'this prospect';
+    if (!confirm('Permanently DELETE "' + name + '"?\n\nThis cannot be undone.')) return;
+    startLoader();
+    const r = await window.TIS.deleteProspectiveLearner(id);
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Deleted.', 'success');
+      __prospectsCache = all.filter(function (p) { return p.id !== id; });
+      __prospectsFetchedAt = 0;
+      loadProspects();
+    } else {
+      showToast('Delete failed: ' + ((r && r.error) || ''), 'error');
+    }
+  }
+  window.prospectDelete = prospectDelete;
+
+  // ---------- Manage extras modal ----------
+  async function openManageExtrasModal() {
+    closeModal();
+    startLoader();
+    const r = await window.TIS.listFeeExtrasDefaults(false);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Could not load extras.', 'error'); return; }
+    const extras = r.data || [];
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Fee Extras Defaults</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">These amounts appear on every prospectus. Amounts are shared across all classes.</p>';
+
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
+            '<th style="text-align:left;padding:6px;">Item</th>' +
+            '<th style="padding:6px;">Amount ₦</th>' +
+            '<th style="padding:6px;">Active</th>' +
+            '<th style="padding:6px;">Save</th></tr></thead><tbody>';
+    extras.forEach(function (e, i) {
+      html += '<tr data-extra-id="' + i + '">';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(e.item_label) + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="ext-amt" data-key="' + escAttr(e.item_key) + '" value="' + Number(e.default_amount || 0) + '" style="width:120px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="checkbox" class="ext-on" data-key="' + escAttr(e.item_key) + '"' + (e.is_active !== false ? ' checked' : '') + '></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button class="btn btn-sm btn-success" type="button" onclick="saveExtraRow(\'' + escAttr(e.item_key) + '\')">Save</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+
+    html += '<div style="text-align:right;margin-top:12px;">';
+    html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button>';
+    html += '</div></div></div>';
+    setHTML('modalContainer', html);
+  }
+  window.openManageExtrasModal = openManageExtrasModal;
+
+  async function saveExtraRow(itemKey) {
+    const amtEl = document.querySelector('.ext-amt[data-key="' + itemKey + '"]');
+    const onEl  = document.querySelector('.ext-on[data-key="' + itemKey + '"]');
+    if (!amtEl || !onEl) return;
+    startLoader();
+    const r = await window.TIS.upsertFeeExtraDefault({
+      item_key: itemKey,
+      default_amount: Number(amtEl.value || 0),
+      is_active: onEl.checked
+    });
+    stopLoader();
+    if (r && r.ok) showToast('Saved.', 'success');
+    else showToast('Save failed: ' + ((r && r.error) || ''), 'error');
+  }
+  window.saveExtraRow = saveExtraRow;
+
+  // ---------- Tab wiring ----------
+  function initProspectsTab() {
+    const add = document.getElementById('btnAddProspect');
+    if (add && !add.__wired) { add.addEventListener('click', function () { openProspectEditModal(null); }); add.__wired = true; }
+
+    const rf = document.getElementById('btnRefreshProspects');
+    if (rf && !rf.__wired) { rf.addEventListener('click', function () { __prospectsFetchedAt = 0; loadProspects(); }); rf.__wired = true; }
+
+    const mg = document.getElementById('btnManageExtras');
+    if (mg && !mg.__wired) { mg.addEventListener('click', openManageExtrasModal); mg.__wired = true; }
+
+    const sf = document.getElementById('prospectStatusFilter');
+    if (sf && !sf.__wired) { sf.addEventListener('change', prospectSearch); sf.__wired = true; }
+
+    const si = document.getElementById('prospectSearchInput');
+    if (si && !si.__wired) { si.addEventListener('input', prospectSearch); si.__wired = true; }
+
+    loadProspects();
+  }
+  window.initProspectsTab = initProspectsTab;
 
   // ================================================================
   // Edit modal — dropdowns for class / gender / religion,
