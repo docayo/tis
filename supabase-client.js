@@ -2798,7 +2798,57 @@
       return ok(out);
     } catch (err) { return fail(err); }
   };
+  // ================================================================
+  // [COLLECTIBLES]
+  // Item list + per-learner tick log. Textbook subs come from
+  // class_subjects. Notebook subs are entered per learner.
+  // ================================================================
+  TIS.listCollectibleItems = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('collectible_items')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
 
+  TIS.listCollectibleTicksForLearner = async function (learnerId) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('collectible_ticks')
+        .select('*')
+        .eq('learner_id', learnerId);
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.setCollectibleTick = async function (learnerId, itemKey, subKey, collected, note) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        learner_id:   learnerId,
+        item_key:     itemKey,
+        sub_key:      subKey || '',
+        collected:    !!collected,
+        collected_at: collected ? new Date().toISOString() : null,
+        note:         note || null,
+        updated_at:   new Date().toISOString()
+      };
+      const { data, error } = await sb
+        .from('collectible_ticks')
+        .upsert(payload, { onConflict: 'learner_id,item_key,sub_key' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
   // ================================================================
   // Expose + boot
   // ================================================================
