@@ -855,7 +855,6 @@
       html += infoRow('Total Paid', moneyOrDash(fee.total_part_payment));
       html += infoRow('Other Bills Major', moneyOrDash(fee.other_bills_major));
       html += infoRow('Books', moneyOrDash(fee.books));
-      html += infoRow('Balance B/F', moneyOrDash(fee.balance_bf));
       html += infoRow('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
       html += infoRow('Net Bills', moneyOrDash(fee.net_bills));
       html += infoRow('Blood Group / Genotype', d.blood_group);
@@ -1698,7 +1697,6 @@
       }
       html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
       html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
-      html += rowFn('Books', moneyOrDash(fee.books));
       html += rowFn('Balance B/F', moneyOrDash(fee.balance_bf));
       html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
       html += rowFn('Net Bills', moneyOrDash(fee.net_bills));
