@@ -11597,6 +11597,287 @@
       return { ok: false, error: String(err && err.message || err) };
     }
   }
+    // ================================================================
+  // [S07c] COLLECTIBLES
+  //   Checklist per learner. Textbook subs come from class_subjects.
+  //   Notebook subs are entered manually per learner.
+  // ================================================================
+  let __collectItemsCache = null;
+  let __collectCurrentLearner = null;
+  let __collectCurrentTicks = {};
+  let __collectCurrentItems = [];
+  let __collectNotebookExtra = {};   // learnerId → array of sub keys
+
+  async function loadCollectibleItems() {
+    if (__collectItemsCache) return __collectItemsCache;
+    const r = await window.TIS.listCollectibleItems();
+    __collectItemsCache = (r && r.ok) ? (r.data || []) : [];
+    return __collectItemsCache;
+  }
+  window.loadCollectibleItems = loadCollectibleItems;
+
+  function initCollectiblesTab() {
+    const s  = document.getElementById('btnCollectSearch');
+    const in_ = document.getElementById('collectSearchInput');
+    const mg = document.getElementById('btnCollectManage');
+    const pr = document.getElementById('btnCollectPrint');
+
+    if (s && !s.__wired) {
+      s.addEventListener('click', collectiblesSearch);
+      s.__wired = true;
+    }
+    if (in_ && !in_.__wired) {
+      in_.addEventListener('keypress', function (e) { if (e.key === 'Enter') collectiblesSearch(); });
+      in_.__wired = true;
+    }
+    if (mg && !mg.__wired) {
+      mg.addEventListener('click', openCollectManageModal);
+      mg.__wired = true;
+    }
+    if (pr && !pr.__wired) {
+      pr.addEventListener('click', printCollectChecklist);
+      pr.__wired = true;
+    }
+  }
+  window.initCollectiblesTab = initCollectiblesTab;
+
+  async function collectiblesSearch() {
+    const el = document.getElementById('collectSearchInput');
+    const q = el ? el.value.trim() : '';
+    const feed = document.getElementById('collectFeedback');
+    const box = document.getElementById('collectMatchList');
+
+    __collectCurrentLearner = null;
+    __collectCurrentTicks = {};
+    if (box) box.innerHTML = '';
+    document.getElementById('collectChecklist').innerHTML = '';
+
+    if (!q) { if (feed) feed.textContent = 'Type a PIN or a name.'; return; }
+
+    startLoader();
+    const r = await window.TIS.searchLearners(q);
+    stopLoader();
+
+    if (!r || !r.ok) { if (feed) feed.textContent = 'Search failed.'; return; }
+    const list = r.data || [];
+    if (list.length === 0) { if (feed) feed.textContent = 'No learner matches "' + q + '".'; return; }
+
+    if (list.length === 1) { await openCollectibleForLearner(list[0]); return; }
+
+    let html = '<div class="card-bg" style="padding:8px;">';
+    html += '<div style="font-size:12px;color:#666;margin-bottom:6px;">' + list.length + ' matches — pick one:</div>';
+    list.forEach(function (l) {
+      html += '<div style="padding:6px 8px;border-bottom:1px solid #eee;cursor:pointer;" ' +
+              'onclick="openCollectibleForLearner(window.__collectPick(' + l.id + '))">' +
+              '<b>' + esc(l.name) + '</b> — ' + esc(l.pin) + ' — ' + esc(l.class_name || '') + '</div>';
+    });
+    html += '</div>';
+    if (box) box.innerHTML = html;
+    window.__collectPick = function (id) { return list.find(function (x) { return x.id === id; }); };
+    if (feed) feed.textContent = '';
+  }
+  window.collectiblesSearch = collectiblesSearch;
+
+  async function openCollectibleForLearner(learner) {
+    if (!learner) return;
+    __collectCurrentLearner = learner;
+    const feed = document.getElementById('collectFeedback');
+    if (feed) feed.textContent = 'Loading ' + learner.name + '…';
+    setHTML('collectMatchList', '');
+    setHTML('collectChecklist', pageLoaderHTML('Loading items…'));
+
+    startLoader();
+    const [items, ticks, subjectsR] = await Promise.all([
+      loadCollectibleItems(),
+      window.TIS.listCollectibleTicksForLearner(learner.id),
+      window.TIS.getClassSubjects(learner.class_name)
+    ]);
+    stopLoader();
+
+    __collectCurrentItems = items;
+    __collectCurrentTicks = {};
+
+    const tickMap = {};
+    if (ticks && ticks.ok) {
+      (ticks.data || []).forEach(function (t) {
+        tickMap[t.item_key + '|' + (t.sub_key || '')] = t;
+      });
+    }
+
+    const subjects = (subjectsR && subjectsR.ok) ? (subjectsR.data || []) : [];
+    const subjectCodes = subjects.map(function (s) { return s.subject_code; }).filter(Boolean);
+
+    // Notebook extras — persisted in localStorage per learner, kept simple.
+    const lk = 'tis_collect_notebooks_' + learner.id;
+    let nbExtras = [];
+    try { nbExtras = JSON.parse(localStorage.getItem(lk) || '[]'); } catch (e) { nbExtras = []; }
+    __collectNotebookExtra[learner.id] = nbExtras;
+
+    const container = document.getElementById('collectChecklist');
+    if (!container) return;
+
+    let html = '<div class="card-bg">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">';
+    html += '<div><div style="font-weight:800;font-size:14px;">' + esc(learner.name) + '</div>';
+    html += '<div style="font-size:11px;color:#666;">' + esc(learner.pin) + ' · ' + esc(learner.class_name || '') + '</div></div>';
+    html += '</div>';
+
+    html += '<div style="display:grid;grid-template-columns:1fr;gap:6px;">';
+
+    items.forEach(function (item) {
+      const t = tickMap[item.item_key + '|'] || {};
+      const ticked = t.collected === true;
+      html += '<div style="border:1px solid #e0e6e2;border-radius:8px;padding:8px 10px;background:' + (ticked ? '#f0f9f0' : '#fff') + ';">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">';
+      html += '<span style="font-weight:700;font-size:13px;">' + esc(item.item_label) + '</span>';
+      html += '<button type="button" class="btn btn-sm ' + (ticked ? 'btn-success' : 'btn-secondary') + '" ' +
+              'onclick="toggleCollectTick(' + learner.id + ', \'' + escAttr(item.item_key) + '\', \'\', ' + (ticked ? 'false' : 'true') + ')">' +
+              (ticked ? '✓ Collected' : '✗ Not collected') + '</button>';
+      html += '</div>';
+      if (t.collected_at) {
+        html += '<div style="font-size:10px;color:#666;margin-top:2px;">Marked ' + new Date(t.collected_at).toLocaleString() + '</div>';
+      }
+
+      if (item.item_key === 'textbook' && subjectCodes.length) {
+        html += '<div style="margin-top:6px;padding-left:8px;">';
+        subjectCodes.forEach(function (code) {
+          const st = tickMap['textbook|' + code] || {};
+          const stk = st.collected === true;
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;">';
+          html += '<span>' + esc(code.toUpperCase()) + '</span>';
+          html += '<button type="button" class="btn btn-sm ' + (stk ? 'btn-success' : 'btn-secondary') + '" style="font-size:10px;padding:2px 8px;" ' +
+                  'onclick="toggleCollectTick(' + learner.id + ', \'textbook\', \'' + escAttr(code) + '\', ' + (stk ? 'false' : 'true') + ')">' +
+                  (stk ? '✓' : '✗') + '</button>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      if (item.item_key === 'notebook') {
+        html += '<div style="margin-top:6px;padding-left:8px;">';
+        nbExtras.forEach(function (subKey, idx) {
+          const st = tickMap['notebook|' + subKey] || {};
+          const stk = st.collected === true;
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;">';
+          html += '<span>' + esc(subKey) + '</span>';
+          html += '<span>';
+          html += '<button type="button" class="btn btn-sm ' + (stk ? 'btn-success' : 'btn-secondary') + '" style="font-size:10px;padding:2px 8px;" ' +
+                  'onclick="toggleCollectTick(' + learner.id + ', \'notebook\', \'' + escAttr(subKey) + '\', ' + (stk ? 'false' : 'true') + ')">' +
+                  (stk ? '✓' : '✗') + '</button> ';
+          html += '<button type="button" class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px;" ' +
+                  'onclick="removeNotebookSub(' + learner.id + ', ' + idx + ')">×</button>';
+          html += '</span>';
+          html += '</div>';
+        });
+        html += '<div style="margin-top:4px;">';
+        html += '<input type="text" id="nb_new_' + learner.id + '" placeholder="e.g. Notebook 1 — 80 pages" style="width:70%;font-size:11px;padding:3px 6px;"> ';
+        html += '<button type="button" class="btn btn-sm btn-primary" style="font-size:10px;padding:3px 8px;" ' +
+                'onclick="addNotebookSub(' + learner.id + ')">Add</button>';
+        html += '</div>';
+        html += '</div>';
+      }
+
+      html += '</div>';
+    });
+
+    html += '</div></div>';
+    container.innerHTML = html;
+    if (feed) feed.textContent = 'Showing ' + learner.name + '.';
+  }
+  window.openCollectibleForLearner = openCollectibleForLearner;
+
+  async function toggleCollectTick(learnerId, itemKey, subKey, collected) {
+    startLoader();
+    const r = await window.TIS.setCollectibleTick(learnerId, itemKey, subKey, collected, null);
+    stopLoader();
+    if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || ''), 'error'); return; }
+    if (__collectCurrentLearner && __collectCurrentLearner.id === learnerId) {
+      await openCollectibleForLearner(__collectCurrentLearner);
+    }
+  }
+  window.toggleCollectTick = toggleCollectTick;
+
+  function addNotebookSub(learnerId) {
+    const inp = document.getElementById('nb_new_' + learnerId);
+    const val = inp ? inp.value.trim() : '';
+    if (!val) return;
+    const arr = __collectNotebookExtra[learnerId] || [];
+    arr.push(val);
+    __collectNotebookExtra[learnerId] = arr;
+    try { localStorage.setItem('tis_collect_notebooks_' + learnerId, JSON.stringify(arr)); } catch (e) {}
+    if (__collectCurrentLearner && __collectCurrentLearner.id === learnerId) openCollectibleForLearner(__collectCurrentLearner);
+  }
+  window.addNotebookSub = addNotebookSub;
+
+  function removeNotebookSub(learnerId, idx) {
+    const arr = __collectNotebookExtra[learnerId] || [];
+    arr.splice(idx, 1);
+    __collectNotebookExtra[learnerId] = arr;
+    try { localStorage.setItem('tis_collect_notebooks_' + learnerId, JSON.stringify(arr)); } catch (e) {}
+    if (__collectCurrentLearner && __collectCurrentLearner.id === learnerId) openCollectibleForLearner(__collectCurrentLearner);
+  }
+  window.removeNotebookSub = removeNotebookSub;
+
+  async function openCollectManageModal() {
+    closeModal();
+    const items = await loadCollectibleItems();
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Collectible Items</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">These are the items that appear on every learner\'s checklist.</p>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;"><th style="text-align:left;padding:6px;">Item</th><th style="padding:6px;">Category</th></tr></thead><tbody>';
+    items.forEach(function (i) {
+      html += '<tr><td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(i.item_label) + '</td>' +
+              '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(i.category || '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    html += '<p style="font-size:11px;color:#666;margin-top:10px;">To add or remove items, use the SQL Editor. This list is small and rarely changes.</p>';
+    html += '<div style="text-align:right;margin-top:10px;"><button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button></div>';
+    html += '</div></div>';
+    setHTML('modalContainer', html);
+  }
+  window.openCollectManageModal = openCollectManageModal;
+
+  function printCollectChecklist() {
+    if (!__collectCurrentLearner) { showToast('Search a learner first.', 'warning'); return; }
+    const learner = __collectCurrentLearner;
+    const items = __collectCurrentItems;
+    const container = document.getElementById('collectChecklist');
+    if (!container) return;
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+
+    let html = '<html><head><title>Collectibles — ' + esc(learner.name) + '</title><style>';
+    html += 'body{font-family:Arial;padding:20px;}';
+    html += 'h1{color:#0b6623;font-size:18px;margin:0 0 4px;}';
+    html += '.sub{font-size:12px;color:#666;margin-bottom:12px;}';
+    html += 'table{width:100%;border-collapse:collapse;font-size:12px;}';
+    html += 'th{background:#0b6623;color:#fff;text-align:left;padding:6px;}';
+    html += 'td{padding:5px 6px;border-bottom:1px solid #eee;}';
+    html += '.tick{color:#0d4d26;font-weight:800;}';
+    html += '.cross{color:#c0392b;font-weight:800;}';
+    html += '</style></head><body>';
+    html += '<h1>' + esc(learner.name) + '</h1>';
+    html += '<div class="sub">' + esc(learner.pin) + ' · ' + esc(learner.class_name || '') + ' · Printed ' + new Date().toLocaleString() + '</div>';
+
+    html += '<table><thead><tr><th>Item</th><th style="width:100px;">Status</th></tr></thead><tbody>';
+    items.forEach(function (it) {
+      const st = __collectCurrentTicks[it.item_key + '|'] || {};
+      const ok = st.collected === true;
+      html += '<tr><td>' + esc(it.item_label) + '</td><td class="' + (ok ? 'tick' : 'cross') + '">' + (ok ? '✓' : '✗') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    html += '</body></html>';
+
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function () { w.print(); }, 300);
+  }
+  window.printCollectChecklist = printCollectChecklist;
+
 })();
 // ================================================================
 // END OF app.js
