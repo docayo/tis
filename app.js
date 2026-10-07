@@ -1593,111 +1593,20 @@
     const ph2 = phoneFor(d, 2);
     const ph3 = phoneFor(d, 3);
 
-    const tuition     = parseNum(termRow && termRow.tuition);
-    const scholarship = parseNum(termRow && termRow.scholarship);
-    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
-    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
-    const books       = parseNum(termRow && termRow.books);
-    const netBills    = tuition + otherMajor + otherMinor + books;
-    const adjusted    = tuition - scholarship;
+    // ---- Resolve the fee picture the same way the View modal does ----
+    // Modal and paper must agree. Same function, same inputs, same rule.
+    let prevTermRow = null;
+    if (term) {
+      const prev = previousTermOf(term.term_type, term.year);
+      if (prev) {
+        const prevR = await window.TIS.getLearnerTermFor(d.id, prev.term_type, prev.year);
+        if (prevR && prevR.ok) prevTermRow = prevR.data;
+      }
+    }
+    const fee = await resolveLearnerFeePicture(d, termRow, term, term ? term.year : null);
 
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-
-    const cssA4 = 'body{font-family:Arial;padding:24px;color:#111;}' +
-                  '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:10px;}' +
-                  '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0 0 4px;font-size:22px;}' +
-                  'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
-                  '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
-                  '.info-label{color:#666;}.info-value{font-weight:600;}';
-      // 80mm thermal (RawBT / MPT-11_309F).
-    // Printable width on an 80mm head is ~72mm — do NOT use 80mm here
-    // or the driver shrinks everything to fit, which is what made the
-    // previous output unreadable. Base font is 14px (~3.5mm tall).
-    const css80 =
-      '@page{size:72mm auto;margin:2mm;}' +
-      'html,body{width:72mm;margin:0;padding:0;}' +
-      'body{font-family:"Arial","Helvetica",sans-serif;font-size:14px;line-height:1.35;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
-      '*{box-sizing:border-box;}' +
-      '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin:0 0 8px;}' +
-      '.hdr h1{font-size:20px;font-weight:900;letter-spacing:.5px;margin:0 0 2px;}' +
-      '.hdr .sub{font-size:12px;font-style:italic;}' +
-      '.who{font-size:16px;font-weight:900;margin:6px 0 2px;}' +
-      '.who-sub{font-size:12px;margin:0 0 6px;}' +
-      'h2{font-size:15px;font-weight:900;margin:8px 0 4px;padding:2px 0;border-top:2px solid #000;border-bottom:1px solid #000;text-transform:uppercase;letter-spacing:.5px;}' +
-      '.info-row{display:flex;justify-content:space-between;gap:6px;font-size:13px;padding:3px 0;border-bottom:1px dotted #888;}' +
-      '.info-row:last-child{border-bottom:0;}' +
-      '.info-label{color:#000;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
-      '.info-label::after{content:":";}' +
-      '.info-value{font-weight:800;flex:0 0 auto;text-align:right;white-space:nowrap;}' +
-      '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
-      '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
-
-       const rowFn = function (label, value) {
-      return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + esc(value) + '</span></div>';
-    };
-
-    let html = '<!doctype html><html><head><meta charset="utf-8">' +
-               '<title>' + esc(d.name) + '</title>' +
-               '<style>' + (paper === '80mm' ? css80 : cssA4) + '</style>' +
-               '</head><body>';
-
-    // ---------- Header ----------
-    html += '<div class="hdr">';
-    if (paper === 'A4') {
-      html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
-      html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
-              '<div class="sub" style="font-style:italic;color:#666;">Scientia est potentia</div></div>';
-      html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
-    } else {
-      // 80mm: text-only, big, centred. No logos — they waste vertical paper.
-      html += '<h1>THE IDEAL SCHOOLS</h1>';
-      html += '<div class="sub">Scientia est potentia</div>';
-    }
-    html += '</div>';
-
-    // ---------- Who ----------
-    html += '<div class="who">' + esc(d.name || '') + '</div>';
-    html += '<div class="who-sub">PIN ' + esc(d.pin || '') +
-            ' &middot; ' + esc(d.class_name || '') +
-            ' &middot; ' + esc(termLabel) + '</div>';
-
-    // ---------- Section A ----------
-    if (wantA) {
-      html += '<h2>Section A &mdash; Identity</h2>';
-      html += rowFn('Class', d.class_name || '—');
-      html += rowFn('PIN', d.pin || '—');
-      html += rowFn('Name', d.name || '—');
-      html += rowFn('Gender', d.gender || '—');
-      html += rowFn('1st Phone (' + ph1.label + ')', ph1.value);
-      html += rowFn('Account', d.account_number || '—');
-      html += rowFn('Clearance', (termRow && termRow.cleared) || '—');
-      html += rowFn('Clearance Date', (termRow && fmtDateOrDash(termRow.clearance)) || '—');
-      html += rowFn('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
-    }
-
-    // ---------- Section B ----------
-    if (wantB) {
-      html += '<h2>Section B &mdash; Fees</h2>';
-      html += rowFn('Tuition', moneyOrDash(termRow && termRow.tuition));
-      html += rowFn('Scholarship', moneyOrDash(termRow && termRow.scholarship));
-      html += rowFn('Adjusted Tuition', moneyOrDash(adjusted));
-      if (termRow) {
-        for (let n = 1; n <= 5; n++) {
-          const dt = termRow['part_payment_' + n + '_date'];
-          const am = termRow['part_payment_' + n + '_amount'];
-          if ((!dt || dt === '') && (!am || am === '')) continue;
-          html += rowFn('Part Pay ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
-        }
-      }
-      html += rowFn('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
-      html += rowFn('Books', moneyOrDash(termRow && termRow.books));
-      html += rowFn('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
-      html += rowFn('Net Bills', moneyOrDash(netBills));
-      html += rowFn('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
-      html += rowFn('Blood Group', d.blood_group || '—');
-      html += rowFn('Allergy', d.allergy || '—');
-      html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
     }
 
     // ---------- Section C ----------
