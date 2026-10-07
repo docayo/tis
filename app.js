@@ -3488,43 +3488,71 @@
       byClass[r.class_name] = r;
     });
 
+    // Column definitions — same order on the table and on the save.
+    // The four core bill columns first, then the seven extras.
+    const COLS = [
+      { key: 'tuition',           label: 'Tuition ₦' },
+      { key: 'other_bills_major', label: 'Other Major ₦' },
+      { key: 'other_bills_minor', label: 'Other Minor ₦' },
+      { key: 'books',             label: 'Books ₦' },
+      { key: 'registration_fee',  label: 'Registration ₦' },
+      { key: 'uniform',           label: 'Uniform ₦' },
+      { key: 'sportswear',        label: 'Sportswear ₦' },
+      { key: 'waist_coat',        label: 'Waist Coat ₦' },
+      { key: 'tie',               label: 'Tie ₦' },
+      { key: 'extra_lesson',      label: 'Extra Lesson ₦' },
+      { key: 'special_lesson',    label: 'Special Lesson ₦' }
+    ];
+
     let html = '<div style="overflow-x:auto;">';
-    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:1400px;">';
     html += '<thead><tr style="background:#1a3f8f;color:#fff;">';
-    html += '<th style="text-align:left;padding:6px;">Class</th>';
-    html += '<th style="padding:6px;">Tuition ₦</th>';
-    html += '<th style="padding:6px;">Other Major ₦</th>';
-    html += '<th style="padding:6px;">Other Minor ₦</th>';
-    html += '<th style="padding:6px;">Books ₦</th>';
-    html += '<th style="padding:6px;">Total ₦</th>';
-    html += '<th style="padding:6px;">Save</th>';
+    html += '<th style="text-align:left;padding:6px;position:sticky;left:0;background:#1a3f8f;z-index:2;min-width:120px;">Class</th>';
+    COLS.forEach(function (c) {
+      html += '<th style="padding:6px;font-size:10px;min-width:100px;">' + esc(c.label) + '</th>';
+    });
+    html += '<th style="padding:6px;min-width:110px;">Total ₦</th>';
+    html += '<th style="padding:6px;min-width:80px;">Save</th>';
     html += '</tr></thead><tbody>';
 
     classes.forEach(function (c) {
       const row = byClass[c.name] || {};
-      const total =
-        Number(row.tuition || 0) +
-        Number(row.other_bills_major || 0) +
-        Number(row.other_bills_minor || 0) +
-        Number(row.books || 0);
+      let total = 0;
+      COLS.forEach(function (col) { total += Number(row[col.key] || 0); });
+
       html += '<tr data-fee-class="' + escAttr(c.name) + '">';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(c.name) + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="tuition" value="' + (row.tuition || '') + '" style="width:110px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_major" value="' + (row.other_bills_major || '') + '" style="width:110px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_minor" value="' + (row.other_bills_minor || '') + '" style="width:110px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="books" value="' + (row.books || '') + '" style="width:110px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;position:sticky;left:0;background:#fff;z-index:1;">' + esc(c.name) + '</td>';
+      COLS.forEach(function (col) {
+        html += '<td style="padding:4px;border-bottom:1px solid #eee;text-align:center;">' +
+                '<input type="number" step="0.01" class="fee-inp" data-field="' + col.key + '" ' +
+                'value="' + (row[col.key] || '') + '" style="width:96px;">' +
+                '</td>';
+      });
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:right;font-weight:700;" data-total>' + total.toLocaleString() + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveScheduleRow(\'' + escAttr(c.name) + '\')">Save</button></td>';
       html += '</tr>';
     });
 
     if (classes.length === 0) {
-      html += '<tr><td colspan="7" style="padding:14px;text-align:center;color:#888;">No active classes.</td></tr>';
+      html += '<tr><td colspan="' + (COLS.length + 3) + '" style="padding:14px;text-align:center;color:#888;">No active classes.</td></tr>';
     }
 
     html += '</tbody></table></div>';
-    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year + '. A blank field is treated as 0.</p>';
+    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year +
+            '. A blank field is treated as 0. The seven right-hand columns are the optional extras; they print on the prospect sheet and the report card unless the office unchecks them at print time.</p>';
     setHTML('feesContent', html);
+
+    // Live total: recalc the row total as the operator types.
+    document.querySelectorAll('#feesContent .fee-inp').forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        const tr = inp.closest('[data-fee-class]');
+        if (!tr) return;
+        let sum = 0;
+        tr.querySelectorAll('.fee-inp').forEach(function (i) { sum += Number(i.value || 0); });
+        const totalCell = tr.querySelector('[data-total]');
+        if (totalCell) totalCell.textContent = sum.toLocaleString();
+      });
+    });
   }
 
   async function feesSaveScheduleRow(className) {
@@ -3542,7 +3570,14 @@
       tuition:           get('tuition'),
       other_bills_major: get('other_bills_major'),
       other_bills_minor: get('other_bills_minor'),
-      books:             get('books')
+      books:             get('books'),
+      registration_fee:  get('registration_fee'),
+      uniform:           get('uniform'),
+      sportswear:        get('sportswear'),
+      waist_coat:        get('waist_coat'),
+      tie:               get('tie'),
+      extra_lesson:      get('extra_lesson'),
+      special_lesson:    get('special_lesson')
     };
     startLoader();
     const r = await window.TIS.upsertFeeSchedule(payload);
@@ -3550,17 +3585,15 @@
     if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
     const totalEl = rowEl.querySelector('[data-total]');
     if (totalEl) {
-      const total =
-        Number(payload.tuition || 0) +
-        Number(payload.other_bills_major || 0) +
-        Number(payload.other_bills_minor || 0) +
-        Number(payload.books || 0);
+      const total = Object.keys(payload).reduce(function (s, k) {
+        if (typeof payload[k] === 'number') return s + payload[k];
+        return s;
+      }, 0);
       totalEl.textContent = total.toLocaleString();
     }
     showToast('Saved: ' + className, 'success');
   }
   window.feesSaveScheduleRow = feesSaveScheduleRow;
-
   // ----------------------------------------------------------------
   // ADJUSTMENTS VIEW
   //   List of learners (searchable) with per-learner additions and
