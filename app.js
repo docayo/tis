@@ -584,17 +584,171 @@
   //   B: admin / super_admin
   //   C: super_admin only
   // ================================================================
+  // ================================================================
+  // Resolve the fee picture for one learner × term × year.
+  //
+  // Source of truth rule:
+  //   • Before any naira hits learner_terms for that term → read
+  //     fee_schedule + fee_adjustments LIVE. Office edits to the
+  //     class bill or a learner adjustment show up immediately.
+  //   • After the first part-payment is recorded → read
+  //     learner_terms. The snapshot is now a receipt and is frozen.
+  //
+  // Returns an object with the same field names the modal and the
+  // printed card have always used, so neither has to change its
+  // shape — only where the numbers come from.
+  // ================================================================
+  function previousTermOf(termType, year) {
+    const t = String(termType || '').trim().toLowerCase();
+    if (t === '3rd') return { term_type: '2nd', year: Number(year) };
+    if (t === '2nd') return { term_type: '1st', year: Number(year) };
+    if (t === '1st') return { term_type: '3rd', year: Number(year) - 1 };
+    return null;
+  }
+  window.previousTermOf = previousTermOf;
+
+  async function resolveLearnerFeePicture(learner, termRow, term, year) {
+    const empty = {
+      source: 'none',
+      tuition: 0, scholarship: 0, additions: 0,
+      other_bills_major: 0, other_bills_minor: 0, books: 0,
+      adjusted_tuition: 0,
+      balance_bf: 0, net_bills: 0,
+      total_part_payment: 0, balance_cf: 0,
+      part_payments: [],
+      cleared: '', clearance: '',
+      schedule_found: false, adjustment_found: false
+    };
+    if (!learner || !learner.id || !term) return empty;
+
+    // Does the snapshot already carry money?
+    function snapshotHasMoney(row) {
+      if (!row) return false;
+      if (parseNum(row.total_part_payment) > 0) return true;
+      for (let n = 1; n <= 5; n++) {
+        if (parseNum(row['part_payment_' + n + '_amount']) > 0) return true;
+      }
+      return false;
+    }
+
+    const locked = snapshotHasMoney(termRow);
+
+    // ---- Pull the live sources (used when not locked) ----
+    let schedRow = null, adjRow = null;
+    if (!locked) {
+      const className = learner.class_name || (termRow && termRow.class_name) || '';
+      if (className) {
+        try {
+          const sr = await window.TIS.getFeeScheduleRow(className, term.term_type, year);
+          if (sr && sr.ok && sr.data) schedRow = sr.data;
+        } catch (e) { /* silent */ }
+      }
+      try {
+        const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
+        if (ar && ar.ok && ar.data) adjRow = ar.data;
+      } catch (e) { /* silent */ }
+    }
+
+    // ---- Assemble part-payment list (only exists on the snapshot) ----
+    const ppList = [];
+    if (termRow) {
+      for (let n = 1; n <= 5; n++) {
+        const dt = termRow['part_payment_' + n + '_date'];
+        const am = termRow['part_payment_' + n + '_amount'];
+        if ((!dt || dt === '') && (!am || am === '')) continue;
+        ppList.push({ n: n, date: dt, amount: am });
+      }
+    }
+
+    // ---- LOCKED: learner_terms is the receipt ----
+    if (locked) {
+      const tuition     = parseNum(termRow.tuition);
+      const scholarship = parseNum(termRow.scholarship);
+      const otherMajor  = parseNum(termRow.other_bills_major);
+      const otherMinor  = parseNum(termRow.other_bills_minor);
+      const books       = parseNum(termRow.books);
+      const netBills    = tuition + otherMajor + otherMinor + books;
+      return {
+        source: 'snapshot',
+        tuition: tuition,
+        scholarship: scholarship,
+        additions: parseNum(termRow.additions),
+        other_bills_major: otherMajor,
+        other_bills_minor: otherMinor,
+        books: books,
+        adjusted_tuition: tuition - scholarship,
+        balance_bf: parseNum(termRow.balance_bf),
+        net_bills: netBills,
+        total_part_payment: parseNum(termRow.total_part_payment),
+        balance_cf: parseNum(termRow.balance_cf),
+        part_payments: ppList,
+        cleared: termRow.cleared || '',
+        clearance: termRow.clearance || '',
+        schedule_found: false,
+        adjustment_found: false
+      };
+    }
+
+    // ---- NOT LOCKED: live schedule + live adjustment ----
+    const tuition     = schedRow ? parseNum(schedRow.tuition)            : parseNum(termRow && termRow.tuition);
+    const otherMajor  = schedRow ? parseNum(schedRow.other_bills_major)  : parseNum(termRow && termRow.other_bills_major);
+    const otherMinor  = schedRow ? parseNum(schedRow.other_bills_minor)  : parseNum(termRow && termRow.other_bills_minor);
+    const books       = schedRow ? parseNum(schedRow.books)              : parseNum(termRow && termRow.books);
+
+    const additions   = adjRow ? parseNum(adjRow.additions)   : 0;
+    const deductions  = adjRow ? parseNum(adjRow.deductions)  : 0;
+
+    // Balance B/F still comes from the snapshot if it exists
+    // (previous term carried it forward when the row was created).
+    const balanceBf   = parseNum(termRow && termRow.balance_bf);
+
+    // Net = class bill + additions − deductions
+    const netBills    = tuition + otherMajor + otherMinor + books + additions - deductions;
+    const adjusted    = tuition - deductions;
+
+    // No payments yet by definition of this branch.
+    const paid        = 0;
+    const balanceCf   = netBills + balanceBf - paid;
+
+    return {
+      source: 'live',
+      tuition: tuition,
+      scholarship: deductions,       // shown as Scholarship on the card
+      additions: additions,          // shown as Additions on the card
+      other_bills_major: otherMajor,
+      other_bills_minor: otherMinor,
+      books: books,
+      adjusted_tuition: adjusted,
+      balance_bf: balanceBf,
+      net_bills: netBills,
+      total_part_payment: paid,
+      balance_cf: balanceCf,
+      part_payments: [],
+      cleared: (termRow && termRow.cleared) || '',
+      clearance: (termRow && termRow.clearance) || '',
+      schedule_found: !!schedRow,
+      adjustment_found: !!adjRow
+    };
+  }
+  window.resolveLearnerFeePicture = resolveLearnerFeePicture;
+
+  // ================================================================
+  // View modal — three-tier permission gating
+  //   A: everyone
+  //   B: admin / super_admin
+  //   C: super_admin only
+  //
+  // Fee picture (Section A "Balance C/F", Section B entirely):
+  //   resolved by resolveLearnerFeePicture() above. Live from
+  //   fee_schedule + fee_adjustments until a payment is recorded,
+  //   then frozen from learner_terms.
+  // ================================================================
   async function openLearnerViewModal(pin) {
     closeModal();
     startLoader();
     const learnerR = await window.TIS.getLearnerByPin(pin);
     const termsR   = learnerR && learnerR.ok && learnerR.data
       ? await window.TIS.getLearnerTermForActive(learnerR.data.id) : null;
-    let prevTermRow = null;
-    if (learnerR && learnerR.ok && learnerR.data) {
-      const prevR = await window.TIS.getLearnerTermFor(learnerR.data.id, '3rd', 2025);
-      if (prevR && prevR.ok) prevTermRow = prevR.data;
-    }
     stopLoader();
 
     if (!learnerR || !learnerR.ok || !learnerR.data) {
@@ -606,6 +760,19 @@
     const term    = termsR && termsR.ok ? termsR.data.term : null;
     const termLabel = term ? term.label : 'No active term';
 
+    // ---- Dynamic previous term, derived from the active term ----
+    let prevTermRow = null;
+    if (term) {
+      const prev = previousTermOf(term.term_type, term.year);
+      if (prev) {
+        const prevR = await window.TIS.getLearnerTermFor(d.id, prev.term_type, prev.year);
+        if (prevR && prevR.ok) prevTermRow = prevR.data;
+      }
+    }
+
+    // ---- Resolve the fee picture for the active term ----
+    const fee = await resolveLearnerFeePicture(d, termRow, term, term ? term.year : null);
+
     const canA = true;
     const canB = isAdmin();
     const canC = isSuperAdmin();
@@ -614,25 +781,25 @@
     const ph2 = phoneFor(d, 2);
     const ph3 = phoneFor(d, 3);
 
-    const tuition     = parseNum(termRow && termRow.tuition);
-    const scholarship = parseNum(termRow && termRow.scholarship);
-    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
-    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
-    const books       = parseNum(termRow && termRow.books);
-    const netBills    = tuition + otherMajor + otherMinor + books;
-    const adjusted    = tuition - scholarship;
+    // Header card shows the "Balance C/F" number, sourced from
+    // whichever side of the rule is in force.
+    const headerBalance = fee.balance_cf;
 
     let ppRows = '';
-    if (termRow) {
-      for (let n = 1; n <= 5; n++) {
-        const dt = termRow['part_payment_' + n + '_date'];
-        const am = termRow['part_payment_' + n + '_amount'];
-        if ((!dt || dt === '') && (!am || am === '')) continue;
+    if (fee.part_payments.length) {
+      fee.part_payments.forEach(function (p) {
         ppRows += '<div class="info-row" style="background:#f7fbf7;">' +
-                  '<span class="info-label">Part Payment ' + n + '</span>' +
-                  '<span class="info-value">' + fmtDateOrDash(dt) + ' — ' + moneyOrDash(am) + '</span></div>';
-      }
+                  '<span class="info-label">Part Payment ' + p.n + '</span>' +
+                  '<span class="info-value">' + fmtDateOrDash(p.date) + ' — ' + moneyOrDash(p.amount) + '</span></div>';
+      });
     }
+
+    const sourceNote = fee.source === 'snapshot'
+      ? '<div style="font-size:10px;color:#666;margin-top:4px;">Fees from learner record (payment recorded).</div>'
+      : (fee.source === 'live'
+          ? '<div style="font-size:10px;color:#666;margin-top:4px;">Fees live from class bill' +
+            (fee.adjustment_found ? ' + adjustment' : '') + '.</div>'
+          : '');
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)closeLearnerModal()">';
     html += '<div class="modal-box wide lbModal" onclick="event.stopPropagation()">';
@@ -668,30 +835,33 @@
       html += infoRow('Gender', d.gender);
       html += infoRow('1st Phone (' + ph1.label + ')', ph1.value);
       html += infoRow('Account Number', d.account_number);
-      html += infoRow('Clearance Status', termRow ? termRow.cleared : '—');
-      html += infoRow('Clearance Date', termRow ? fmtDateOrDash(termRow.clearance) : '—');
-      html += infoRow('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
+      html += infoRow('Clearance Status', fee.cleared || '—');
+      html += infoRow('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
+      html += infoRow('Balance C/F', moneyOrDash(headerBalance));
       html += '</div></div>';
     }
 
     if (canB) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
-      html += infoRow('Previous Term Balance B/F', prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(termRow && termRow.balance_bf));
-      html += infoRow('Current Term Tuition', moneyOrDash(termRow && termRow.tuition));
-      html += infoRow('Scholarship Amount', moneyOrDash(termRow && termRow.scholarship));
-      html += infoRow('Adjusted Tuition Total', moneyOrDash(adjusted));
+      html += infoRow('Previous Term Balance B/F', prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
+      html += infoRow('Current Term Tuition', moneyOrDash(fee.tuition));
+      html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
+      html += infoRow('Additions', moneyOrDash(fee.additions));
+      html += infoRow('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
       if (ppRows) {
         html += '<div style="margin:8px 0 4px;font-weight:700;font-size:11px;color:#0d4d26;">Part Payments</div>';
         html += ppRows;
       }
-      html += infoRow('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
-      html += infoRow('Books', moneyOrDash(termRow && termRow.books));
-      html += infoRow('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
-      html += infoRow('Net Bills', moneyOrDash(netBills));
-      html += infoRow('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
+      html += infoRow('Total Paid', moneyOrDash(fee.total_part_payment));
+      html += infoRow('Other Bills Major', moneyOrDash(fee.other_bills_major));
+      html += infoRow('Books', moneyOrDash(fee.books));
+      html += infoRow('Balance B/F', moneyOrDash(fee.balance_bf));
+      html += infoRow('Net Bills', moneyOrDash(fee.net_bills));
+      html += infoRow('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
       html += infoRow('Blood Group / Genotype', d.blood_group);
       html += infoRow('Allergy', d.allergy);
       html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
+      html += sourceNote;
       html += '</div></div>';
     }
 
