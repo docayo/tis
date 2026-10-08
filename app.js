@@ -47,11 +47,11 @@
     cachedClasses: []
   };
 
-    const ALL_MODULES = [
-    'learners', 'staff', 'terms', 'attendance', 'staffatt',
-    'broadsheet', 'calendar', 'qr', 'reports', 'results',
-    'classes', 'users', 'idcards'
-  ];
+   const ALL_MODULES = [
+  'learners', 'prospects', 'staff', 'terms', 'attendance', 'staffatt',
+  'broadsheet', 'calendar', 'qr', 'reports', 'results',
+  'classes', 'users', 'idcards', 'collectibles'
+];
 
   // ================================================================
   // [S02] UTILITIES
@@ -165,11 +165,15 @@
     return State.permissions && State.permissions[key] === true;
   }
   function applyPermissionsToUI() {
-    document.querySelectorAll('.nav-tab').forEach(btn => {
-      const mod = btn.dataset.tab;
-      if (hasPermission('read_' + mod)) btn.classList.remove('hidden');
-      else btn.classList.add('hidden');
-    });
+   document.querySelectorAll('.nav-tab').forEach(btn => {
+  const mod = btn.dataset.tab;
+  if (mod === 'prospects' || mod === 'collectibles') {
+    btn.classList.remove('hidden');
+    return;
+  }
+  if (hasPermission('read_' + mod)) btn.classList.remove('hidden');
+  else btn.classList.add('hidden');
+});
     document.querySelectorAll('[data-perm]').forEach(btn => {
       if (hasPermission(btn.dataset.perm)) btn.classList.remove('hidden');
       else btn.classList.add('hidden');
@@ -305,10 +309,10 @@
   // [S06] NAVIGATION
   // ================================================================
   function switchTab(name) {
-    if (!hasPermission('read_' + name)) {
-      showToast('You do not have access to that module.', 'warning');
-      return;
-    }
+  if (!hasPermission('read_' + name) && name !== 'prospects' && name !== 'collectibles') {
+  showToast('You do not have access to that module.', 'warning');
+  return;
+}
     document.querySelectorAll('.nav-tab').forEach(b => {
       b.classList.toggle('active', b.dataset.tab === name);
     });
