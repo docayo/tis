@@ -2342,10 +2342,15 @@
     XLSX.writeFile(wb, 'TIS_Learners_Template_' + new Date().toISOString().slice(0, 10) + '.xlsx');
     showToast('Template downloaded', 'success');
   }
+// ================================================================
+// [S07] LEARNERS
+// ================================================================
+// ... (other parts of [S07] remain the same) ...
 
   async function uploadLearnerUpdates(file) {
     if (typeof XLSX === 'undefined') { showToast('Excel library not loaded — reload the page', 'error'); return; }
-    if (!confirm('Upload "' + file.name + '"?\n\nRows matching an existing PIN will be updated. New PINs will be created.')) return;
+    if (!confirm('Upload "' + file.name + '"?\n\nRows matching an existing PIN will be updated. New PINs will be created.\n\n' +
+                 'IMPORTANT: An empty cell in the spreadsheet will CLEAR the corresponding field for that learner.')) return;
     startLoader();
     let wb;
     try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
@@ -2371,18 +2376,29 @@
       const row = rows[i];
       const pin = String(row['PIN'] || '').trim();
       if (!pin) { failed++; errors.push('Row ' + (i + 2) + ': no PIN'); continue; }
+      
       const patch = {};
       Object.keys(FIELD_MAP).forEach(function (col) {
-        if (row[col] !== undefined && row[col] !== '') patch[FIELD_MAP[col]] = String(row[col]).trim();
+        // Always include the field in the patch.
+        // If the cell is empty, the value becomes an empty string, which will clear the field.
+        const value = (row[col] !== undefined) ? String(row[col]).trim() : '';
+        patch[FIELD_MAP[col]] = value;
       });
-      if (!Object.keys(patch).length) { failed++; continue; }
 
       const existing = await window.TIS.getLearnerByPin(pin);
       if (existing && existing.ok && existing.data) {
         const r = await window.TIS.updateLearner(existing.data.id, patch);
         if (r && r.ok) updated++; else { failed++; errors.push(pin); }
       } else {
-        const r = await window.TIS.createLearner(patch);
+        // When creating a new learner from the spreadsheet, remove empty fields to avoid
+        // overwriting database defaults with empty strings.
+        const createRow = {};
+        Object.keys(patch).forEach(key => {
+            if (patch[key] !== '') {
+                createRow[key] = patch[key];
+            }
+        });
+        const r = await window.TIS.createLearner(createRow);
         if (r && r.ok) created++; else { failed++; errors.push(pin); }
       }
     }
@@ -8215,11 +8231,17 @@
   }
   window.wsSaveRow = wsSaveRow;
 
+ // ================================================================
+// [S15] REPORTS
+// ================================================================
+// ... (other parts of [S15] remain the same) ...
+
   async function wsSaveAllChanged() {
     const dirty = Object.keys(wsState.dirty);
     if (dirty.length === 0) { showToast('No changes to save.', 'info'); return; }
     if (!confirm('Save ' + dirty.length + ' changed row(s)?')) return;
 
+    startLoader(); // <-- Add this to show the loading indicator
     let okCount = 0, failCount = 0;
     for (let i = 0; i < dirty.length; i++) {
       const id = parseInt(dirty[i], 10);
@@ -8252,10 +8274,9 @@
         failCount++;
       }
     }
+    stopLoader(); // <-- Hide the indicator when done
     showToast('Saved ' + okCount + ' row(s)' + (failCount ? ', ' + failCount + ' failed' : '') + '.', failCount ? 'warning' : 'success');
   }
-  window.wsSaveAllChanged = wsSaveAllChanged;
-
   // ----------------------------------------------------------------
   // Comment bank picker
   // ----------------------------------------------------------------
