@@ -320,8 +320,14 @@
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
     try {
-         if (name === 'learners') loadLearners();
-      else if (name === 'prospects') initProspectsTab();
+      if (name === 'prospects') {
+        if (!hasPermission('read_learners')) {
+          showToast('You do not have access to that module.', 'warning');
+          return;
+        }
+        initProspectsTab();
+      }
+      else if (name === 'learners') loadLearners();
       else if (name === 'staff') loadStaff();
       else if (name === 'terms') initTermsTab();
       else if (name === 'attendance') initLearnerAttendanceTab();
