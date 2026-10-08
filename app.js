@@ -815,6 +815,7 @@
             '<th style="text-align:left;padding:6px;">Class</th>' +
             '<th style="text-align:left;padding:6px;">Parents</th>' +
             '<th style="text-align:left;padding:6px;">Phone</th>' +
+            '<th style="text-align:left;padding:6px;">Added</th>' +
             '<th style="padding:6px;">Status</th>' +
             '<th style="padding:6px;">Actions</th></tr></thead><tbody>';
 
@@ -824,24 +825,40 @@
                    st === 'enrolled' ? 'background:#d4a017;color:#fff;' :
                    st === 'declined' ? 'background:#c0392b;color:#fff;' :
                                        'background:#e0e0e0;color:#333;';
+
+      // Dates shown on the record: created, then whichever transition fired.
+      const created = p.created_at ? new Date(p.created_at) : null;
+      const createdStr = created && !isNaN(created.getTime())
+        ? created.toLocaleDateString() + ' ' + created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+        : '—';
+      let transStr = '';
+      if (p.enrolled_at) transStr = ' · enrolled ' + new Date(p.enrolled_at).toLocaleDateString();
+      if (p.admitted_at) transStr = ' · admitted ' + new Date(p.admitted_at).toLocaleDateString();
+      if (p.declined_at) transStr = ' · declined ' + new Date(p.declined_at).toLocaleDateString();
+
       html += '<tr>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(p.full_name || '') + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.proposed_class || '') + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.parents_name || '') + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(p.mother_phone || p.father_phone || '') + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-size:11px;color:#666;">' + esc(createdStr + transStr) + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><span style="font-size:10px;padding:2px 8px;border-radius:4px;' + chip + '">' + esc(st.toUpperCase()) + '</span></td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;white-space:nowrap;">';
-      html += '<button class="btn btn-sm btn-secondary" type="button" onclick="openProspectPreview(' + p.id + ')"><i class="fas fa-eye"></i></button> ';
-      html += '<button class="btn btn-sm btn-primary" type="button" onclick="openProspectEditModal(' + p.id + ')"><i class="fas fa-pen"></i></button> ';
+      html += '<button class="btn btn-sm btn-secondary" type="button" onclick="openProspectPreview(' + p.id + ')" title="Preview"><i class="fas fa-eye"></i></button> ';
+      html += '<button class="btn btn-sm btn-primary" type="button" onclick="openProspectEditModal(' + p.id + ')" title="Edit"><i class="fas fa-pen"></i></button> ';
       if (st === 'new') {
-        html += '<button class="btn btn-sm btn-warning" type="button" onclick="prospectEnroll(' + p.id + ')"><i class="fas fa-user-check"></i> Enroll</button> ';
+        html += '<button class="btn btn-sm btn-warning" type="button" onclick="prospectEnroll(' + p.id + ')" title="Enroll"><i class="fas fa-user-check"></i> Enroll</button> ';
       }
       if (st === 'new' || st === 'enrolled') {
-        html += '<button class="btn btn-sm btn-success" type="button" onclick="prospectAdmit(' + p.id + ')"><i class="fas fa-check"></i> Admit</button> ';
+        html += '<button class="btn btn-sm btn-success" type="button" onclick="prospectAdmit(' + p.id + ')" title="Admit"><i class="fas fa-check"></i> Admit</button> ';
       }
       if (st !== 'declined' && st !== 'admitted') {
-        html += '<button class="btn btn-sm btn-danger" type="button" onclick="prospectDecline(' + p.id + ')"><i class="fas fa-times"></i></button> ';
+        html += '<button class="btn btn-sm btn-danger" type="button" onclick="prospectDecline(' + p.id + ')" title="Decline"><i class="fas fa-times"></i></button> ';
       }
+      if (st === 'admitted' && p.admitted_learner_id) {
+        html += '<span style="font-size:10px;color:#0d4d26;">→ learner #' + esc(String(p.admitted_learner_id)) + '</span> ';
+      }
+      html += '<button class="btn btn-sm btn-secondary" type="button" onclick="prospectDelete(' + p.id + ')" title="Delete permanently" style="color:#c0392b;"><i class="fas fa-trash"></i></button>';
       html += '</td></tr>';
     });
 
