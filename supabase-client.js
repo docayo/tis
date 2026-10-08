@@ -891,7 +891,7 @@
   // ================================================================
   // [ATTENDANCE_LEARNER]
   // ================================================================
-  TIS.getAttendanceRegister = async function (className, termType, year) {
+    TIS.getAttendanceRegister = async function (className, termType, year) {
     try {
       const sb = await loadSdk();
 
@@ -943,24 +943,53 @@
         marksByDate[r.attendance_date][r.learner_id] = r.mark;
       });
 
-      const today = new Date().toISOString().slice(0, 10);
+      // Local-date helper. toISOString() reports UTC and, in timezones
+      // ahead of UTC (Nigeria is UTC+1), shifts local-midnight back by
+      // one calendar day. Every grid column was therefore labelled with
+      // the date BEFORE the real school day. QR scans (which use the
+      // true local date) landed on a row the grid never looked at, and
+      // grid writes landed on the previous day. This helper returns the
+      // local calendar date as YYYY-MM-DD, matching what QR writes and
+      // what the office sees on the wall calendar.
+      function localISO(d) {
+        return d.getFullYear() + '-' +
+               String(d.getMonth() + 1).padStart(2, '0') + '-' +
+               String(d.getDate()).padStart(2, '0');
+      }
+
+      const today = localISO(new Date());
       const startISO = term ? term.start_date : null;
       const endISO   = term ? term.end_date   : null;
       const weeks = [];
       if (startISO && endISO) {
-        let cursor = new Date(startISO + 'T00:00:00');
+        // Parse the term start as a LOCAL date, not a UTC one.
+        const startParts = String(startISO).split('-');
+        let cursor = new Date(
+          Number(startParts[0]),
+          Number(startParts[1]) - 1,
+          Number(startParts[2])
+        );
         const dow = cursor.getDay();
         const offsetToMonday = (dow === 0 ? -6 : 1 - dow);
         cursor.setDate(cursor.getDate() + offsetToMonday);
 
-        const end = new Date(endISO + 'T00:00:00');
+        const endParts = String(endISO).split('-');
+        const end = new Date(
+          Number(endParts[0]),
+          Number(endParts[1]) - 1,
+          Number(endParts[2])
+        );
+
         let weekNumber = 1;
         while (cursor <= end && weekNumber <= 20) {
           const days = [];
           for (let d = 0; d < 5; d++) {
-            const day = new Date(cursor.getTime());
-            day.setDate(day.getDate() + d);
-            const iso = day.toISOString().slice(0, 10);
+            const day = new Date(
+              cursor.getFullYear(),
+              cursor.getMonth(),
+              cursor.getDate() + d
+            );
+            const iso = localISO(day);
             const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][day.getDay()];
             const isHoliday = !!holidayMap[iso];
             const marksForLearner = marksByDate[iso] || {};
