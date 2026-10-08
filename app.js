@@ -857,8 +857,8 @@
       html += infoRow('Other Bills Major', moneyOrDash(fee.other_bills_major));
       html += infoRow('Books', moneyOrDash(fee.books));
       html += infoRow('Balance B/F', moneyOrDash(fee.balance_bf));
-      html += infoRow('Net Bills', moneyOrDash(fee.net_bills));
       html += infoRow('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
+      html += infoRow('Net Bills', moneyOrDash(fee.net_bills));
       html += infoRow('Blood Group / Genotype', d.blood_group);
       html += infoRow('Allergy', d.allergy);
       html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
