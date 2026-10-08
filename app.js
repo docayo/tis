@@ -2022,7 +2022,7 @@
     }
 
     // ---------- Section B ----------
-    if (wantB) {
+     if (wantB) {
       html += '<h2>Section B &mdash; Fees</h2>';
       html += rowFn('Previous Term Balance B/F',
         prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
@@ -2039,11 +2039,13 @@
       html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
       html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
       html += rowFn('Books', moneyOrDash(fee.books));
+      html += rowFn('Balance B/F', moneyOrDash(fee.balance_bf));
       html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
       html += rowFn('Net Bills', moneyOrDash(fee.net_bills));
       html += rowFn('Blood Group', d.blood_group || '—');
       html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
+    }
     }
 
     // ---------- Section C ----------
