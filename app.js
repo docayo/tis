@@ -1152,7 +1152,7 @@
   window.prospectAdmit = prospectAdmit;
 
   async function prospectDecline(id) {
-    if (!confirm('Mark this prospect as DECLINED?')) return;
+    if (!confirm('Mark this prospect as DECLINED?\n\nThey stay on the list for the record — use Delete to remove permanently.')) return;
     startLoader();
     const r = await window.TIS.declineProspectiveLearner(id);
     stopLoader();
@@ -1160,6 +1160,25 @@
     else showToast('Failed: ' + ((r && r.error) || ''), 'error');
   }
   window.prospectDecline = prospectDecline;
+
+  async function prospectDelete(id) {
+    const all = __prospectsCache || [];
+    const row = all.find(function (p) { return p.id === id; });
+    const name = row ? (row.full_name || 'this prospect') : 'this prospect';
+    if (!confirm('Permanently DELETE "' + name + '"?\n\nThis cannot be undone.')) return;
+    startLoader();
+    const r = await window.TIS.deleteProspectiveLearner(id);
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Deleted.', 'success');
+      __prospectsCache = all.filter(function (p) { return p.id !== id; });
+      __prospectsFetchedAt = 0;
+      loadProspects();
+    } else {
+      showToast('Delete failed: ' + ((r && r.error) || ''), 'error');
+    }
+  }
+  window.prospectDelete = prospectDelete;
 
   // ---------- Manage extras modal ----------
   async function openManageExtrasModal() {
