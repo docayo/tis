@@ -4907,7 +4907,7 @@
     renderAttendanceRegister();
   }
 
-  async function attSaveAllChanges() {
+    async function attSaveAllChanges() {
     if (!attState) return;
     const st = attState;
     const marks = [];
@@ -4917,14 +4917,34 @@
     });
     if (marks.length === 0) { showToast('Nothing to save', 'info'); return; }
 
+    // Guard: if the client method is not loaded yet, say so loudly
+    // instead of silently hanging the loader.
+    if (typeof window.TIS.saveAttendanceMarks !== 'function') {
+      showToast('Save failed: supabase-client.js is not loaded yet. Reload the page.', 'error');
+      console.error('[attSaveAllChanges] window.TIS.saveAttendanceMarks is ' +
+                    typeof window.TIS.saveAttendanceMarks);
+      return;
+    }
+
     startLoader();
-    const r = await window.TIS.saveAttendanceMarks(
-      st.term, st.year, marks,
-      (State.profile && State.profile.name) || 'Operator'
-    );
+    let r;
+    try {
+      r = await window.TIS.saveAttendanceMarks(
+        st.term, st.year, marks,
+        (State.profile && State.profile.name) || 'Operator'
+      );
+    } catch (err) {
+      stopLoader();
+      showToast('Save failed: ' + (err && err.message ? err.message : err), 'error');
+      console.error('[attSaveAllChanges] threw', err);
+      return;
+    }
     stopLoader();
+
     if (r && r.ok) {
-      showToast('Saved ' + r.data.applied + ' mark(s).', 'success');
+      const applied = (r.data && r.data.applied) || 0;
+      const deleted = (r.data && r.data.deleted) || 0;
+      showToast('Saved. Applied ' + applied + ', removed ' + deleted + ' mark(s).', 'success');
       marks.forEach(function (m) {
         st.weeks.forEach(function (wk) {
           wk.days.forEach(function (d) {
@@ -4940,7 +4960,8 @@
       renderClassAnalysisPanel();
       renderDayBreakdownPanel();
     } else {
-      showToast('Save failed: ' + ((r && r.error) || ''), 'error');
+      showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+      console.error('[attSaveAllChanges] returned', r);
     }
   }
 
