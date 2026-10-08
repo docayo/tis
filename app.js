@@ -2393,20 +2393,48 @@
     loadLearners();
   }
 
+ // ================================================================
+// [S07] LEARNERS
+// ================================================================
+// ... (other parts of [S07] remain the same) ...
+
   function printLearnerList() {
-    const rows = State.cachedLearners || [];
-    if (!rows.length) { showToast('Load the list first', 'warning'); return; }
+    const grid = document.getElementById('learnersGrid');
+    if (!grid) { showToast('Learner grid not found.', 'error'); return; }
+
+    // Read the PINs from the currently rendered cards to get the filtered list.
+    const pinsInView = [];
+    grid.querySelectorAll('[data-pin]').forEach(function (el) {
+        // The data-pin attribute is on the card and also on the buttons.
+        // We can grab it from the card-level element.
+        const card = el.closest('.student-card');
+        if (card && card.dataset.pin && pinsInView.indexOf(card.dataset.pin) === -1) {
+            pinsInView.push(card.dataset.pin);
+        }
+    });
+
+    if (pinsInView.length === 0) {
+      showToast('No learners to print. Load or search for some first.', 'warning');
+      return;
+    }
+
+    // Build the list of full learner objects for the pins in view.
+    const rowsToPrint = State.cachedLearners.filter(function(l) {
+        return pinsInView.includes(l.pin);
+    });
+
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+
     let html = '<html><head><title>Learners</title><style>' +
       'body{font-family:Arial;padding:20px;}h1{color:#0b6623;text-align:center;margin:0 0 12px;}' +
       'table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:#fff;padding:8px;font-size:11px;text-align:left;}' +
       'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}' +
       '.m{color:#1a5276;font-weight:600;}.f{color:#c0392b;font-weight:600;}</style></head><body>';
     html += '<h1>THE IDEAL SCHOOLS — Learners List</h1>';
-    html += '<div style="text-align:center;font-size:11px;color:#666;margin-bottom:10px;">Printed ' + new Date().toLocaleString() + ' · ' + rows.length + ' learners</div>';
+    html += '<div style="text-align:center;font-size:11px;color:#666;margin-bottom:10px;">Printed ' + new Date().toLocaleString() + ' · ' + rowsToPrint.length + ' learners</div>';
     html += '<table><thead><tr><th>Class</th><th>PIN</th><th>Name</th><th>Gender</th><th>Father Phone</th><th>Mother Phone</th></tr></thead><tbody>';
-    rows.forEach(function (r) {
+    rowsToPrint.forEach(function (r) {
       const g = (r.gender || '').toLowerCase();
       const cls = g.indexOf('female') === 0 ? 'f' : (g.indexOf('male') === 0 ? 'm' : '');
       html += '<tr><td>' + esc(r.class_name || '') + '</td><td>' + esc(r.pin || '') + '</td>' +
