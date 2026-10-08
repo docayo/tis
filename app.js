@@ -304,8 +304,10 @@
   // ================================================================
   // [S06] NAVIGATION
   // ================================================================
-  function switchTab(name) {
-    if (!hasPermission('read_' + name)) {
+    function switchTab(name) {
+    // Prospects is intentionally open to every operator (read + write + print).
+    // Every other tab keeps the existing read-permission gate.
+    if (name !== 'prospects' && !hasPermission('read_' + name)) {
       showToast('You do not have access to that module.', 'warning');
       return;
     }
@@ -320,13 +322,7 @@
     if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
 
     try {
-      if (name === 'prospects') {
-        if (!hasPermission('read_learners')) {
-          showToast('You do not have access to that module.', 'warning');
-          return;
-        }
-        initProspectsTab();
-      }
+      if (name === 'prospects') initProspectsTab();
       else if (name === 'learners') loadLearners();
       else if (name === 'staff') loadStaff();
       else if (name === 'terms') initTermsTab();
