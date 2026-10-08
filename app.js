@@ -2266,9 +2266,17 @@
   // ================================================================
   // Toolbar wiring
   // ================================================================
+// ================================================================
+// [S07] LEARNERS
+// ================================================================
+// ... (other parts of [S07] remain the same) ...
+
+  // ================================================================
+  // Toolbar wiring
+  // ================================================================
   function initLearnersTab() {
     const refresh = document.getElementById('btnRefreshLearners');
-        if (refresh && !refresh.__wired) {
+    if (refresh && !refresh.__wired) {
       refresh.addEventListener('click', function (e) {
         e.preventDefault();
         State.learnersFetchedAt = 0;    // force refetch
@@ -2291,7 +2299,7 @@
       upBtn.__wired = true;
     }
 
-        const add = document.getElementById('btnAddLearner');
+    const add = document.getElementById('btnAddLearner');
     if (add && !add.__wired) { add.addEventListener('click', function (e) { e.preventDefault(); openAddLearnerModal(); }); add.__wired = true; }
 
     const toggle = document.getElementById('btnToggleInactiveLearners');
@@ -2304,12 +2312,13 @@
       });
       toggle.__wired = true;
     }
-  }
+
     const bulk = document.getElementById('btnBulkLearnerPhotos');
     if (bulk && !bulk.__wired) {
       bulk.addEventListener('click', function (e) { e.preventDefault(); openBulkPhotoUploadDialog('learner'); });
       bulk.__wired = true;
     }
+  }
   // ================================================================
   // Excel template download + upload
   // ================================================================
@@ -4580,6 +4589,11 @@
     if (modeSel) modeSel.addEventListener('change', function () { attSessionMode = modeSel.value; });
   }
 
+// ================================================================
+// [S10] LEARNER ATTENDANCE
+// ================================================================
+// ... (other parts of [S10] remain the same) ...
+
   function renderWeekGrid(wk, weekLock) {
     const st = attState;
     const days = wk.days;
@@ -4587,8 +4601,7 @@
     const numLearners = st.learners.length;
     const vis = window.__attColVisibility;
 
-    const NAME_W = 90;
-    const nameLeft = vis.pin ? 70 : 0;
+    const COL_WIDTHS = { pin: 70, name: 90, sex: 50, age: 40 };
 
     // Column-visibility toggle bar
     let bar = '<div style="display:flex;gap:12px;align-items:center;padding:6px 10px;background:#f1f8e9;border-bottom:1px solid #c8e6c9;font-size:11px;">';
@@ -4606,14 +4619,24 @@
     h += '<div style="overflow-x:auto;background:#fff;">';
     h += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;table-layout:fixed;">';
 
+    // Calculate sticky offsets
+    let currentLeft = 0;
+    const stickyOffsets = {};
+    if (vis.pin) {
+      stickyOffsets.pin = currentLeft;
+      currentLeft += COL_WIDTHS.pin;
+    }
+    stickyOffsets.name = currentLeft;
+    
     h += '<thead><tr style="background:#e8f5e9;">';
     if (vis.pin) {
-      h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:0;z-index:2;width:70px;min-width:70px;">PIN</th>';
+      h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:' +
+           stickyOffsets.pin + 'px;z-index:2;width:' + COL_WIDTHS.pin + 'px;min-width:' + COL_WIDTHS.pin + 'px;">PIN</th>';
     }
     h += '<th style="text-align:left;padding:6px;background:#e8f5e9;position:sticky;left:' +
-         nameLeft + 'px;z-index:2;width:' + NAME_W + 'px;min-width:' + NAME_W + 'px;max-width:' + NAME_W + 'px;">Name</th>';
-    if (vis.sex) h += '<th style="padding:6px;width:50px;min-width:50px;">Sex</th>';
-    if (vis.age) h += '<th style="padding:6px;width:40px;min-width:40px;">Age</th>';
+         stickyOffsets.name + 'px;z-index:2;width:' + COL_WIDTHS.name + 'px;min-width:' + COL_WIDTHS.name + 'px;max-width:' + COL_WIDTHS.name + 'px;">Name</th>';
+    if (vis.sex) h += '<th style="padding:6px;width:' + COL_WIDTHS.sex + 'px;min-width:' + COL_WIDTHS.sex + 'px;">Sex</th>';
+    if (vis.age) h += '<th style="padding:6px;width:' + COL_WIDTHS.age + 'px;min-width:' + COL_WIDTHS.age + 'px;">Age</th>';
     days.forEach(function (d, i) {
       const isHol = d.isHoliday;
       const shortDay = ['Mon','Tue','Wed','Thu','Fri'][i];
@@ -4647,16 +4670,17 @@
     st.learners.forEach(function (l, rowIndex) {
       h += '<tr id="attRow_' + l.id + '">';
       if (vis.pin) {
-        h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:0;background:#fff;z-index:1;width:70px;min-width:70px;">' + esc(l.pin || '') + '</td>';
+        h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;left:' + stickyOffsets.pin + 'px;background:#fff;z-index:1;width:' + COL_WIDTHS.pin + 'px;min-width:' + COL_WIDTHS.pin + 'px;">' + esc(l.pin || '') + '</td>';
       }
       const g = (l.gender || '').toLowerCase();
       const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
-      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:' + nameLeft + 'px;background:#fff;z-index:1;' +
-           'width:' + NAME_W + 'px;min-width:' + NAME_W + 'px;max-width:' + NAME_W + 'px;' +
+      h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:' + stickyOffsets.name + 'px;background:#fff;z-index:1;' +
+           'width:' + COL_WIDTHS.name + 'px;min-width:' + COL_WIDTHS.name + 'px;max-width:' + COL_WIDTHS.name + 'px;' +
            'overflow-x:auto;white-space:nowrap;">' + esc(l.name || '') + '</td>';
-      if (vis.sex) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:50px;min-width:50px;">' + esc(l.gender || '—') + '</td>';
-      if (vis.age) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:40px;min-width:40px;">' + esc(l.age || '—') + '</td>';
+      if (vis.sex) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:' + COL_WIDTHS.sex + 'px;min-width:' + COL_WIDTHS.sex + 'px;">' + esc(l.gender || '—') + '</td>';
+      if (vis.age) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:' + COL_WIDTHS.age + 'px;min-width:' + COL_WIDTHS.age + 'px;">' + esc(l.age || '—') + '</td>';
 
+      // ... (the rest of the `st.learners.forEach` loop remains the same) ...
       let weeklyPresent = 0;
       days.forEach(function (d) {
         if (d.isHoliday) {
