@@ -1423,13 +1423,17 @@
     const ph2 = phoneFor(d, 2);
     const ph3 = phoneFor(d, 3);
 
-    const tuition     = parseNum(termRow && termRow.tuition);
-    const scholarship = parseNum(termRow && termRow.scholarship);
-    const otherMajor  = parseNum(termRow && termRow.other_bills_major);
-    const otherMinor  = parseNum(termRow && termRow.other_bills_minor);
-    const books       = parseNum(termRow && termRow.books);
-    const netBills    = tuition + otherMajor + otherMinor + books;
-    const adjusted    = tuition - scholarship;
+    // ---- Resolve the fee picture the same way the View modal does ----
+    // Modal and paper must agree. Same function, same inputs, same rule.
+    let prevTermRow = null;
+    if (term) {
+      const prev = previousTermOf(term.term_type, term.year);
+      if (prev) {
+        const prevR = await window.TIS.getLearnerTermFor(d.id, prev.term_type, prev.year);
+        if (prevR && prevR.ok) prevTermRow = prevR.data;
+      }
+    }
+    const fee = await resolveLearnerFeePicture(d, termRow, term, term ? term.year : null);
 
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
@@ -1440,7 +1444,8 @@
                   'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
                   '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
                   '.info-label{color:#666;}.info-value{font-weight:600;}';
-      // 80mm thermal (RawBT / MPT-11_309F).
+
+    // 80mm thermal (RawBT / MPT-11_309F).
     // Printable width on an 80mm head is ~72mm — do NOT use 80mm here
     // or the driver shrinks everything to fit, which is what made the
     // previous output unreadable. Base font is 14px (~3.5mm tall).
@@ -1463,7 +1468,7 @@
       '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
       '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
 
-       const rowFn = function (label, value) {
+    const rowFn = function (label, value) {
       return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + esc(value) + '</span></div>';
     };
 
@@ -1501,30 +1506,32 @@
       html += rowFn('Gender', d.gender || '—');
       html += rowFn('1st Phone (' + ph1.label + ')', ph1.value);
       html += rowFn('Account', d.account_number || '—');
-      html += rowFn('Clearance', (termRow && termRow.cleared) || '—');
-      html += rowFn('Clearance Date', (termRow && fmtDateOrDash(termRow.clearance)) || '—');
-      html += rowFn('Balance C/F', termRow ? moneyOrDash(termRow.balance_cf) : '—');
+      html += rowFn('Clearance', fee.cleared || '—');
+      html += rowFn('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
+      html += rowFn('Balance C/F', moneyOrDash(fee.balance_cf));
     }
 
     // ---------- Section B ----------
     if (wantB) {
       html += '<h2>Section B &mdash; Fees</h2>';
-      html += rowFn('Tuition', moneyOrDash(termRow && termRow.tuition));
-      html += rowFn('Scholarship', moneyOrDash(termRow && termRow.scholarship));
-      html += rowFn('Adjusted Tuition', moneyOrDash(adjusted));
-      if (termRow) {
-        for (let n = 1; n <= 5; n++) {
-          const dt = termRow['part_payment_' + n + '_date'];
-          const am = termRow['part_payment_' + n + '_amount'];
-          if ((!dt || dt === '') && (!am || am === '')) continue;
-          html += rowFn('Part Pay ' + n, (dt ? fmtDateOrDash(dt) : '—') + ' — ' + moneyOrDash(am));
-        }
+      html += rowFn('Previous Term Balance B/F',
+        prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
+      html += rowFn('Current Term Tuition', moneyOrDash(fee.tuition));
+      html += rowFn('Scholarship / Deductions', moneyOrDash(fee.scholarship));
+      html += rowFn('Additions', moneyOrDash(fee.additions));
+      html += rowFn('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
+      if (fee.part_payments && fee.part_payments.length) {
+        fee.part_payments.forEach(function (p) {
+          html += rowFn('Part Pay ' + p.n,
+            (p.date ? fmtDateOrDash(p.date) : '—') + ' — ' + moneyOrDash(p.amount));
+        });
       }
-      html += rowFn('Other Bills Major', moneyOrDash(termRow && termRow.other_bills_major));
-      html += rowFn('Books', moneyOrDash(termRow && termRow.books));
-      html += rowFn('Balance B/F', moneyOrDash(termRow && termRow.balance_bf));
-      html += rowFn('Net Bills', moneyOrDash(netBills));
-      html += rowFn('Other Bills Minor', moneyOrDash(termRow && termRow.other_bills_minor));
+      html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
+      html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
+      html += rowFn('Books', moneyOrDash(fee.books));
+      html += rowFn('Balance B/F', moneyOrDash(fee.balance_bf));
+      html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
+      html += rowFn('Net Bills', moneyOrDash(fee.net_bills));
       html += rowFn('Blood Group', d.blood_group || '—');
       html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
@@ -1560,7 +1567,7 @@
     w.document.close();
 
     // Give RawBT a moment to build the raster image before we ask
-    // the user agent to print. 250ms was too short on the MPT-11.
+    // the user agent to print. 600ms is safe for the MPT-11.
     setTimeout(function () {
       try { w.focus(); w.print(); } catch (e) { /* user can Ctrl+P */ }
     }, 600);
@@ -1568,6 +1575,7 @@
     closeModal();
   }
 
+  // ================================================================
   // ================================================================
   // Live search
   // ================================================================
