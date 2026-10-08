@@ -7409,9 +7409,9 @@
 
       // Teacher comment
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
-      html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
+          html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="teacher_comment" ' +
               'data-default="' + (teacherIsDefault ? '1' : '0') + '" ' +
-              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'oninput="wsOnCommentInput(this, ' + l.id + ')" rows="3" ' +
               'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (teacherIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
               esc(teacherValue) + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
@@ -7423,7 +7423,7 @@
       html += '<td style="padding:4px;border-bottom:1px solid #eee;">';
       html += '<textarea class="ws-comment" data-learner-id="' + l.id + '" data-field="principal_comment" ' +
               'data-default="' + (principalIsDefault ? '1' : '0') + '" ' +
-              'oninput="wsMarkDirty(' + l.id + ')" rows="3" ' +
+              'oninput="wsOnCommentInput(this, ' + l.id + ')" rows="3" ' +
               'style="width:100%;font-size:11px;padding:4px;border:1px solid ' + (principalIsDefault ? '#d4a017' : '#ccc') + ';border-radius:4px;box-sizing:border-box;">' +
               esc(principalValue) + '</textarea>';
       html += '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:2px;font-size:10px;padding:2px 6px;" ' +
@@ -7603,14 +7603,160 @@
       el.value = text;
       // Field is now bank-managed again → arrows will cycle it.
       el.setAttribute('data-default', '1');
-      el.style.borderColor = '#d4a017';
       el.setAttribute('data-bank-index', '0');
+      el.style.borderColor = '#d4a017';
+      wsClearCycleCounter(el);
       wsMarkDirty(learnerId);
     }
     closeModal();
   }
   window.wsApplyComment = wsApplyComment;
 
+  // ================================================================
+  // Delivery 6 — Up / Down cycler on comment textareas (Option C).
+  //
+  // Precedence, checked in order:
+  //   1. Field must be bank-managed: data-default="1".
+  //      Typing clears that flag (see wsOnCommentInput).
+  //      "Pick from bank" re-sets it (see wsApplyComment).
+  //   2. Bank for the learner's band and field must be non-empty.
+  //   3. Caret must be where the arrow naturally would not move:
+  //        Down  → cycles only when caret is at the very END
+  //        Up    → cycles only when caret is at the very START
+  //      Anywhere else, the arrow moves the caret as usual.
+  //
+  // When it cycles:
+  //   • value is replaced by the next / previous bank entry
+  //   • data-bank-index is updated
+  //   • a small "n / m" counter is painted in the textarea's corner
+  //   • wsMarkDirty fires → chip flips to UNSAVED
+  //   • caret is pushed to the end so subsequent Down keeps cycling
+  //   • nothing is written to the database — Save does that.
+  //
+  // Counter clears on blur, on input, on apply-from-bank.
+  // ================================================================
+
+  function wsBankForField(learnerId, field) {
+    const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
+    if (!learner) return [];
+    const avg = wsState.averages[learnerId];
+    const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
+    const key = (field === 'teacher_comment') ? 'teacher' : 'principal';
+    return __wsCommentBankCache[key + '|' + band] || [];
+  }
+  window.wsBankForField = wsBankForField;
+
+  function wsShowCycleCounter(ta, idx, total) {
+    if (getComputedStyle(ta.parentElement).position === 'static') {
+      ta.parentElement.style.position = 'relative';
+    }
+    let badge = ta.parentElement.querySelector('.ws-cycle-counter');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'ws-cycle-counter';
+      badge.style.cssText = 'position:absolute;top:2px;right:4px;background:#0d4d26;color:#fff;' +
+                            'font-size:9px;padding:1px 5px;border-radius:3px;opacity:0.85;pointer-events:none;';
+      ta.parentElement.appendChild(badge);
+    }
+    badge.textContent = (idx + 1) + ' / ' + total;
+  }
+
+  function wsClearCycleCounter(ta) {
+    if (!ta || !ta.parentElement) return;
+    const badge = ta.parentElement.querySelector('.ws-cycle-counter');
+    if (badge) badge.remove();
+  }
+  window.wsClearCycleCounter = wsClearCycleCounter;
+
+  function wsCycleComment(ta, dir) {
+    const learnerId = parseInt(ta.getAttribute('data-learner-id'), 10);
+    const field = ta.getAttribute('data-field');
+    if (!learnerId || !field) return false;
+
+    // Rule 1: bank-managed only.
+    if (ta.getAttribute('data-default') !== '1') return false;
+
+    // Rule 2: bank must be non-empty.
+    const bank = wsBankForField(learnerId, field);
+    if (!bank.length) return false;
+
+    // Rule 3: caret position.
+    const caret = ta.selectionStart;
+    const len = (ta.value || '').length;
+    if (dir === 'down' && caret !== len) return false;
+    if (dir === 'up'   && caret !== 0)   return false;
+
+    // Compute new index, wrapping both directions.
+    let idx = parseInt(ta.getAttribute('data-bank-index') || '0', 10);
+    if (isNaN(idx)) idx = 0;
+    if (dir === 'down') idx = (idx + 1) % bank.length;
+    else                idx = (idx - 1 + bank.length) % bank.length;
+
+    // Apply.
+    const learner = wsState.learners.find(function (l) { return l.id === learnerId; });
+    const text = wsFillCommentTemplate(bank[idx].text, learner || {});
+    ta.value = text;
+    ta.setAttribute('data-bank-index', String(idx));
+    try { ta.setSelectionRange(text.length, text.length); } catch (e) { /* ignore */ }
+
+    wsShowCycleCounter(ta, idx, bank.length);
+    wsMarkDirty(learnerId);
+    return true;
+  }
+  window.wsCycleComment = wsCycleComment;
+
+  function wsOnCommentInput(ta, learnerId) {
+    // Typing = the human owns this text now. Exit cycle mode.
+    if (ta.getAttribute('data-default') === '1') {
+      ta.setAttribute('data-default', '0');
+      ta.style.borderColor = '#ccc';
+    }
+    wsClearCycleCounter(ta);
+    wsMarkDirty(learnerId);
+  }
+  window.wsOnCommentInput = wsOnCommentInput;
+
+  // ----------------------------------------------------------------
+  // One delegated keydown listener on document. Installs once.
+  // No dependency on #wsContent being present at install time —
+  // document is always there, and the handler filters by class.
+  // ----------------------------------------------------------------
+  (function wsInstallCycleListener() {
+    if (window.__wsCycleListenerInstalled) return;
+    window.__wsCycleListenerInstalled = true;
+
+    document.addEventListener('keydown', function (e) {
+      const ta = e.target;
+      if (!ta || ta.tagName !== 'TEXTAREA') return;
+      if (!ta.classList || !ta.classList.contains('ws-comment')) return;
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (ta.getAttribute('data-default') !== '1') return;
+
+      const learnerId = parseInt(ta.getAttribute('data-learner-id'), 10);
+      const field = ta.getAttribute('data-field');
+      if (!learnerId || !field) return;
+
+      const bank = wsBankForField(learnerId, field);
+      if (!bank.length) return;
+
+      const caret = ta.selectionStart;
+      const len = (ta.value || '').length;
+      if (e.key === 'ArrowDown' && caret !== len) return;
+      if (e.key === 'ArrowUp'   && caret !== 0)   return;
+
+      e.preventDefault();
+      wsCycleComment(ta, e.key === 'ArrowDown' ? 'down' : 'up');
+    });
+
+    // Clear the counter when the operator leaves the field.
+    document.addEventListener('focusout', function (e) {
+      const t = e.target;
+      if (t && t.tagName === 'TEXTAREA' && t.classList && t.classList.contains('ws-comment')) {
+        wsClearCycleCounter(t);
+      }
+    });
+  })();
   // ================================================================
   // Delivery 6 — Up / Down cycler on comment textareas (Option C).
   //
