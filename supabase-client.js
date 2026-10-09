@@ -891,11 +891,10 @@
   // ================================================================
   // [ATTENDANCE_LEARNER]
   // ================================================================
-     TIS.getAttendanceRegister = async function (className, termType, year) {
+ TIS.getAttendanceRegister = async function (className, termType, year) {
     try {
       const sb = await loadSdk();
 
-      // ---------- 1. Learners in this class ----------
       const learnerQ = await sb
         .from('learners')
         .select('id, pin, name, gender, date_of_birth, photo_url, class_name, date_of_withdrawal')
@@ -907,7 +906,13 @@
         return !(w && w !== '' && w !== 'N/A');
       });
 
-      // ---------- 2. The term row ----------
+      const attQ = await sb
+        .from('attendance_learner')
+        .select('learner_id, attendance_date, mark')
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (attQ.error) return fail(attQ.error.message);
+
       const termQ = await sb
         .from('terms')
         .select('*')
@@ -917,53 +922,6 @@
       if (termQ.error) return fail(termQ.error.message);
       const term = termQ.data;
 
-      // ---------- 3. Attendance rows ----------
-      //    Filter by DATE RANGE, not by term_type/year.
-      //    Rationale: the working staff-attendance path filters by
-      //    date range only, and it works. Filtering by term_type
-      //    AND year on attendance_learner has proven unreliable
-      //    (rows exist in the table with the right term_type/year
-      //    and yet the client sees none of them). A date range is
-      //    what the calendar actually means, and every writer to
-      //    this table — grid, QR scan, SQL migration — sets
-      //    attendance_date correctly, because that is the column
-      //    the unique constraint is built on.
-      let attRows = [];
-      if (term && term.start_date && term.end_date) {
-        const attQ = await sb
-          .from('attendance_learner')
-          .select('learner_id, attendance_date, mark')
-          .gte('attendance_date', term.start_date)
-          .lte('attendance_date', term.end_date);
-        if (attQ.error) return fail(attQ.error.message);
-        attRows = attQ.data || [];
-      } else {
-        // No term bounds — fall back to the old filter as a
-        // last resort so the tab still shows something.
-        const attQ = await sb
-          .from('attendance_learner')
-          .select('learner_id, attendance_date, mark')
-          .eq('term_type', termType)
-          .eq('year', year);
-        if (attQ.error) return fail(attQ.error.message);
-        attRows = attQ.data || [];
-      }
-
-      // ---------- 4. Build a robust lookup ----------
-      //    Keys are strings on BOTH sides. A JSON round-trip
-      //    through PostgREST sometimes returns bigint as a
-      //    number, sometimes as a string. Forcing both to
-      //    String() removes any chance of a missed match.
-      const marksByDate = {};
-      attRows.forEach(function (r) {
-        const date = String(r.attendance_date || '').trim();
-        const lid  = String(r.learner_id);
-        if (!date) return;
-        if (!marksByDate[date]) marksByDate[date] = {};
-        marksByDate[date][lid] = r.mark;
-      });
-
-      // ---------- 5. Holidays ----------
       const holQ = await sb
         .from('academic_calendar')
         .select('event_date, event_type, is_holiday, holiday_name, description')
@@ -979,39 +937,51 @@
         });
       }
 
-      // ---------- 6. Local date helper ----------
-      //    toISOString() reports UTC, which shifts local-midnight
-      //    to the previous calendar day in any timezone east of
-      //    UTC. This helper returns the local calendar date.
+      const marksByDate = {};
+      (attQ.data || []).forEach(function (r) {
+        if (!marksByDate[r.attendance_date]) marksByDate[r.attendance_date] = {};
+        marksByDate[r.attendance_date][r.learner_id] = r.mark;
+      });
+
+      // Local-date helper. toISOString() reports UTC and, in timezones
+      // ahead of UTC (Nigeria is UTC+1), shifts local-midnight back by
+      // one calendar day. Every grid column was therefore labelled with
+      // the date BEFORE the real school day. QR scans (which use the
+      // true local date) landed on a row the grid never looked at, and
+      // grid writes landed on the previous day. This helper returns the
+      // local calendar date as YYYY-MM-DD, matching what QR writes and
+      // what the office sees on the wall calendar.
       function localISO(d) {
         return d.getFullYear() + '-' +
                String(d.getMonth() + 1).padStart(2, '0') + '-' +
                String(d.getDate()).padStart(2, '0');
       }
 
-      // ---------- 7. Build weeks ----------
       const today = localISO(new Date());
       const startISO = term ? term.start_date : null;
       const endISO   = term ? term.end_date   : null;
       const weeks = [];
-
       if (startISO && endISO) {
-        const sP = String(startISO).split('-');
-        const eP = String(endISO).split('-');
-        const startLocal = new Date(Number(sP[0]), Number(sP[1]) - 1, Number(sP[2]));
-        const endLocal   = new Date(Number(eP[0]), Number(eP[1]) - 1, Number(eP[2]));
-
-        // Move to the Monday of the week containing the term start.
-        const dow = startLocal.getDay();
+        // Parse the term start as a LOCAL date, not a UTC one.
+        const startParts = String(startISO).split('-');
+        let cursor = new Date(
+          Number(startParts[0]),
+          Number(startParts[1]) - 1,
+          Number(startParts[2])
+        );
+        const dow = cursor.getDay();
         const offsetToMonday = (dow === 0 ? -6 : 1 - dow);
-        const cursor = new Date(
-          startLocal.getFullYear(),
-          startLocal.getMonth(),
-          startLocal.getDate() + offsetToMonday
+        cursor.setDate(cursor.getDate() + offsetToMonday);
+
+        const endParts = String(endISO).split('-');
+        const end = new Date(
+          Number(endParts[0]),
+          Number(endParts[1]) - 1,
+          Number(endParts[2])
         );
 
         let weekNumber = 1;
-        while (cursor <= endLocal && weekNumber <= 20) {
+        while (cursor <= end && weekNumber <= 20) {
           const days = [];
           for (let d = 0; d < 5; d++) {
             const day = new Date(
@@ -1033,40 +1003,29 @@
               marksByLearner: marksForLearner
             });
           }
-          weeks.push({
-            weekNumber: weekNumber,
-            weekEnding: days[4].date,
-            days: days
-          });
+          const weekEnding = days[4].date;
+          weeks.push({ weekNumber: weekNumber, weekEnding: weekEnding, days: days });
           cursor.setDate(cursor.getDate() + 7);
           weekNumber++;
         }
       }
 
-      // ---------- 8. Age ----------
       learners.forEach(function (l) {
         l.age = computeAge_(l.date_of_birth);
       });
 
-      // ---------- 9. Return ----------
-      //    attendance_rows is included raw so the client always
-      //    has an unprocessed copy of what the DB actually holds.
       return ok({
         className: className,
         termType: termType,
         year: year,
         termLabel: term ? term.label : '',
-        termStart: startISO,
-        termEnd: endISO,
         learners: learners,
-        weeks: weeks,
-        attendance_rows: attRows,
-        attendance_row_count: attRows.length
+        weeks: weeks
       });
-    } catch (err) {
-      return fail(err);
-    }
+    } catch (err) { return fail(err); }
   };
+
+  function computeAge_(dobStr) {
     if (!dobStr) return '';
     const s = String(dobStr).trim();
     let d = null;
