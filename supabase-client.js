@@ -2873,6 +2873,28 @@
       return ok(data);
     } catch (err) { return fail(err); }
   };
+    TIS.upsertCollectibleItem = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        item_key:   String(row.item_key || '').trim().toLowerCase().replace(/\s+/g, '_'),
+        item_label: String(row.item_label || '').trim(),
+        sort_order: Number(row.sort_order || 100),
+        is_active:  row.is_active !== false,
+        updated_at: new Date().toISOString()
+      };
+      if (!payload.item_key || !payload.item_label) {
+        return fail('item_key and item_label are required');
+      }
+      const { data, error } = await sb
+        .from('collectible_items')
+        .upsert(payload, { onConflict: 'item_key' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
   // ================================================================
   // Expose + boot
   // ================================================================
