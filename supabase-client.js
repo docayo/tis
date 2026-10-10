@@ -1014,13 +1014,14 @@
         L.AGE = COMPUTEAGE_(L.DATE_OF_BIRTH);
       });
 
-      RETURN OK({
-        CLASSNAME: CLASSNAME,
-        TERMTYPE: TERMTYPE,
-        YEAR: YEAR,
-        TERMLABEL: TERM ? TERM.LABEL : '',
-        LEARNERS: LEARNERS,
-        WEEKS: WEEKS
+      return ok({
+        className: className,
+        termType: termType,
+        year: year,
+        termLabel: term ? term.label : '',
+        learners: learners,
+        weeks: weeks,
+        attendance_rows: attQ.data || []
       });
     } CATCH (ERR) { RETURN FAIL(ERR); }
   };
