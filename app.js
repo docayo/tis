@@ -4428,41 +4428,6 @@
 
     setHTML('attendanceTermView', pageLoaderHTML('Loading register…'));
     startLoader();
-
-    const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10));
-    if (!r || !r.ok) {
-      stopLoader();
-      setHTML('attendanceTermView', errorHTML('Could not load register', r && r.error));
-      return;
-    }
-
-    // Compute the B/F map (sum of prior terms in the same academic year).
-    let bfMap = {};
-    const learnerIds = (r.data.learners || []).map(function (l) { return l.id; });
-    if (learnerIds.length > 0 && typeof window.TIS.getAttendanceTotalsInAcademicYear === 'function') {
-      const bfR = await window.TIS.getAttendanceTotalsInAcademicYear(
-        learnerIds, parseInt(year, 10), term
-      );
-      if (bfR && bfR.ok && bfR.data) bfMap = bfR.data;
-    }
-
-    stopLoader();
-
-    attState = {
-      cls: cls, term: term, year: parseInt(year, 10),
-      termLabel: r.data.termLabel || (term.toUpperCase() + ' TERM ' + year),
-      learners: r.data.learners || [],
-      weeks: r.data.weeks || [],
-      bfMap: bfMap,
-      openWeeks: {},
-      editing: {}
-    };
-    if (attState.weeks.length > 0) attState.openWeeks[attState.weeks[0].weekNumber] = true;
-    renderAttendanceRegister();
-    renderClassAnalysisPanel();
-    renderSignaturePanel();
-    renderDayBreakdownPanel();
-    attRenderHolidayList();
   }
 
   function attMA(mark) {
