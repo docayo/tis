@@ -4437,16 +4437,31 @@
     return { M: 'O', A: 'O' };
   }
 
-  function attEffectiveMark(learnerId, dateISO) {
+   function attEffectiveMark(learnerId, dateISO) {
     if (!attState) return 'O O';
     const key = learnerId + '|' + dateISO;
     if (attState.editing[key] !== undefined) return attState.editing[key];
+
+    // 1. Preferred: the nested map the week-builder hands us.
     for (let i = 0; i < attState.weeks.length; i++) {
       for (let j = 0; j < attState.weeks[i].days.length; j++) {
         const d = attState.weeks[i].days[j];
-        if (d.date === dateISO) return (d.marksByLearner || {})[learnerId] || 'O O';
+        if (d.date === dateISO) {
+          const fromWeek = (d.marksByLearner || {})[learnerId];
+          if (fromWeek !== undefined) return fromWeek;
+          break;
+        }
       }
     }
+
+    // 2. Fallback: the raw rows we stored at load time. This is what
+    // guarantees QR-written and grid-written marks both surface, even
+    // if the week-builder ever skips a day or a learner.
+    if (attState.rawMarks) {
+      const raw = attState.rawMarks[String(learnerId) + '|' + dateISO];
+      if (raw !== undefined) return raw;
+    }
+
     return 'O O';
   }
 
