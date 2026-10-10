@@ -313,6 +313,8 @@
   showToast('You do not have access to that module.', 'warning');
   return;
 }
+          else if (name === 'collectibles') initCollectiblesTab();
+    
     document.querySelectorAll('.nav-tab').forEach(b => {
       b.classList.toggle('active', b.dataset.tab === name);
     });
@@ -1386,7 +1388,423 @@
     loadProspects();
   }
   window.initProspectsTab = initProspectsTab;
+  // ================================================================
+  // [S07c] COLLECTIBLES — flat checklist per learner.
+  //   Items come from `collectible_items` (one checkbox each).
+  //   Ticks come from `collectible_ticks` keyed on
+  //   (learner_id, item_key, sub_key=''). No sub-rows.
+  // ================================================================
+  let __collectState = {
+    items: [],
+    itemsFetchedAt: 0,
+    matched: [],       // array of learners when search returns >1
+    learner: null,     // the learner whose checklist is shown
+    ticks: {},         // item_key -> { collected, collected_at, note, id }
+    dirty: {}          // item_key -> true (unsaved toggle)
+  };
 
+  async function collectEnsureItems() {
+    const now = Date.now();
+    if (__collectState.items.length > 0 &&
+        (now - __collectState.itemsFetchedAt) < 5 * 60 * 1000) {
+      return __collectState.items;
+    }
+    const r = await window.TIS.listCollectibleItems();
+    __collectState.items = (r && r.ok ? r.data : []) || [];
+    __collectState.itemsFetchedAt = now;
+    return __collectState.items;
+  }
+
+  function collectSetFeedback(msg, kind) {
+    const el = document.getElementById('collectFeedback');
+    if (!el) return;
+    el.style.color = (kind === 'error') ? '#c0392b'
+                   : (kind === 'ok'    ? '#0d4d26' : '#666');
+    el.textContent = msg || '';
+  }
+
+  async function collectSearch() {
+    const input = document.getElementById('collectSearchInput');
+    const q = input ? input.value.trim() : '';
+    __collectState.matched = [];
+    __collectState.learner = null;
+    __collectState.ticks = {};
+    __collectState.dirty = {};
+
+    setHTML('collectMatchList', '');
+    setHTML('collectChecklist', '');
+
+    if (!q) { collectSetFeedback(''); return; }
+
+    collectSetFeedback('Searching…');
+    startLoader();
+    const r = await window.TIS.searchLearners(q);
+    stopLoader();
+
+    if (!r || !r.ok) {
+      collectSetFeedback('Search failed: ' + ((r && r.error) || 'unknown'), 'error');
+      return;
+    }
+    const rows = (r.data || []).filter(function (l) {
+      const w = (l.date_of_withdrawal || '').toString().trim();
+      return !(w && w !== '' && w !== 'N/A');
+    });
+
+    if (rows.length === 0) {
+      collectSetFeedback('No active learner matched "' + q + '".', 'error');
+      return;
+    }
+    collectSetFeedback(rows.length + ' match(es).');
+
+    if (rows.length === 1) {
+      await collectLoadLearner(rows[0]);
+      return;
+    }
+
+    // Multiple matches → let the operator pick.
+    __collectState.matched = rows;
+    let html = '<div class="card-bg" style="padding:0;overflow-x:auto;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
+            '<th style="text-align:left;padding:6px;">PIN</th>' +
+            '<th style="text-align:left;padding:6px;">Name</th>' +
+            '<th style="text-align:left;padding:6px;">Class</th>' +
+            '<th style="padding:6px;">Action</th></tr></thead><tbody>';
+    rows.forEach(function (l) {
+      html += '<tr>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.pin || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.name || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.class_name || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+          '<button class="btn btn-sm btn-primary" type="button" ' +
+          'onclick="collectPickMatch(' + l.id + ')">Open</button>' +
+        '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    setHTML('collectMatchList', html);
+  }
+  window.collectSearch = collectSearch;
+
+  async function collectPickMatch(learnerId) {
+    const l = __collectState.matched.find(function (x) { return x.id === learnerId; });
+    if (!l) return;
+    await collectLoadLearner(l);
+  }
+  window.collectPickMatch = collectPickMatch;
+
+  async function collectLoadLearner(learner) {
+    __collectState.learner = learner;
+    __collectState.dirty = {};
+    setHTML('collectMatchList', '');
+    collectSetFeedback('Loading checklist for ' + (learner.name || learner.pin) + '…');
+    setHTML('collectChecklist', pageLoaderHTML('Loading checklist…'));
+    startLoader();
+
+    try {
+      const [itemsR, ticksR] = await Promise.all([
+        collectEnsureItems(),
+        window.TIS.listCollectibleTicksForLearner(learner.id)
+      ]);
+
+      const items = itemsR || [];
+      const ticksArr = (ticksR && ticksR.ok ? ticksR.data : []) || [];
+      const tickMap = {};
+      ticksArr.forEach(function (t) { tickMap[t.item_key] = t; });
+
+      __collectState.ticks = tickMap;
+      collectRenderChecklist(items, learner);
+      collectSetFeedback(
+        items.length + ' item(s) for ' + (learner.name || learner.pin) +
+        ' · ' + (learner.class_name || '—'),
+        'ok'
+      );
+    } catch (err) {
+      setHTML('collectChecklist', errorHTML('Could not load checklist',
+        String(err && err.message || err)));
+    } finally {
+      stopLoader();
+    }
+  }
+  window.collectLoadLearner = collectLoadLearner;
+
+  function collectRenderChecklist(items, learner) {
+    if (!items || items.length === 0) {
+      setHTML('collectChecklist', emptyHTML('fa-boxes-stacked',
+        'No collectible items defined',
+        'Click Manage Items to add the first one.'));
+      return;
+    }
+    const ticks = __collectState.ticks;
+
+    let html = '<div class="card-bg" style="padding:14px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;' +
+            'flex-wrap:wrap;gap:8px;margin-bottom:10px;">';
+    html += '<div>';
+    html += '<div style="font-weight:800;color:#0d4d26;font-size:15px;">' +
+            esc(learner.name || '') + '</div>';
+    html += '<div style="font-size:11px;color:#666;">' +
+            esc(learner.pin || '') + ' · ' + esc(learner.class_name || '') + '</div>';
+    html += '</div>';
+    html += '<div><button class="btn btn-sm btn-success" type="button" ' +
+            'onclick="collectSaveAll()">Save Changed</button></div>';
+    html += '</div>';
+
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;">';
+    items.forEach(function (it) {
+      const key = it.item_key;
+      const t = ticks[key] || {};
+      const checked = t.collected ? ' checked' : '';
+      const when = t.collected_at
+        ? new Date(t.collected_at).toLocaleDateString()
+        : '';
+      html += '<label style="display:flex;align-items:flex-start;gap:8px;' +
+              'border:1px solid #e0e8e2;border-radius:8px;padding:8px 10px;' +
+              'background:' + (t.collected ? '#f1f8e9' : '#fff') + ';cursor:pointer;">';
+      html += '<input type="checkbox" style="margin-top:3px;"' + checked +
+              ' onchange="collectToggleTick(\'' + escAttr(key) + '\', this.checked)">';
+      html += '<span style="flex:1;">';
+      html += '<span style="font-weight:600;font-size:13px;color:#0d4d26;">' +
+              esc(it.item_label || key) + '</span>';
+      if (when) {
+        html += '<span style="display:block;font-size:10px;color:#666;margin-top:2px;">' +
+                'Received ' + esc(when) + '</span>';
+      }
+      html += '</span></label>';
+    });
+    html += '</div></div>';
+
+    setHTML('collectChecklist', html);
+  }
+
+  function collectToggleTick(itemKey, on) {
+    __collectState.dirty[itemKey] = true;
+    // Optimistic local update so Save always sends the visible state.
+    __collectState.ticks[itemKey] = __collectState.ticks[itemKey] || {};
+    __collectState.ticks[itemKey].collected = !!on;
+  }
+  window.collectToggleTick = collectToggleTick;
+
+  async function collectSaveAll() {
+    const learner = __collectState.learner;
+    if (!learner) { showToast('Open a learner first.', 'warning'); return; }
+    const keys = Object.keys(__collectState.dirty);
+    if (keys.length === 0) { showToast('No changes to save.', 'info'); return; }
+
+    startLoader();
+    let ok = 0, fail = 0;
+    for (const k of keys) {
+      const t = __collectState.ticks[k] || {};
+      const r = await window.TIS.setCollectibleTick(
+        learner.id, k, '', !!t.collected, t.note || null
+      );
+      if (r && r.ok) ok++;
+      else fail++;
+    }
+    stopLoader();
+    __collectState.dirty = {};
+    showToast('Saved ' + ok + ' item(s)' + (fail ? ', ' + fail + ' failed' : '') + '.',
+              fail ? 'warning' : 'success');
+    // Re-render to refresh the "received on" dates.
+    await collectLoadLearner(learner);
+  }
+  window.collectSaveAll = collectSaveAll;
+
+  // ----------------------------------------------------------------
+  // Manage items — add / edit / retire rows in collectible_items
+  // ----------------------------------------------------------------
+  async function collectOpenManageModal() {
+    closeModal();
+    startLoader();
+    const r = await window.TIS.listCollectibleItems();
+    stopLoader();
+    if (!r || !r.ok) { showToast('Could not load items.', 'error'); return; }
+    const items = r.data || [];
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box wide" style="max-width:640px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Collectible Items</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">' +
+            'Each row is one checkbox on every learner\'s checklist. ' +
+            'Retire an item to hide it from new checklists without deleting history.</p>';
+
+    html += '<div style="overflow-x:auto;border:1px solid #e6e9f0;border-radius:8px;margin-bottom:12px;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
+            '<th style="text-align:left;padding:6px;">Key</th>' +
+            '<th style="text-align:left;padding:6px;">Label</th>' +
+            '<th style="padding:6px;">Order</th>' +
+            '<th style="padding:6px;">Active</th>' +
+            '<th style="padding:6px;">Save</th></tr></thead><tbody>';
+    items.forEach(function (it) {
+      html += '<tr data-it-key="' + escAttr(it.item_key) + '">' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;font-family:monospace;">' +
+          esc(it.item_key) + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' +
+          '<input type="text" class="ci-label" value="' + escAttr(it.item_label || '') +
+          '" style="width:100%;"></td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+          '<input type="number" class="ci-order" value="' + Number(it.sort_order || 0) +
+          '" style="width:70px;"></td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+          '<input type="checkbox" class="ci-active"' +
+          (it.is_active !== false ? ' checked' : '') + '></td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+          '<button class="btn btn-sm btn-success" type="button" ' +
+          'onclick="collectSaveItemRow(\'' + escAttr(it.item_key) + '\')">Save</button>' +
+        '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+
+    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;">';
+    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">' +
+            'Add New Item</div>';
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label>Key (short, no spaces)</label>' +
+            '<input id="ci_new_key" placeholder="e.g. sports_kit"></div>';
+    html += '<div class="form-group"><label>Label</label>' +
+            '<input id="ci_new_label" placeholder="e.g. Sports Kit"></div>';
+    html += '<div class="form-group" style="flex:0 0 100px;"><label>Order</label>' +
+            '<input id="ci_new_order" type="number" value="100"></div>';
+    html += '</div>';
+    html += '<div style="text-align:right;"><button class="btn btn-success" type="button" ' +
+            'onclick="collectAddItem()">Add Item</button></div>';
+    html += '</div>';
+
+    html += '<div style="text-align:right;margin-top:14px;">' +
+            '<button class="btn btn-secondary" onclick="TIS.closeModal()">Close</button></div>';
+    html += '</div></div>';
+    setHTML('modalContainer', html);
+  }
+  window.collectOpenManageModal = collectOpenManageModal;
+
+  async function collectSaveItemRow(itemKey) {
+    const tr = document.querySelector('[data-it-key="' + itemKey + '"]');
+    if (!tr) return;
+    const label = tr.querySelector('.ci-label').value.trim();
+    const order = Number(tr.querySelector('.ci-order').value || 0);
+    const active = tr.querySelector('.ci-active').checked;
+    if (!label) { showToast('Label cannot be empty.', 'warning'); return; }
+
+    // There is no dedicated updateItem method in the client yet —
+    // fall back to a direct upsert via the same table contract used
+    // by listCollectibleItems. If your client gains `upsertCollectibleItem`,
+    // swap this block for a single call.
+    if (typeof window.TIS.upsertCollectibleItem === 'function') {
+      startLoader();
+      const r = await window.TIS.upsertCollectibleItem({
+        item_key: itemKey, item_label: label,
+        sort_order: order, is_active: active
+      });
+      stopLoader();
+      if (r && r.ok) { showToast('Saved.', 'success'); __collectState.itemsFetchedAt = 0; }
+      else showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+      return;
+    }
+    showToast('Add upsertCollectibleItem to supabase-client.js to save edits.', 'info');
+  }
+  window.collectSaveItemRow = collectSaveItemRow;
+
+  async function collectAddItem() {
+    const keyEl = document.getElementById('ci_new_key');
+    const lblEl = document.getElementById('ci_new_label');
+    const ordEl = document.getElementById('ci_new_order');
+    const key = keyEl ? keyEl.value.trim().toLowerCase().replace(/\s+/g, '_') : '';
+    const label = lblEl ? lblEl.value.trim() : '';
+    const order = ordEl ? Number(ordEl.value || 100) : 100;
+    if (!key) { showToast('Key is required.', 'warning'); return; }
+    if (!label) { showToast('Label is required.', 'warning'); return; }
+
+    if (typeof window.TIS.upsertCollectibleItem !== 'function') {
+      showToast('Add upsertCollectibleItem to supabase-client.js first.', 'info');
+      return;
+    }
+    startLoader();
+    const r = await window.TIS.upsertCollectibleItem({
+      item_key: key, item_label: label, sort_order: order, is_active: true
+    });
+    stopLoader();
+    if (r && r.ok) {
+      showToast('Item added.', 'success');
+      __collectState.itemsFetchedAt = 0;
+      collectOpenManageModal();
+    } else {
+      showToast('Add failed: ' + ((r && r.error) || 'unknown'), 'error');
+    }
+  }
+  window.collectAddItem = collectAddItem;
+
+  // ----------------------------------------------------------------
+  // Print checklist — only what was ticked.
+  // ----------------------------------------------------------------
+  function collectPrintChecklist() {
+    const learner = __collectState.learner;
+    if (!learner) { showToast('Open a learner first.', 'warning'); return; }
+    const items = __collectState.items;
+    const ticks = __collectState.ticks;
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
+
+    let html = '<html><head><title>Checklist — ' + esc(learner.name || '') + '</title>' +
+      '<style>' +
+      'body{font-family:Arial;padding:20px;color:#111;}' +
+      '.hdr{text-align:center;border-bottom:3px solid #0d4d26;padding-bottom:8px;margin-bottom:12px;}' +
+      '.hdr h1{color:#0d4d26;margin:0 0 4px;font-size:20px;}' +
+      '.hdr .sub{font-size:11px;font-style:italic;color:#666;}' +
+      '.who{font-size:14px;margin:0 0 12px;}' +
+      'table{width:100%;border-collapse:collapse;font-size:12px;}' +
+      'th{background:#0d4d26;color:#fff;text-align:left;padding:6px;}' +
+      'td{padding:6px;border-bottom:1px solid #eee;}' +
+      '.yes{color:#0d4d26;font-weight:700;}' +
+      '.no{color:#999;}' +
+      '</style></head><body>';
+    html += '<div class="hdr"><h1>THE IDEAL SCHOOLS</h1>' +
+            '<div class="sub">Scientia est potentia</div></div>';
+    html += '<div class="who"><b>' + esc(learner.name || '') + '</b> · ' +
+            esc(learner.pin || '') + ' · ' + esc(learner.class_name || '') + '</div>';
+    html += '<table><thead><tr><th>Item</th><th style="width:80px;">Collected</th>' +
+            '<th style="width:120px;">Date</th></tr></thead><tbody>';
+    items.forEach(function (it) {
+      const t = ticks[it.item_key] || {};
+      html += '<tr><td>' + esc(it.item_label || it.item_key) + '</td>' +
+              '<td class="' + (t.collected ? 'yes' : 'no') + '">' +
+              (t.collected ? 'Yes' : 'No') + '</td>' +
+              '<td>' + (t.collected_at ? new Date(t.collected_at).toLocaleDateString() : '—') +
+              '</td></tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div style="margin-top:18px;font-size:11px;color:#666;text-align:center;">' +
+            'Printed ' + new Date().toLocaleString() + '</div>';
+    html += '</body></html>';
+    w.document.write(html); w.document.close();
+    setTimeout(function () { w.print(); }, 250);
+  }
+  window.collectPrintChecklist = collectPrintChecklist;
+
+  // ----------------------------------------------------------------
+  // Tab wiring
+  // ----------------------------------------------------------------
+  function initCollectiblesTab() {
+    const s = document.getElementById('btnCollectSearch');
+    if (s && !s.__wired) { s.addEventListener('click', collectSearch); s.__wired = true; }
+
+    const inp = document.getElementById('collectSearchInput');
+    if (inp && !inp.__wired) {
+      inp.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); collectSearch(); }
+      });
+      inp.__wired = true;
+    }
+
+    const m = document.getElementById('btnCollectManage');
+    if (m && !m.__wired) { m.addEventListener('click', collectOpenManageModal); m.__wired = true; }
+
+    const p = document.getElementById('btnCollectPrint');
+    if (p && !p.__wired) { p.addEventListener('click', collectPrintChecklist); p.__wired = true; }
+  }
+  window.initCollectiblesTab = initCollectiblesTab;
   // ================================================================
   // Edit modal — dropdowns for class / gender / religion,
   //              native date picker for DOB
@@ -3506,14 +3924,29 @@
       byClass[r.class_name] = r;
     });
 
+    // Column definitions: core fields + the seven extras that flow
+    // through to the prospect sheet and the report card fee notice.
+    const FIELDS = [
+      { key: 'tuition',           label: 'Tuition ₦' },
+      { key: 'other_bills_major', label: 'Other Major ₦' },
+      { key: 'other_bills_minor', label: 'Other Minor ₦' },
+      { key: 'books',             label: 'Books ₦' },
+      { key: 'registration_fee',  label: 'Registration ₦' },
+      { key: 'uniform',           label: 'Uniform ₦' },
+      { key: 'sportswear',        label: 'Sportswear ₦' },
+      { key: 'waist_coat',        label: 'Waist Coat ₦' },
+      { key: 'tie',               label: 'Tie ₦' },
+      { key: 'extra_lesson',      label: 'Extra Lesson ₦' },
+      { key: 'special_lesson',    label: 'Special Lesson ₦' }
+    ];
+
     let html = '<div style="overflow-x:auto;">';
     html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
     html += '<thead><tr style="background:#1a3f8f;color:#fff;">';
-    html += '<th style="text-align:left;padding:6px;">Class</th>';
-    html += '<th style="padding:6px;">Tuition ₦</th>';
-    html += '<th style="padding:6px;">Other Major ₦</th>';
-    html += '<th style="padding:6px;">Other Minor ₦</th>';
-    html += '<th style="padding:6px;">Books ₦</th>';
+    html += '<th style="text-align:left;padding:6px;position:sticky;left:0;background:#1a3f8f;">Class</th>';
+    FIELDS.forEach(function (f) {
+      html += '<th style="padding:6px;white-space:nowrap;">' + esc(f.label) + '</th>';
+    });
     html += '<th style="padding:6px;">Total ₦</th>';
     html += '<th style="padding:6px;">Save</th>';
     html += '</tr></thead><tbody>';
@@ -3524,35 +3957,57 @@
         Number(row.tuition || 0) +
         Number(row.other_bills_major || 0) +
         Number(row.other_bills_minor || 0) +
-        Number(row.books || 0);
+        Number(row.books || 0) +
+        Number(row.registration_fee || 0) +
+        Number(row.uniform || 0) +
+        Number(row.sportswear || 0) +
+        Number(row.waist_coat || 0) +
+        Number(row.tie || 0) +
+        Number(row.extra_lesson || 0) +
+        Number(row.special_lesson || 0);
       html += '<tr data-fee-class="' + escAttr(c.name) + '">';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;">' + esc(c.name) + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="tuition" value="' + (row.tuition || '') + '" style="width:110px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_major" value="' + (row.other_bills_major || '') + '" style="width:110px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="other_bills_minor" value="' + (row.other_bills_minor || '') + '" style="width:110px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="number" step="0.01" class="fee-inp" data-field="books" value="' + (row.books || '') + '" style="width:110px;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:right;font-weight:700;" data-total>' + total.toLocaleString() + '</td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveScheduleRow(\'' + escAttr(c.name) + '\')">Save</button></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;' +
+              'position:sticky;left:0;background:#fff;">' + esc(c.name) + '</td>';
+      FIELDS.forEach(function (f) {
+        html += '<td style="padding:5px;border-bottom:1px solid #eee;">' +
+                '<input type="number" step="0.01" class="fee-inp" ' +
+                'data-field="' + f.key + '" value="' + (row[f.key] || '') +
+                '" style="width:100px;"></td>';
+      });
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:right;font-weight:700;" ' +
+              'data-total>' + total.toLocaleString() + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+              '<button type="button" class="btn btn-sm btn-success" ' +
+              'onclick="feesSaveScheduleRow(\'' + escAttr(c.name) + '\')">Save</button></td>';
       html += '</tr>';
     });
 
     if (classes.length === 0) {
-      html += '<tr><td colspan="7" style="padding:14px;text-align:center;color:#888;">No active classes.</td></tr>';
+      html += '<tr><td colspan="' + (FIELDS.length + 3) +
+              '" style="padding:14px;text-align:center;color:#888;">No active classes.</td></tr>';
     }
 
     html += '</tbody></table></div>';
-    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year + '. A blank field is treated as 0.</p>';
+    html += '<p style="font-size:11px;color:#666;margin-top:8px;">' +
+            'Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year +
+            '. A blank field is treated as 0. The seven extras ' +
+            '(Registration → Special Lesson) feed the prospect sheet and the report card fee notice. ' +
+            'Individual learners can be adjusted in the Adjustments view.</p>';
     setHTML('feesContent', html);
   }
-
   async function feesSaveScheduleRow(className) {
-    const { term, year } = feesReadTermYear();
+    const ty = feesReadTermYear();
+    const term = ty.term;
+    const year = ty.year;
+
     const rowEl = document.querySelector('[data-fee-class="' + className.replace(/"/g, '\\"') + '"]');
     if (!rowEl) return;
+
     const get = function (f) {
       const el = rowEl.querySelector('.fee-inp[data-field="' + f + '"]');
       return el ? Number(el.value || 0) : 0;
     };
+
     const payload = {
       class_name:        className,
       term_type:         term,
@@ -3560,25 +4015,36 @@
       tuition:           get('tuition'),
       other_bills_major: get('other_bills_major'),
       other_bills_minor: get('other_bills_minor'),
-      books:             get('books')
+      books:             get('books'),
+      registration_fee:  get('registration_fee'),
+      uniform:           get('uniform'),
+      sportswear:        get('swimsportswear'),
+      waist_coat:        get('waist_coat'),
+      tie:               get('tie'),
+      extra_lesson:      get('extra_lesson'),
+      special_lesson:    get('special_lesson')
     };
+
     startLoader();
     const r = await window.TIS.upsertFeeSchedule(payload);
     stopLoader();
-    if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
+
+    if (!r || !r.ok) {
+      showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+      return;
+    }
+
     const totalEl = rowEl.querySelector('[data-total]');
     if (totalEl) {
       const total =
-        Number(payload.tuition || 0) +
-        Number(payload.other_bills_major || 0) +
-        Number(payload.other_bills_minor || 0) +
-        Number(payload.books || 0);
+        payload.tuition + payload.other_bills_major + payload.other_bills_minor + payload.books +
+        payload.registration_fee + payload.uniform + payload.sportswear + payload.waist_coat +
+        payload.tie + payload.extra_lesson + payload.special_lesson;
       totalEl.textContent = total.toLocaleString();
     }
     showToast('Saved: ' + className, 'success');
   }
   window.feesSaveScheduleRow = feesSaveScheduleRow;
-
   // ----------------------------------------------------------------
   // ADJUSTMENTS VIEW
   //   List of learners (searchable) with per-learner additions and
