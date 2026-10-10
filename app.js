@@ -4437,7 +4437,7 @@
     return { M: 'O', A: 'O' };
   }
 
-   function attEffectiveMark(learnerId, dateISO) {
+  function attEffectiveMark(learnerId, dateISO) {
     if (!attState) return 'O O';
     const key = learnerId + '|' + dateISO;
     if (attState.editing[key] !== undefined) return attState.editing[key];
