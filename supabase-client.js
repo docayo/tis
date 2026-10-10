@@ -891,7 +891,7 @@
   // ================================================================
   // [ATTENDANCE_LEARNER]
   // ================================================================
- TIS.getAttendanceRegister = async function (className, termType, year) {
+   TIS.getAttendanceRegister = async function (className, termType, year) {
     try {
       const sb = await loadSdk();
 
@@ -937,20 +937,21 @@
         });
       }
 
+      // Build the nested lookup used by the grid.
+      // Keys on BOTH sides are Strings, so a JSON round-trip that
+      // returns bigint as a number never causes a silent miss.
       const marksByDate = {};
       (attQ.data || []).forEach(function (r) {
-        if (!marksByDate[r.attendance_date]) marksByDate[r.attendance_date] = {};
-        marksByDate[r.attendance_date][r.learner_id] = r.mark;
+        const date = String(r.attendance_date || '').trim();
+        const lid  = String(r.learner_id);
+        if (!date) return;
+        if (!marksByDate[date]) marksByDate[date] = {};
+        marksByDate[date][lid] = r.mark;
       });
 
-      // Local-date helper. toISOString() reports UTC and, in timezones
-      // ahead of UTC (Nigeria is UTC+1), shifts local-midnight back by
-      // one calendar day. Every grid column was therefore labelled with
-      // the date BEFORE the real school day. QR scans (which use the
-      // true local date) landed on a row the grid never looked at, and
-      // grid writes landed on the previous day. This helper returns the
-      // local calendar date as YYYY-MM-DD, matching what QR writes and
-      // what the office sees on the wall calendar.
+      // Local-date helper. See prior note: toISOString() shifts
+      // local-midnight back one day in UTC+N; this returns the real
+      // local calendar date as YYYY-MM-DD.
       function localISO(d) {
         return d.getFullYear() + '-' +
                String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -962,33 +963,20 @@
       const endISO   = term ? term.end_date   : null;
       const weeks = [];
       if (startISO && endISO) {
-        // Parse the term start as a LOCAL date, not a UTC one.
-        const startParts = String(startISO).split('-');
-        let cursor = new Date(
-          Number(startParts[0]),
-          Number(startParts[1]) - 1,
-          Number(startParts[2])
-        );
+        const sP = String(startISO).split('-');
+        let cursor = new Date(Number(sP[0]), Number(sP[1]) - 1, Number(sP[2]));
         const dow = cursor.getDay();
         const offsetToMonday = (dow === 0 ? -6 : 1 - dow);
         cursor.setDate(cursor.getDate() + offsetToMonday);
 
-        const endParts = String(endISO).split('-');
-        const end = new Date(
-          Number(endParts[0]),
-          Number(endParts[1]) - 1,
-          Number(endParts[2])
-        );
+        const eP = String(endISO).split('-');
+        const end = new Date(Number(eP[0]), Number(eP[1]) - 1, Number(eP[2]));
 
         let weekNumber = 1;
         while (cursor <= end && weekNumber <= 20) {
           const days = [];
           for (let d = 0; d < 5; d++) {
-            const day = new Date(
-              cursor.getFullYear(),
-              cursor.getMonth(),
-              cursor.getDate() + d
-            );
+            const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + d);
             const iso = localISO(day);
             const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][day.getDay()];
             const isHoliday = !!holidayMap[iso];
@@ -1003,8 +991,7 @@
               marksByLearner: marksForLearner
             });
           }
-          const weekEnding = days[4].date;
-          weeks.push({ weekNumber: weekNumber, weekEnding: weekEnding, days: days });
+          weeks.push({ weekNumber: weekNumber, weekEnding: days[4].date, days: days });
           cursor.setDate(cursor.getDate() + 7);
           weekNumber++;
         }
@@ -1019,8 +1006,16 @@
         termType: termType,
         year: year,
         termLabel: term ? term.label : '',
+        termStart: startISO,
+        termEnd: endISO,
         learners: learners,
-        weeks: weeks
+        weeks: weeks,
+        // Top-level raw rows, so the client always has an
+        // unprocessed copy of what the DB actually returned.
+        // The grid's attEffectiveMark falls back to this when the
+        // nested map misses, which is what makes post-save reloads
+        // reliable.
+        attendance_rows: attQ.data || []
       });
     } catch (err) { return fail(err); }
   };
