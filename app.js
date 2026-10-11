@@ -741,6 +741,7 @@
     }
 
     // ---- LOCKED: learner_terms is the receipt ----
+       // ---- LOCKED: learner_terms is the receipt ----
     if (locked) {
       const tuition     = parseNum(termRow.tuition);
       const scholarship = parseNum(termRow.scholarship);
@@ -748,6 +749,24 @@
       const otherMinor  = parseNum(termRow.other_bills_minor);
       const books       = parseNum(termRow.books);
       const netBills    = tuition + otherMajor + otherMinor + books;
+
+      // Fallback: if this snapshot was created before the prior term's
+      // C/F was known, add it back now.
+      const snapshotBf = parseNum(termRow.balance_bf);
+      let balanceBfLocked = snapshotBf;
+      if (!balanceBfLocked && term) {
+        const prev = previousTermOf(term.term_type, term.year);
+        if (prev) {
+          try {
+            const pR = await window.TIS.getLearnerTermFor(learner.id, prev.term_type, prev.year);
+            if (pR && pR.ok && pR.data) {
+              balanceBfLocked = parseNum(pR.data.balance_cf);
+            }
+          } catch (e) { /* silent */ }
+        }
+      }
+      const correctedCf = parseNum(termRow.balance_cf) + (balanceBfLocked - snapshotBf);
+
       return {
         source: 'snapshot',
         tuition: tuition,
@@ -760,10 +779,10 @@
         uniform: 0, sportswear: 0, waist_coat: 0,
         tie: 0, extra_lesson: 0, special_lesson: 0,
         adjusted_tuition: tuition - scholarship,
-        balance_bf: parseNum(termRow.balance_bf),
+        balance_bf: balanceBfLocked,
         net_bills: netBills,
         total_part_payment: parseNum(termRow.total_part_payment),
-        balance_cf: parseNum(termRow.balance_cf),
+        balance_cf: correctedCf,
         part_payments: ppList,
         cleared: termRow.cleared || '',
         clearance: termRow.clearance || '',
@@ -772,7 +791,6 @@
         adjustment_found: false
       };
     }
-
     // ---- NOT LOCKED: live schedule + live adjustment + per-learner overrides ----
     const tuition        = offSet.tuition           ? 0 : (schedRow ? parseNum(schedRow.tuition)           : parseNum(termRow && termRow.tuition));
     const otherMajor     = offSet.other_bills_major ? 0 : (schedRow ? parseNum(schedRow.other_bills_major) : parseNum(termRow && termRow.other_bills_major));
@@ -785,9 +803,26 @@
     const extraLesson    = offSet.extra_lesson      ? 0 : (schedRow ? parseNum(schedRow.extra_lesson)      : 0);
     const specialLesson  = offSet.special_lesson    ? 0 : (schedRow ? parseNum(schedRow.special_lesson)    : 0);
 
-    const additions   = adjRow ? parseNum(adjRow.additions)   : 0;
+       const additions   = adjRow ? parseNum(adjRow.additions)   : 0;
     const deductions  = adjRow ? parseNum(adjRow.deductions)  : 0;
-    const balanceBf   = parseNum(termRow && termRow.balance_bf);
+
+    // ---- Balance B/F fallback ----
+    // If the current term's own row has balance_bf = 0, try the
+    // previous term's balance_cf. This covers the case where the
+    // term promotion has not yet run for this learner, or ran
+    // without carrying the value.
+    let balanceBf = parseNum(termRow && termRow.balance_bf);
+    if (!balanceBf && term) {
+      const prev = previousTermOf(term.term_type, term.year);
+      if (prev) {
+        try {
+          const pR = await window.TIS.getLearnerTermFor(learner.id, prev.term_type, prev.year);
+          if (pR && pR.ok && pR.data) {
+            balanceBf = parseNum(pR.data.balance_cf);
+          }
+        } catch (e) { /* silent */ }
+      }
+    }
 
     const netBills =
       tuition + otherMajor + otherMinor + books +
