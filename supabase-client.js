@@ -750,6 +750,63 @@
     } catch (err) { return fail(err); }
   };
     // ================================================================
+  // [FEE_LEARNER_OVERRIDES] — per-learner removed lines.
+  //   A row means "this line is removed for this learner in this
+  //   term". Absence means "still charged at class-bill value".
+  // ================================================================
+  TIS.listLearnerOverrides = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb
+        .from('fee_learner_item_overrides')
+        .select('item_key, note, created_at, updated_at')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.setLearnerItemOff = async function (learnerId, termType, year, itemKey, note) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        learner_id: parseInt(learnerId, 10),
+        term_type:  String(termType || '').trim(),
+        year:       parseInt(year, 10),
+        item_key:   String(itemKey || '').trim(),
+        note:       note ? String(note).slice(0, 200) : null,
+        updated_at: new Date().toISOString()
+      };
+      if (!payload.learner_id || !payload.term_type || !payload.year || !payload.item_key) {
+        return fail('learner_id, term_type, year, item_key are required');
+      }
+      const { data, error } = await sb
+        .from('fee_learner_item_overrides')
+        .upsert(payload, { onConflict: 'learner_id,term_type,year,item_key' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteLearnerOverride = async function (learnerId, termType, year, itemKey) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb
+        .from('fee_learner_item_overrides')
+        .delete()
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .eq('item_key', itemKey);
+      if (error) return fail(error.message);
+      return ok({ deleted: true });
+    } catch (err) { return fail(err); }
+  };
+    // ================================================================
   // [FEE_ADVANCE] — copy one term's class bills and per-learner
   // adjustments into another term. Used when a new term becomes
   // active and the office confirms the advance.
@@ -785,9 +842,9 @@
       const sb = await loadSdk();
 
       // The eleven columns that can be copied.
-      const ALL_FIELDS = [
+           const ALL_FIELDS = [
         'tuition','other_bills_major','other_bills_minor','books',
-        'registration_fee','uniform','sportswear','waist_coat','tie',
+        'uniform','sportswear','waist_coat','tie',
         'extra_lesson','special_lesson'
       ];
 
@@ -1113,11 +1170,12 @@
         .eq('class_name', className)
         .order('name', { ascending: true });
       if (learnerQ.error) return fail(learnerQ.error.message);
-      const learners = (learnerQ.data || []).filter(function (l) {
-        const w = (l.date_of_withdrawal || '').toString().trim();
-        return !(w && w !== '' && w !== 'N/A');
+           const learners = (learnerQ.data || []).filter(function (l) {
+        const w = (l.date_of_withdrawal  || '').toString().trim();
+        const k = (l.class_at_withdrawal || '').toString().trim();
+        const r = (l.exit_reason         || '').toString().trim();
+        return !((w && w !== 'N/A') || (k && k !== 'N/A') || (r && r !== 'N/A'));
       });
-
       // ---- 2. The term row (for start/end dates and label) ----
       const termQ = await sb
         .from('terms')
@@ -2073,10 +2131,12 @@
       const sb = await loadSdk();
       const learnersR = await sb.from('learners').select('id, date_of_withdrawal');
       if (learnersR.error) return fail(learnersR.error.message);
-      const activeLearnerIds = (learnersR.data || [])
+          const activeLearnerIds = (learnersR.data || [])
         .filter(function (l) {
-          const w = (l.date_of_withdrawal || '').toString().trim();
-          return !(w && w !== '' && w !== 'N/A');
+          const w = (l.date_of_withdrawal  || '').toString().trim();
+          const k = (l.class_at_withdrawal || '').toString().trim();
+          const r = (l.exit_reason         || '').toString().trim();
+          return !((w && w !== 'N/A') || (k && k !== 'N/A') || (r && r !== 'N/A'));
         })
         .map(function (l) { return l.id; });
 
@@ -2175,9 +2235,11 @@
       }
       const { data, error } = await q;
       if (error) return fail(error.message);
-      const filtered = (data || []).filter(function (l) {
-        const w = (l.date_of_withdrawal || '').toString().trim();
-        return !(w && w !== '' && w !== 'N/A');
+           const filtered = (data || []).filter(function (l) {
+        const w = (l.date_of_withdrawal  || '').toString().trim();
+        const k = (l.class_at_withdrawal || '').toString().trim();
+        const r = (l.exit_reason         || '').toString().trim();
+        return !((w && w !== 'N/A') || (k && k !== 'N/A') || (r && r !== 'N/A'));
       });
       return ok(filtered);
     } catch (err) { return fail(err); }
