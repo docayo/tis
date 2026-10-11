@@ -654,6 +654,8 @@
       source: 'none',
       tuition: 0, scholarship: 0, additions: 0,
       other_bills_major: 0, other_bills_minor: 0, books: 0,
+      registration_fee: 0, uniform: 0, sportswear: 0, waist_coat: 0,
+      tie: 0, extra_lesson: 0, special_lesson: 0,
       adjusted_tuition: 0,
       balance_bf: 0, net_bills: 0,
       total_part_payment: 0, balance_cf: 0,
@@ -663,7 +665,6 @@
     };
     if (!learner || !learner.id || !term) return empty;
 
-    // Does the snapshot already carry money?
     function snapshotHasMoney(row) {
       if (!row) return false;
       if (parseNum(row.total_part_payment) > 0) return true;
@@ -675,7 +676,6 @@
 
     const locked = snapshotHasMoney(termRow);
 
-    // ---- Pull the live sources (used when not locked) ----
     let schedRow = null, adjRow = null;
     if (!locked) {
       const className = learner.class_name || (termRow && termRow.class_name) || '';
@@ -691,7 +691,6 @@
       } catch (e) { /* silent */ }
     }
 
-    // ---- Assemble part-payment list (only exists on the snapshot) ----
     const ppList = [];
     if (termRow) {
       for (let n = 1; n <= 5; n++) {
@@ -718,6 +717,13 @@
         other_bills_major: otherMajor,
         other_bills_minor: otherMinor,
         books: books,
+        registration_fee: 0,
+        uniform: 0,
+        sportswear: 0,
+        waist_coat: 0,
+        tie: 0,
+        extra_lesson: 0,
+        special_lesson: 0,
         adjusted_tuition: tuition - scholarship,
         balance_bf: parseNum(termRow.balance_bf),
         net_bills: netBills,
@@ -732,34 +738,46 @@
     }
 
     // ---- NOT LOCKED: live schedule + live adjustment ----
-    const tuition     = schedRow ? parseNum(schedRow.tuition)            : parseNum(termRow && termRow.tuition);
-    const otherMajor  = schedRow ? parseNum(schedRow.other_bills_major)  : parseNum(termRow && termRow.other_bills_major);
-    const otherMinor  = schedRow ? parseNum(schedRow.other_bills_minor)  : parseNum(termRow && termRow.other_bills_minor);
-    const books       = schedRow ? parseNum(schedRow.books)              : parseNum(termRow && termRow.books);
+    const tuition        = schedRow ? parseNum(schedRow.tuition)            : parseNum(termRow && termRow.tuition);
+    const otherMajor     = schedRow ? parseNum(schedRow.other_bills_major)  : parseNum(termRow && termRow.other_bills_major);
+    const otherMinor     = schedRow ? parseNum(schedRow.other_bills_minor)  : parseNum(termRow && termRow.other_bills_minor);
+    const books          = schedRow ? parseNum(schedRow.books)              : parseNum(termRow && termRow.books);
+    const uniform        = schedRow ? parseNum(schedRow.uniform)            : 0;
+    const sportswear     = schedRow ? parseNum(schedRow.sportswear)         : 0;
+    const waistCoat      = schedRow ? parseNum(schedRow.waist_coat)         : 0;
+    const tie            = schedRow ? parseNum(schedRow.tie)                : 0;
+    const extraLesson    = schedRow ? parseNum(schedRow.extra_lesson)       : 0;
+    const specialLesson  = schedRow ? parseNum(schedRow.special_lesson)     : 0;
+    // registration_fee is prospect-only — intentionally never read here.
 
     const additions   = adjRow ? parseNum(adjRow.additions)   : 0;
     const deductions  = adjRow ? parseNum(adjRow.deductions)  : 0;
-
-    // Balance B/F still comes from the snapshot if it exists
-    // (previous term carried it forward when the row was created).
     const balanceBf   = parseNum(termRow && termRow.balance_bf);
 
-    // Net = class bill + additions − deductions
-    const netBills    = tuition + otherMajor + otherMinor + books + additions - deductions;
-    const adjusted    = tuition - deductions;
+    const netBills =
+      tuition + otherMajor + otherMinor + books +
+      uniform + sportswear + waistCoat + tie + extraLesson + specialLesson +
+      additions - deductions;
 
-    // No payments yet by definition of this branch.
-    const paid        = 0;
-    const balanceCf   = netBills + balanceBf - paid;
+    const adjusted  = tuition - deductions;
+    const paid      = 0;
+    const balanceCf = netBills + balanceBf - paid;
 
     return {
       source: 'live',
       tuition: tuition,
-      scholarship: deductions,       // shown as Scholarship on the card
-      additions: additions,          // shown as Additions on the card
+      scholarship: deductions,
+      additions: additions,
       other_bills_major: otherMajor,
       other_bills_minor: otherMinor,
       books: books,
+      registration_fee: 0,
+      uniform: uniform,
+      sportswear: sportswear,
+      waist_coat: waistCoat,
+      tie: tie,
+      extra_lesson: extraLesson,
+      special_lesson: specialLesson,
       adjusted_tuition: adjusted,
       balance_bf: balanceBf,
       net_bills: netBills,
@@ -773,7 +791,6 @@
     };
   }
   window.resolveLearnerFeePicture = resolveLearnerFeePicture;
-
   // ================================================================
   // View modal — three-tier permission gating
   //   A: everyone
