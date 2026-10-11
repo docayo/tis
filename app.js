@@ -570,16 +570,38 @@
   }
   window.applyLearnerFilter = applyLearnerFilter;
 
-  function renderLearners(rows) {
+   function renderLearners(rows) {
     if (!rows || rows.length === 0) {
       setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
       return;
     }
+
+    const classOrder = {};
+    (State.cachedClasses || []).forEach(function (c) {
+      classOrder[c.name] = c.sort_order || 9999;
+    });
+    const sorted = rows.slice().sort(function (a, b) {
+      const ao = classOrder[a.class_name] || 9999;
+      const bo = classOrder[b.class_name] || 9999;
+      if (ao !== bo) return ao - bo;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
     let html = '';
-    rows.forEach(function (row) {
+    let currentClass = null;
+    sorted.forEach(function (row) {
+      const cls = row.class_name || 'Unassigned';
+
+      if (cls !== currentClass) {
+        currentClass = cls;
+        html += '<div style="grid-column:1/-1;margin:14px 0 6px;padding:8px 12px;' +
+                'background:linear-gradient(90deg,#0d4d26,#1a8a3a);color:#fff;' +
+                'border-radius:6px;font-weight:800;font-size:13px;letter-spacing:.5px;">' +
+                esc(cls) + '</div>';
+      }
+
       const pin    = row.pin || '';
       const name   = row.name || '';
-      const cls    = row.class_name || '';
       const gender = (row.gender || '').toLowerCase();
       const photo  = row.photo_url || '';
       const nameColor = gender.indexOf('female') === 0 ? '#ff6b9d'
@@ -590,7 +612,7 @@
               (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
       html += '<div class="card-title">';
       html += '<h3 style="color:' + nameColor + ';">' + esc(name) + '</h3>';
-      html += '<div class="pin">' + esc(pin) + ' • ' + esc(cls) + '</div>';
+      html += '<div class="pin">' + esc(pin) + ' · ' + esc(cls) + '</div>';
       html += '</div></div>';
       html += '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">';
       html += '<button type="button" class="btn btn-sm btn-secondary" data-action="view" data-pin="' + escAttr(pin) + '"><i class="fas fa-eye"></i> View</button>';
