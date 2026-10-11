@@ -370,7 +370,42 @@
     'Health Grounds',
     'Life'
   ];
+  // ================================================================
+  // Shared footer block for 80mm thermal prints (prospect sheet and
+  // learner fee card). Four school accounts, printed verbatim.
+  // ================================================================
+  const TIS_BANK_ACCOUNTS = [
+    { bank: 'Guaranty Trust Bank', acct: '3003353905', name: 'The Ideal Schools Ltd' },
+    { bank: 'Opay',                acct: '8055535925', name: 'IdealMe RealYou' },
+    { bank: 'Polaris Bank',        acct: '4091754359', name: 'The Ideal Schools Ltd' },
+    { bank: 'Jaiz Bank',           acct: '0025357488', name: 'The Ideal Schools Ltd' }
+  ];
 
+  function tisBankBlockHtml80mm() {
+    let html = '<div class="banks">';
+    html += '<div class="banks-hdr">SCHOOL ACCOUNTS</div>';
+    TIS_BANK_ACCOUNTS.forEach(function (a) {
+      html += '<div class="bank-row">' +
+                '<span class="bk">' + esc(a.bank) + '</span>' +
+                '<span class="ac">' + esc(a.acct) + '</span>' +
+              '</div>';
+      html += '<div class="bank-name">' + esc(a.name) + '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function tisBankBlockCss80mm() {
+    return '' +
+      '.banks{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;}' +
+      '.banks-hdr{font-weight:900;text-align:center;letter-spacing:1px;' +
+                 'font-size:12px;margin:0 0 4px;border-bottom:1px solid #000;padding-bottom:2px;}' +
+      '.bank-row{display:flex;justify-content:space-between;gap:6px;padding-top:3px;}' +
+      '.bank-row .bk{font-weight:700;}' +
+      '.bank-row .ac{font-family:"Courier New",monospace;font-weight:900;letter-spacing:1px;}' +
+      '.bank-name{font-size:10px;color:#333;padding-bottom:2px;' +
+                 'border-bottom:1px dotted #999;margin-bottom:2px;}';
+  }
   // ---------- Populate the Terms-tab exit-reason dropdown ----------
   (function populateExitReasons() {
     function fill() {
@@ -1256,8 +1291,9 @@
     }
     const extrasTotal = on.reduce(function (s, e) { return s + Number(e.default_amount); }, 0);
 
-    html += '<div class="total"><span>TOTAL</span><span>₦' + (fee.class_bill.total + extrasTotal).toLocaleString() + '</span></div>';
-    html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
+ html += '<div class="total"><span>TOTAL</span><span>₦' + (fee.class_bill.total + extrasTotal).toLocaleString() + '</span></div>';
+html += tisBankBlockHtml80mm();
+html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '</body></html>';
 
     const w = window.open('', '_blank');
@@ -2529,7 +2565,7 @@
       '.info-label{color:#000;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
       '.info-label::after{content:":";}' +
       '.info-value{font-weight:800;flex:0 0 auto;text-align:right;white-space:nowrap;}' +
-      '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
+      '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +   tisBankBlockCss80mm() +
       '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
 
     const rowFn = function (label, value) {
