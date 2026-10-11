@@ -2591,30 +2591,29 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
 
     // ---------- Section B ----------
-    if (wantB) {
+       if (wantB) {
       html += '<h2>Section B &mdash; Fees</h2>';
       html += rowFn('Previous Term Balance B/F',
         prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
-      html += rowFn('Current Term Tuition', moneyOrDash(fee.tuition));
-      html += rowFn('Scholarship / Deductions', moneyOrDash(fee.scholarship));
-      html += rowFn('Additions', moneyOrDash(fee.additions));
-      html += rowFn('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
+      if (fee.tuition)          html += rowFn('Current Term Tuition', moneyOrDash(fee.tuition));
+      if (fee.scholarship)      html += rowFn('Scholarship / Deductions', moneyOrDash(fee.scholarship));
+      if (fee.additions)        html += rowFn('Additions', moneyOrDash(fee.additions));
+      if (fee.adjusted_tuition) html += rowFn('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
       if (fee.part_payments && fee.part_payments.length) {
         fee.part_payments.forEach(function (p) {
           html += rowFn('Part Pay ' + p.n,
             (p.date ? fmtDateOrDash(p.date) : '—') + ' — ' + moneyOrDash(p.amount));
         });
       }
-      html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
-      html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
-      html += rowFn('Books', moneyOrDash(fee.books));
-      html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
-      html += rowFn('Net Bills', moneyOrDash(fee.net_bills));
+      if (fee.total_part_payment) html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
+      if (fee.other_bills_major)  html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
+      if (fee.books)              html += rowFn('Books', moneyOrDash(fee.books));
+      if (fee.other_bills_minor)  html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
+      if (fee.net_bills)          html += rowFn('Net Bills', moneyOrDash(fee.net_bills));
       html += rowFn('Blood Group', d.blood_group || '—');
       html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
     }
-
     // ---------- Section C ----------
     if (wantC) {
       html += '<h2>Section C &mdash; History</h2>';
@@ -3877,7 +3876,158 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     feesRefreshSubButtons();
   }
   window.initFeesPanel = initFeesPanel;
+  // ================================================================
+  // FEE ADVANCE — inline card that appears when the currently
+  // selected term has no class bills yet. Copies from the prior
+  // term with per-line toggles. Skipped lines are omitted entirely
+  // from the new term.
+  // ================================================================
+  const FEE_ADVANCE_FIELDS = [
+    { key: 'tuition',           label: 'Tuition' },
+    { key: 'other_bills_major', label: 'Other Bills Major' },
+    { key: 'other_bills_minor', label: 'Other Bills Minor' },
+    { key: 'books',             label: 'Books' },
+    { key: 'registration_fee',  label: 'Registration Fee' },
+    { key: 'uniform',           label: 'Uniform' },
+    { key: 'sportswear',        label: 'Sportswear' },
+    { key: 'waist_coat',        label: 'Waist Coat' },
+    { key: 'tie',               label: 'Tie' },
+    { key: 'extra_lesson',      label: 'Extra Lesson' },
+    { key: 'special_lesson',    label: 'Special Lesson' }
+  ];
 
+  function feePriorTermOf(termType, year) {
+    const t = String(termType || '').trim().toLowerCase();
+    if (t === '2nd') return { term_type: '1st', year: Number(year) };
+    if (t === '3rd') return { term_type: '2nd', year: Number(year) };
+    if (t === '1st') return { term_type: '3rd', year: Number(year) - 1 };
+    return null;
+  }
+
+  async function feeCheckAdvanceCard(term, year) {
+    const host = $('feesContent');
+    if (!host) return;
+
+    // If the current term already has rows, hide any existing card.
+    const cur = await window.TIS.listFeeSchedule(year, term);
+    const curRows = (cur && cur.ok ? cur.data : []) || [];
+    if (curRows.length > 0) {
+      const old = $('feeAdvanceCard');
+      if (old) old.remove();
+      return;
+    }
+
+    const prior = feePriorTermOf(term, year);
+    if (!prior) return;
+
+    const srcR = await window.TIS.listFeeSchedule(prior.year, prior.term_type);
+    const srcRows = (srcR && srcR.ok ? srcR.data : []) || [];
+    if (srcRows.length === 0) return;   // nothing to inherit from; stay silent
+
+    renderFeeAdvanceCard(term, year, prior, srcRows);
+  }
+
+  function renderFeeAdvanceCard(term, year, prior, srcRows) {
+    let card = $('feeAdvanceCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'feeAdvanceCard';
+      card.className = 'card-bg';
+      card.style.cssText = 'border-left:4px solid #d4a017;margin-bottom:12px;';
+      const host = $('feesContent');
+      if (host && host.parentElement) {
+        host.parentElement.insertBefore(card, host);
+      }
+    }
+
+    const priorLabel = prior.term_type.toUpperCase() + ' TERM ' + prior.year;
+    const curLabel   = term.toUpperCase() + ' TERM ' + year;
+
+    let html = '<div style="font-weight:800;color:#8b6f1f;font-size:14px;margin-bottom:6px;">';
+    html += '<i class="fas fa-arrow-right"></i> Advance fees into ' + esc(curLabel);
+    html += '</div>';
+
+    html += '<p style="font-size:12px;color:#555;margin:0 0 10px;">';
+    html += curLabel + ' has no class bill yet. ';
+    html += 'Advance from <b>' + esc(priorLabel) + '</b> (' + srcRows.length + ' class';
+    html += srcRows.length === 1 ? '' : 'es';
+    html += '). Untick any line that should not be billed this term. ';
+    html += 'A line that is unticked is not written into the new term at all. ';
+    html += 'Per-learner adjustments also carry forward.';
+    html += '</p>';
+
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-bottom:12px;">';
+    FEE_ADVANCE_FIELDS.forEach(function (f) {
+      html += '<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;' +
+              'border:1px solid #e0e8e2;border-radius:6px;background:#fff;font-size:12px;">' +
+              '<input type="checkbox" class="feeAdvanceChk" data-key="' + escAttr(f.key) + '" checked> ' +
+              esc(f.label) + '</label>';
+    });
+    html += '</div>';
+
+    html += '<div style="display:flex;justify-content:flex-end;gap:8px;">';
+    html += '<button type="button" class="btn btn-secondary" onclick="feeAdvanceSkip()">Skip for now</button> ';
+    html += '<button type="button" class="btn btn-success" id="feeAdvanceGo" onclick="feeAdvanceRun(\'' +
+            escAttr(term) + '\',' + year + ',\'' + escAttr(prior.term_type) + '\',' + prior.year +
+            ')">Advance Fees</button>';
+    html += '</div>';
+
+    html += '<div id="feeAdvanceFeedback" style="margin-top:8px;font-size:12px;"></div>';
+
+    card.innerHTML = html;
+  }
+
+  function feeAdvanceSkip() {
+    const card = $('feeAdvanceCard');
+    if (card) card.remove();
+  }
+  window.feeAdvanceSkip = feeAdvanceSkip;
+
+  async function feeAdvanceRun(toTerm, toYear, fromTerm, fromYear) {
+    const include = {};
+    document.querySelectorAll('.feeAdvanceChk').forEach(function (chk) {
+      include[chk.dataset.key] = !!chk.checked;
+    });
+
+    const fb = $('feeAdvanceFeedback');
+    if (fb) { fb.style.color = '#666'; fb.textContent = 'Advancing…'; }
+
+    const btn = $('feeAdvanceGo');
+    if (btn) btn.disabled = true;
+
+    startLoader();
+    const r = await window.TIS.advanceTermFees({
+      fromTerm: fromTerm, fromYear: fromYear,
+      toTerm:   toTerm,   toYear:   toYear,
+      include:  include,
+      copyAdjustments: true,
+      actor: (State.profile && State.profile.name) || 'Operator'
+    });
+    stopLoader();
+
+    if (btn) btn.disabled = false;
+
+    if (!r || !r.ok) {
+      if (fb) { fb.style.color = '#c0392b'; fb.textContent = 'Advance failed: ' + ((r && r.error) || 'unknown'); }
+      return;
+    }
+
+    const d = r.data || {};
+    let msg = 'Copied ' + (d.classesCopied || 0) + ' class bill';
+    msg += (d.classesCopied === 1 ? '' : 's');
+    if (d.adjustmentsCopied) msg += ' · ' + d.adjustmentsCopied + ' adjustment(s)';
+    if (d.classesSkipped && d.classesSkipped.length) {
+      msg += ' · ' + d.classesSkipped.length + ' class(es) skipped (already had a bill)';
+    }
+    if (fb) { fb.style.color = '#0d4d26'; fb.textContent = msg; }
+
+    const card = $('feeAdvanceCard');
+    if (card) card.remove();
+
+    showToast(msg, 'success');
+    feesLoad();
+  }
+  window.feeAdvanceRun = feeAdvanceRun;
   function feesRefreshSubButtons() {
     const btnSched  = $('feesSubSchedule');
     const btnAdjust = $('feesSubAdjust');
@@ -3916,7 +4066,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     try {
       if (__feesMode === 'schedule')   await feesLoadSchedule(term, year);
       else                             await feesLoadAdjustments(term, year);
-      feesSetFeedback('Loaded.', 'ok');
+      feesSetFeedback('Loaded.', 'ok');       if (__feesMode === 'schedule') feeCheckAdvanceCard(term, year);
     } catch (err) {
       feesSetFeedback('Unexpected error: ' + (err && err.message ? err.message : err), 'error');
     } finally {
@@ -4129,7 +4279,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<th style="padding:6px;">Additions ₦</th>';
     html += '<th style="padding:6px;">Deductions ₦</th>';
     html += '<th style="text-align:left;padding:6px;">Reason</th>';
-    html += '<th style="padding:6px;">Save</th>';
+    html += '<th style="padding:6px;">Add Item</th>';
+     html += '<th style="padding:6px;">Save</th>';
     html += '</tr></thead><tbody>';
 
     // Sort learners by academic class order, then by name within class.
@@ -4151,7 +4302,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="fee-adj" data-field="additions" value="' + (a.additions || '') + '" style="width:100px;"></td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="fee-adj" data-field="deductions" value="' + (a.deductions || '') + '" style="width:100px;"></td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="text" class="fee-adj" data-field="reason" value="' + escAttr(a.reason || '') + '" style="width:100%;"></td>';
-      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveAdjustmentRow(' + l.id + ')">Save</button></td>';
+           html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveAdjustmentRow(' + l.id + ')">Save</button></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;white-space:nowrap;">' +
+              '<button type="button" class="btn btn-sm btn-warning" ' +
+              'onclick="feeOpenAddItemModal(' + l.id + ', \'' + escAttr(l.name || '') + '\', \'' + escAttr(l.class_name || '') + '\')">' +
+              '<i class="fas fa-plus"></i> Add item' +
+              '</button></td>';
       html += '</tr>';
     });
 
@@ -4206,6 +4362,108 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     showToast('Saved.', 'success');
   }
   window.feesSaveAdjustmentRow = feesSaveAdjustmentRow;
+    // ================================================================
+  // ADJUSTMENTS — Add a class-bill line to a single learner for the
+  // current term. Used when the class bill omits a line (because it
+  // was switched off in the advance) but one learner needs it.
+  // ================================================================
+  function feeOpenAddItemModal(learnerId, learnerName, className) {
+    const ty = feesReadTermYear();
+    const term = ty.term, year = ty.year;
+
+    startLoader();
+    window.TIS.getFeeScheduleRow(className, term, year).then(function (schedR) {
+      stopLoader();
+      const sched = (schedR && schedR.ok) ? schedR.data : null;
+      const missing = [];
+      FEE_ADVANCE_FIELDS.forEach(function (f) {
+        const v = sched ? Number(sched[f.key] || 0) : 0;
+        if (v === 0) missing.push(f);
+      });
+
+      if (missing.length === 0) {
+        showToast('Every class-bill line is already set for ' + className + '.', 'info');
+        return;
+      }
+
+      let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+      html += '<div class="modal-box" style="max-width:480px;" onclick="event.stopPropagation()">';
+      html += '<div class="modal-header"><h2>Add a line for ' + esc(learnerName) + '</h2>' +
+              '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+      html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">';
+      html += 'The class bill for ' + esc(className) + ' does not include these lines this term. ';
+      html += 'Adding one here raises this learner\'s bill only — it does not change the class bill.';
+      html += '</p>';
+
+      html += '<div class="form-group"><label>Line</label>';
+      html += '<select id="feeAddItemKey" style="width:100%;padding:6px;">';
+      missing.forEach(function (f) {
+        html += '<option value="' + escAttr(f.key) + '">' + esc(f.label) + '</option>';
+      });
+      html += '</select></div>';
+
+      html += '<div class="form-row">';
+      html += '<div class="form-group"><label>Amount (₦)</label>' +
+              '<input id="feeAddItemAmt" type="number" step="0.01" value="0" style="width:100%;"></div>';
+      html += '</div>';
+
+      html += '<div class="form-group"><label>Reason</label>' +
+              '<input id="feeAddItemReason" type="text" placeholder="e.g. Late uniform purchase" style="width:100%;"></div>';
+
+      html += '<div style="text-align:right;margin-top:12px;">';
+      html += '<button class="btn btn-secondary" onclick="TIS.closeModal()">Cancel</button> ';
+      html += '<button class="btn btn-success" id="feeAddItemGo" type="button" ' +
+              'onclick="feeAddItemSave(' + learnerId + ', \'' + escAttr(term) + '\',' + year + ')">Add to bill</button>';
+      html += '</div>';
+      html += '<div id="feeAddItemFeedback" style="margin-top:8px;font-size:12px;"></div>';
+      html += '</div></div>';
+      setHTML('modalContainer', html);
+    }).catch(function (err) {
+      stopLoader();
+      showToast('Could not load class bill: ' + (err && err.message || err), 'error');
+    });
+  }
+  window.feeOpenAddItemModal = feeOpenAddItemModal;
+
+  async function feeAddItemSave(learnerId, term, year) {
+    const keyEl = $('feeAddItemKey');
+    const amtEl = $('feeAddItemAmt');
+    const rsnEl = $('feeAddItemReason');
+    const fb    = $('feeAddItemFeedback');
+    const key   = keyEl ? keyEl.value : '';
+    const amt   = amtEl ? Number(amtEl.value || 0) : 0;
+    const rsn   = rsnEl ? rsnEl.value.trim() : '';
+
+    if (!key) { if (fb) fb.textContent = 'Pick a line.'; return; }
+    if (!amt || amt <= 0) { if (fb) fb.textContent = 'Enter a positive amount.'; return; }
+
+    startLoader();
+    try {
+      const existing = await window.TIS.getFeeAdjustment(learnerId, term, year);
+      const prior = (existing && existing.ok && existing.data) ? existing.data : {};
+      const payload = {
+        learner_id: learnerId,
+        term_type:  term,
+        year:       year,
+        additions:  Number(prior.additions  || 0) + amt,
+        deductions: Number(prior.deductions || 0),
+        reason:     rsn
+          ? (prior.reason ? prior.reason + ' | ' + key + ': ' + rsn : key + ': ' + rsn)
+          : prior.reason || null,
+        notes:      prior.notes || null
+      };
+      const r = await window.TIS.upsertFeeAdjustment(payload);
+      stopLoader();
+      if (!r || !r.ok) { if (fb) fb.textContent = 'Save failed: ' + ((r && r.error) || 'unknown'); return; }
+      showToast('Added to ' + (rsn || key) + '.', 'success');
+      closeModal();
+      feesLoad();
+    } catch (err) {
+      stopLoader();
+      if (fb) fb.textContent = 'Unexpected: ' + (err && err.message || err);
+    }
+  }
+  window.feeAddItemSave = feeAddItemSave;
   async function loadTerms() {
     setHTML('termsList', pageLoaderHTML('Loading terms…'));
 
