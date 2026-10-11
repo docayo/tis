@@ -52,7 +52,8 @@
     { key: 'classes',          label: 'Classes',             defaultReadAll: false },
     { key: 'terms',            label: 'Terms & Promotion',   defaultReadAll: false },
     { key: 'users',            label: 'Users & Permissions', defaultReadAll: false },
-    { key: 'idcards',          label: 'ID Cards',            defaultReadAll: true  }
+    { key: 'idcards',          label: 'ID Cards',            defaultReadAll: true  },
+    { key: 'cbt',              label: 'CBT',                 defaultReadAll: true  }
   ];
   const PERMISSION_ACTIONS = ['read', 'write', 'print'];
 
