@@ -50,7 +50,7 @@
    const ALL_MODULES = [
   'learners', 'prospects', 'staff', 'terms', 'attendance', 'staffatt',
   'broadsheet', 'calendar', 'qr', 'reports', 'results',
-  'classes', 'users', 'idcards', 'collectibles'
+  'classes', 'users', 'idcards', 'collectibles' 'cbt'
 ];
 
   // ================================================================
@@ -338,6 +338,7 @@
       else if (name === 'classes') loadClasses();
       else if (name === 'users') loadUsers();
       else if (name === 'idcards') initIDCardsTab();
+      else if (name === 'cbt') initCbtTab();
       else if (name === 'results') initResultsTab();
     } catch (err) {
       console.error('[switchTab]', name, err);
