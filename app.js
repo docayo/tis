@@ -902,28 +902,70 @@
 
     if (canB) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
-      html += infoRow('Previous Term Balance B/F', prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
-      html += infoRow('Current Term Tuition', moneyOrDash(fee.tuition));
-      html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
-      html += infoRow('Additions', moneyOrDash(fee.additions));
-      html += infoRow('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
+
+      // --- Carried in ---
+      html += infoRow('Previous Term Balance B/F', moneyOrDash(fee.balance_bf));
+
+      // --- Class bill lines ---
+      if (fee.tuition)           html += infoRow('Current Term Tuition', moneyOrDash(fee.tuition));
+      if (fee.other_bills_major) html += infoRow('Other Bills Major', moneyOrDash(fee.other_bills_major));
+      if (fee.other_bills_minor) html += infoRow('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
+      if (fee.books)             html += infoRow('Books', moneyOrDash(fee.books));
+      if (fee.uniform)           html += infoRow('Uniform', moneyOrDash(fee.uniform));
+      if (fee.sportswear)        html += infoRow('Sportswear', moneyOrDash(fee.sportswear));
+      if (fee.waist_coat)        html += infoRow('Waist Coat', moneyOrDash(fee.waist_coat));
+      if (fee.tie)               html += infoRow('Tie', moneyOrDash(fee.tie));
+      if (fee.extra_lesson)      html += infoRow('Extra Lesson', moneyOrDash(fee.extra_lesson));
+      if (fee.special_lesson)    html += infoRow('Special Lesson', moneyOrDash(fee.special_lesson));
+
+      // --- Adjustment ---
+      if (fee.additions)         html += infoRow('Additions', moneyOrDash(fee.additions));
+      if (fee.scholarship)       html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
+
+      // --- Net Bills: sum of the visible lines above ---
+      const visibleLines =
+        (fee.tuition || 0) +
+        (fee.other_bills_major || 0) +
+        (fee.other_bills_minor || 0) +
+        (fee.books || 0) +
+        (fee.uniform || 0) +
+        (fee.sportswear || 0) +
+        (fee.waist_coat || 0) +
+        (fee.tie || 0) +
+        (fee.extra_lesson || 0) +
+        (fee.special_lesson || 0) +
+        (fee.additions || 0) -
+        (fee.scholarship || 0);
+
+      html += '<div class="info-row" style="border-top:2px solid #c8e6c9;font-weight:800;background:#f1f8e9;">' +
+              '<span class="info-label">Net Bills (this term)</span>' +
+              '<span class="info-value">' + moneyOrDash(visibleLines) + '</span></div>';
+
+      // Adjusted Tuition Total only when a deduction exists — no repetition otherwise.
+      if (fee.scholarship) {
+        html += infoRow('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
+      }
+
+      // --- Payments ---
       if (ppRows) {
         html += '<div style="margin:8px 0 4px;font-weight:700;font-size:11px;color:#0d4d26;">Part Payments</div>';
         html += ppRows;
+        html += infoRow('Total Paid', moneyOrDash(fee.total_part_payment));
       }
-      html += infoRow('Total Paid', moneyOrDash(fee.total_part_payment));
-      html += infoRow('Other Bills Major', moneyOrDash(fee.other_bills_major));
-      html += infoRow('Books', moneyOrDash(fee.books));
-      html += infoRow('Balance B/F', moneyOrDash(fee.balance_bf));
-      html += infoRow('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
-      html += infoRow('Net Bills', moneyOrDash(fee.net_bills));
+
+      // --- Balance C/F: Net Bills + B/F − Paid ---
+      const owedNow = visibleLines + (fee.balance_bf || 0) - (fee.total_part_payment || 0);
+      html += '<div class="info-row" style="border-top:2px solid #c8e6c9;font-weight:800;background:#fff8e1;">' +
+              '<span class="info-label">Balance C/F (what is still owed)</span>' +
+              '<span class="info-value">' + moneyOrDash(owedNow) + '</span></div>';
+
+      // --- Non-fee personal data ---
       html += infoRow('Blood Group / Genotype', d.blood_group);
       html += infoRow('Allergy', d.allergy);
       html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
       html += sourceNote;
       html += '</div></div>';
     }
-
     if (canC) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section C — History & Origin</div><div class="expandable-body">';
       html += infoRow('Class Before Admission', d.class_before_admission);
