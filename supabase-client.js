@@ -957,10 +957,11 @@
   // ================================================================
   // [ATTENDANCE_LEARNER]
   // ================================================================
-   TIS.getAttendanceRegister = async function (className, termType, year) {
+  TIS.getAttendanceRegister = async function (className, termType, year) {
     try {
       const sb = await loadSdk();
 
+      // ---- 1. Learners in this class, active only ----
       const learnerQ = await sb
         .from('learners')
         .select('id, pin, name, gender, date_of_birth, photo_url, class_name, date_of_withdrawal')
@@ -972,13 +973,7 @@
         return !(w && w !== '' && w !== 'N/A');
       });
 
-      const attQ = await sb
-        .from('attendance_learner')
-        .select('learner_id, attendance_date, mark')
-        .eq('term_type', termType)
-        .eq('year', year);
-      if (attQ.error) return fail(attQ.error.message);
-
+      // ---- 2. The term row (for start/end dates and label) ----
       const termQ = await sb
         .from('terms')
         .select('*')
@@ -988,6 +983,28 @@
       if (termQ.error) return fail(termQ.error.message);
       const term = termQ.data;
 
+      // ---- 3. Attendance rows for THIS term/year, scoped to these learners ----
+      // Fetching by learner_id list (rather than every row for the term)
+      // avoids Supabase's 1000-row default cap and guarantees the map is
+      // built only from rows we will actually render.
+      const learnerIds = learners.map(function (l) { return l.id; });
+      let attRows = [];
+      if (learnerIds.length > 0) {
+        const CHUNK = 500;
+        for (let i = 0; i < learnerIds.length; i += CHUNK) {
+          const slice = learnerIds.slice(i, i + CHUNK);
+          const attQ = await sb
+            .from('attendance_learner')
+            .select('learner_id, attendance_date, mark, term_type, year')
+            .eq('term_type', termType)
+            .eq('year', year)
+            .in('learner_id', slice);
+          if (attQ.error) return fail(attQ.error.message);
+          (attQ.data || []).forEach(function (r) { attRows.push(r); });
+        }
+      }
+
+      // ---- 4. Holiday map (unchanged) ----
       const holQ = await sb
         .from('academic_calendar')
         .select('event_date, event_type, is_holiday, holiday_name, description')
@@ -1003,30 +1020,28 @@
         });
       }
 
-      // Build the nested lookup used by the grid.
-      // Keys on BOTH sides are Strings, so a JSON round-trip that
-      // returns bigint as a number never causes a silent miss.
+      // ---- 5. Build the per-date map ----
       const marksByDate = {};
-      (attQ.data || []).forEach(function (r) {
+      attRows.forEach(function (r) {
         const date = String(r.attendance_date || '').trim();
         const lid  = String(r.learner_id);
-        if (!date) return;
+        if (!date || !lid) return;
         if (!marksByDate[date]) marksByDate[date] = {};
         marksByDate[date][lid] = r.mark;
       });
 
-      // Local-date helper. See prior note: toISOString() shifts
-      // local-midnight back one day in UTC+N; this returns the real
-      // local calendar date as YYYY-MM-DD.
+      // ---- 6. Local date helper — no UTC shift ----
       function localISO(d) {
         return d.getFullYear() + '-' +
                String(d.getMonth() + 1).padStart(2, '0') + '-' +
                String(d.getDate()).padStart(2, '0');
       }
 
-      const today = localISO(new Date());
+      const today    = localISO(new Date());
       const startISO = term ? term.start_date : null;
       const endISO   = term ? term.end_date   : null;
+
+      // ---- 7. Build the weeks structure ----
       const weeks = [];
       if (startISO && endISO) {
         const sP = String(startISO).split('-');
@@ -1076,16 +1091,10 @@
         termEnd: endISO,
         learners: learners,
         weeks: weeks,
-        // Top-level raw rows, so the client always has an
-        // unprocessed copy of what the DB actually returned.
-        // The grid's attEffectiveMark falls back to this when the
-        // nested map misses, which is what makes post-save reloads
-        // reliable.
-        attendance_rows: attQ.data || []
+        attendance_rows: attRows
       });
     } catch (err) { return fail(err); }
   };
-
   function computeAge_(dobStr) {
     if (!dobStr) return '';
     const s = String(dobStr).trim();
