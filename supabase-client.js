@@ -749,6 +749,151 @@
       return ok({ id: id });
     } catch (err) { return fail(err); }
   };
+    // ================================================================
+  // [FEE_ADVANCE] — copy one term's class bills and per-learner
+  // adjustments into another term. Used when a new term becomes
+  // active and the office confirms the advance.
+  //
+  //   options = {
+  //     fromTerm, fromYear,
+  //     toTerm, toYear,
+  //     include:         { tuition:true, uniform:false, ... },  // false → column omitted
+  //     copyAdjustments: true | false,
+  //     actor:           'Operator name'
+  //   }
+  //
+  // Never overwrites existing rows in the target term. Reports
+  // what it skipped.
+  // ================================================================
+  TIS.advanceTermFees = async function (options) {
+    try {
+      const opt = options || {};
+      const fromTerm = String(opt.fromTerm || '').trim();
+      const fromYear = parseInt(opt.fromYear, 10);
+      const toTerm   = String(opt.toTerm   || '').trim();
+      const toYear   = parseInt(opt.toYear, 10);
+      const include  = opt.include || {};
+      const copyAdj  = opt.copyAdjustments !== false;
+
+      if (!fromTerm || !fromYear || !toTerm || !toYear) {
+        return fail('fromTerm, fromYear, toTerm, toYear are required.');
+      }
+      if (fromTerm === toTerm && fromYear === toYear) {
+        return fail('Source and target term are the same.');
+      }
+
+      const sb = await loadSdk();
+
+      // The eleven columns that can be copied.
+      const ALL_FIELDS = [
+        'tuition','other_bills_major','other_bills_minor','books',
+        'registration_fee','uniform','sportswear','waist_coat','tie',
+        'extra_lesson','special_lesson'
+      ];
+
+      // ---- 1. Read source class bills ----
+      const srcR = await sb.from('fee_schedule').select('*')
+        .eq('term_type', fromTerm).eq('year', fromYear);
+      if (srcR.error) return fail(srcR.error.message);
+      const srcRows = srcR.data || [];
+
+      // ---- 2. Read existing target rows (skip list) ----
+      const tgtR = await sb.from('fee_schedule').select('class_name')
+        .eq('term_type', toTerm).eq('year', toYear);
+      if (tgtR.error) return fail(tgtR.error.message);
+      const targetHas = {};
+      (tgtR.data || []).forEach(function (r) { targetHas[r.class_name] = true; });
+
+      // ---- 3. Build insert list ----
+      const toInsert = [];
+      const skipped  = [];
+      srcRows.forEach(function (r) {
+        if (targetHas[r.class_name]) { skipped.push(r.class_name); return; }
+        const row = {
+          class_name: r.class_name,
+          term_type:  toTerm,
+          year:       toYear
+        };
+        ALL_FIELDS.forEach(function (f) {
+          if (include[f] === false) return;         // omitted intentionally
+          const v = r[f];
+          if (v === null || v === undefined) return;
+          row[f] = Number(v);
+        });
+        toInsert.push(row);
+      });
+
+      let classesCopied = 0;
+      if (toInsert.length > 0) {
+        const insR = await sb.from('fee_schedule').insert(toInsert).select();
+        if (insR.error) return fail(insR.error.message);
+        classesCopied = (insR.data || []).length;
+      }
+
+      // ---- 4. Adjustments (optional) ----
+      let adjustmentsCopied = 0;
+      const adjustmentsSkipped = [];
+      if (copyAdj) {
+        const srcAdjR = await sb.from('fee_adjustments').select('*')
+          .eq('term_type', fromTerm).eq('year', fromYear);
+        if (srcAdjR.error) return fail(srcAdjR.error.message);
+        const srcAdj = srcAdjR.data || [];
+
+        const tgtAdjR = await sb.from('fee_adjustments').select('learner_id')
+          .eq('term_type', toTerm).eq('year', toYear);
+        if (tgtAdjR.error) return fail(tgtAdjR.error.message);
+        const tgtHas = {};
+        (tgtAdjR.data || []).forEach(function (r) { tgtHas[r.learner_id] = true; });
+
+        const adjIns = [];
+        srcAdj.forEach(function (a) {
+          if (tgtHas[a.learner_id]) { adjustmentsSkipped.push(a.learner_id); return; }
+          adjInsertRow = {
+            learner_id: a.learner_id,
+            term_type:  toTerm,
+            year:       toYear,
+            additions:  Number(a.additions  || 0),
+            deductions: Number(a.deductions || 0),
+            reason:     a.reason  || null,
+            notes:      a.notes   || null
+          };
+          adjIns.push(adjInsertRow);
+        });
+
+        if (adjIns.length > 0) {
+          const aIns = await sb.from('fee_adjustments').insert(adjIns).select();
+          if (aIns.error) return fail(aIns.error.message);
+          adjustmentsCopied = (aIns.data || []).length;
+        }
+      }
+
+      // ---- 5. Audit ----
+      try {
+        await TIS.logAudit({
+          actor_name:  opt.actor || 'Operator',
+          action:      'fees.advance',
+          entity_type: 'fee_schedule',
+          entity_id:   fromTerm + ' ' + fromYear + ' → ' + toTerm + ' ' + toYear,
+          entity_name: 'Fee advance',
+          before:      { fromTerm: fromTerm, fromYear: fromYear, classes: srcRows.length },
+          after:       {
+            toTerm: toTerm, toYear: toYear,
+            classesCopied: classesCopied, classesSkipped: skipped.length,
+            adjustmentsCopied: adjustmentsCopied,
+            adjustmentsSkipped: adjustmentsSkipped.length
+          },
+          notes: 'Advance ' + fromTerm + ' ' + fromYear + ' → ' + toTerm + ' ' + toYear
+        });
+      } catch (e) { /* audit failure must not block */ }
+
+      return ok({
+        classesCopied:      classesCopied,
+        classesSkipped:     skipped,
+        adjustmentsCopied:  adjustmentsCopied,
+        adjustmentsSkipped: adjustmentsSkipped
+      });
+    } catch (err) { return fail(err); }
+  };
   // ================================================================
   // [AUDIT LOG] — record every operator write, with before/after
   //   snapshots so changes can be reviewed and (if safe) reversed.
