@@ -3138,6 +3138,158 @@
       return ok(data);
     } catch (err) { return fail(err); }
   };
+    // ================================================================
+  // [CBT] — Question bank and timetable (admin, portal side).
+  //   The exam runs on the LAN server. These methods only manage
+  //   the content before exam day.
+  // ================================================================
+  TIS.listCbtQuestions = async function (filter) {
+    try {
+      const sb = await loadSdk();
+      let q = sb.from('cbt_questions').select('*');
+      if (filter) {
+        if (filter.class_level)  q = q.eq('class_level', filter.class_level);
+        if (filter.subject_code) q = q.eq('subject_code', filter.subject_code);
+        if (filter.paper)        q = q.eq('paper', filter.paper);
+        if (filter.term_type)    q = q.eq('term_type', filter.term_type);
+        if (filter.year)         q = q.eq('year', filter.year);
+      }
+      const { data, error } = await q.order('class_level').order('subject_code').order('paper').order('serial_no');
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertCbtQuestions = async function (rows) {
+    try {
+      if (!rows || rows.length === 0) return ok({ created: 0, updated: 0 });
+      const sb = await loadSdk();
+
+      // Fetch existing to know which rows already exist so we can
+      // report created vs updated to the uploader.
+      const classes   = Array.from(new Set(rows.map(function (r) { return r.class_level; })));
+      const subjects  = Array.from(new Set(rows.map(function (r) { return r.subject_code; })));
+      const papers    = Array.from(new Set(rows.map(function (r) { return r.paper; })));
+      const terms     = Array.from(new Set(rows.map(function (r) { return r.term_type; })));
+      const years     = Array.from(new Set(rows.map(function (r) { return r.year; })));
+
+      const existingR = await sb.from('cbt_questions')
+        .select('class_level,subject_code,paper,term_type,year,serial_no')
+        .in('class_level',  classes)
+        .in('subject_code', subjects)
+        .in('paper',        papers)
+        .in('term_type',    terms)
+        .in('year',         years);
+      if (existingR.error) return fail(existingR.error.message);
+
+      const existingKeys = {};
+      (existingR.data || []).forEach(function (r) {
+        existingKeys[r.class_level + '|' + r.subject_code + '|' + r.paper + '|' + r.serial_no] = true;
+      });
+
+      let created = 0, updated = 0;
+
+      const nowIso = new Date().toISOString();
+      const payload = rows.map(function (r) {
+        const k = r.class_level + '|' + r.subject_code + '|' + r.paper + '|' + r.serial_no;
+        if (existingKeys[k]) updated++; else created++;
+        return Object.assign({}, r, {
+          content_hash: r.content_hash || (r.question_text || '').slice(0, 120),
+          created_by:   r.created_by || 'Portal',
+          updated_at:   nowIso
+        });
+      });
+
+      const CHUNK = 200;
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        const slice = payload.slice(i, i + CHUNK);
+        const r = await sb.from('cbt_questions')
+          .upsert(slice, { onConflict: 'subject_code,class_level,serial_no,paper' });
+        if (r.error) return fail(r.error.message);
+      }
+
+      return ok({ created: created, updated: updated });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listCbtTimetable = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('cbt_timetable').select('*')
+        .order('opens_at', { ascending: true });
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.upsertCbtTimetable = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        class_level:      String(row.class_level  || '').trim(),
+        subject_code:     String(row.subject_code || '').trim(),
+        paper:            String(row.paper        || '').trim(),
+        term_type:        String(row.term_type    || '').trim(),
+        year:             parseInt(row.year, 10),
+        opens_at:         row.opens_at,
+        duration_minutes: parseInt(row.duration_minutes, 10),
+        created_by:       row.created_by || 'Portal',
+        updated_at:       new Date().toISOString()
+      };
+      if (!payload.class_level || !payload.subject_code || !payload.paper || !payload.term_type ||
+          !payload.year || !payload.opens_at || !payload.duration_minutes) {
+        return fail('All timetable fields are required.');
+      }
+      const { data, error } = await sb.from('cbt_timetable')
+        .upsert(payload, { onConflict: 'class_level,subject_code,paper,term_type,year' })
+        .select()
+        .single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.deleteCbtTimetable = async function (id) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('cbt_timetable').delete().eq('id', id);
+      if (error) return fail(error.message);
+      return ok({ id: id });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.listCbtUploads = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('cbt_question_uploads').select('*')
+        .order('uploaded_at', { ascending: false })
+        .limit(200);
+      if (error) return fail(error.message);
+      return ok(data || []);
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.logCbtUpload = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const payload = {
+        filename:       String(row.filename || ''),
+        subject_code:   String(row.subject_code || ''),
+        class_level:    String(row.class_level || ''),
+        paper:          String(row.paper || ''),
+        term_type:      String(row.term_type || ''),
+        year:           parseInt(row.year, 10) || null,
+        row_count:      parseInt(row.row_count || 0, 10),
+        created_count:  parseInt(row.created_count || 0, 10),
+        replaced_count: parseInt(row.replaced_count || 0, 10),
+        skipped_count:  parseInt(row.skipped_count || 0, 10),
+        uploaded_by:    String(row.uploaded_by || 'Operator')
+      };
+      const { data, error } = await sb.from('cbt_question_uploads').insert(payload).select().single();
+      if (error) return fail(error.message);
+      return ok(data);
+    } catch (err) { return fail(err); }
+  };
   // ================================================================
   // Expose + boot
   // ================================================================
