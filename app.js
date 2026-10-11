@@ -4018,7 +4018,7 @@
       books:             get('books'),
       registration_fee:  get('registration_fee'),
       uniform:           get('uniform'),
-      sportswear:        get('swimsportswear'),
+      sportswear:        get('sportswear'),
       waist_coat:        get('waist_coat'),
       tie:               get('tie'),
       extra_lesson:      get('extra_lesson'),
