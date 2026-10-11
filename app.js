@@ -509,8 +509,6 @@
   // Load & render the grid
   // ================================================================
   async function loadLearners() {
-    // Fast path: if we already fetched in the last 10 minutes,
-    // just re-render from cache. No network call.
     const now = Date.now();
     if (State.cachedLearners && State.cachedLearners.length > 0 &&
         State.learnersFetchedAt && (now - State.learnersFetchedAt) < 10 * 60 * 1000) {
@@ -520,6 +518,15 @@
 
     setHTML('learnersGrid', pageLoaderHTML('Loading learners…'));
     startLoader();
+
+    // Fetch classes once per session so the grid can sort by class.
+    if (!State.cachedClasses || State.cachedClasses.length === 0) {
+      try {
+        const cr = await window.TIS.listClasses();
+        if (cr && cr.ok) State.cachedClasses = cr.data || [];
+      } catch (e) { /* silent */ }
+    }
+
     const r = await window.TIS.listLearners();
     stopLoader();
     if (!r || !r.ok) {
