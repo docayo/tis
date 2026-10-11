@@ -1254,7 +1254,8 @@
       '.r:last-child{border-bottom:0;}' +
       '.r .v{font-weight:800;text-align:right;white-space:nowrap;}' +
       '.total{border-top:2px solid #000;margin-top:6px;padding-top:6px;font-weight:900;font-size:15px;display:flex;justify-content:space-between;}' +
-      '.ft{margin-top:8px;padding-top:4px;border-top:1px solid #000;font-size:10px;text-align:center;}';
+            '.ft{margin-top:8px;padding-top:4px;border-top:1px solid #000;font-size:10px;text-align:center;}' +
+      tisBankBlockCss80mm();
 
     const rowFn = function (label, value) {
       return '<div class="r"><span>' + esc(label) + '</span><span class="v">' + esc(value) + '</span></div>';
@@ -2565,7 +2566,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       '.info-label{color:#000;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
       '.info-label::after{content:":";}' +
       '.info-value{font-weight:800;flex:0 0 auto;text-align:right;white-space:nowrap;}' +
-      '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +   tisBankBlockCss80mm() +
+          '.footer{margin-top:10px;padding-top:6px;border-top:2px solid #000;font-size:11px;text-align:center;}' +
+      tisBankBlockCss80mm() +
       '@media print{body{font-size:14px;}h2{page-break-inside:avoid;}}';
 
     const rowFn = function (label, value) {
@@ -2656,7 +2658,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += rowFn('3rd Phone (' + ph3.label + ')', ph3.value);
     }
 
-    // ---------- Footer ----------
+      // ---------- Footer ----------
+    html += tisBankBlockHtml80mm();
     html += '<div class="footer">Printed ' + new Date().toLocaleString() + '</div>';
 
     html += '</body></html>';
