@@ -476,4 +476,131 @@
         '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(t.term_type) + '</td>' +
         '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(t.year) + '</td>' +
         '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(opens) + '</td>' +
-        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(t.duration_minutes) + ' min</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
+          '<button class="btn btn-sm btn-danger" type="button" ' +
+          'onclick="cbtDeleteTimetableRow(' + t.id + ')">X</button></td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    host.innerHTML = html;
+  }
+
+  async function saveTimetableRow() {
+    const cls   = $('cbtTtClass').value;
+    const subj  = $('cbtTtSubject').value;
+    const paper = $('cbtTtPaper').value;
+    const term  = $('cbtTtTerm').value;
+    const year  = parseInt($('cbtTtYear').value, 10);
+    const opens = $('cbtTtOpens').value;
+    const dur   = parseInt($('cbtTtDuration').value, 10);
+
+    const fb = $('cbtTtFeedback');
+    const setFb = function (msg, kind) {
+      if (!fb) return;
+      fb.style.color = (kind === 'error') ? '#c0392b' : (kind === 'ok' ? '#0d4d26' : '#666');
+      fb.textContent = msg || '';
+    };
+
+    if (!cls)   { setFb('Pick a class.', 'error');   return; }
+    if (!subj)  { setFb('Pick a subject.', 'error'); return; }
+    if (!paper) { setFb('Pick a paper.', 'error');   return; }
+    if (!term)  { setFb('Pick a term.', 'error');    return; }
+    if (!year)  { setFb('Enter a year.', 'error');   return; }
+    if (!opens) { setFb('Pick the opening date and time.', 'error'); return; }
+    if (!dur || dur < 5) { setFb('Duration must be at least 5 minutes.', 'error'); return; }
+
+    setFb('Saving…');
+    loader(true);
+    const r = await window.TIS.upsertCbtTimetable({
+      class_level:      cls,
+      subject_code:     subj,
+      paper:            paper,
+      term_type:        term,
+      year:             year,
+      opens_at:         new Date(opens).toISOString(),
+      duration_minutes: dur,
+      created_by:       sessionName()
+    });
+    loader(false);
+
+    if (!r || !r.ok) {
+      setFb('Save failed: ' + ((r && r.error) || 'unknown'), 'error');
+      return;
+    }
+    setFb('Saved.', 'ok');
+    toast('Timetable saved.', 'success');
+    loadTimetable();
+  }
+
+  async function cbtDeleteTimetableRow(id) {
+    if (!confirm('Delete this timetable entry? The LAN server will no longer open the paper automatically.')) return;
+    loader(true);
+    const r = await window.TIS.deleteCbtTimetable(id);
+    loader(false);
+    if (!r || !r.ok) { toast('Delete failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
+    toast('Deleted.', 'success');
+    loadTimetable();
+  }
+  window.cbtDeleteTimetableRow = cbtDeleteTimetableRow;
+
+  // ================================================================
+  // Upload history
+  // ================================================================
+  async function loadUploadHistory() {
+    const host = $('cbtUploadHistory');
+    if (!host) return;
+    host.innerHTML = pageLoaderHTML('Loading history…');
+
+    const r = await window.TIS.listCbtUploads();
+    if (!r || !r.ok) {
+      host.innerHTML = emptyHTML('fa-history', 'Could not load history', r && r.error);
+      return;
+    }
+    const rows = r.data || [];
+    if (rows.length === 0) {
+      host.innerHTML = emptyHTML('fa-history', 'No uploads yet');
+      return;
+    }
+
+    let html = '<div style="overflow-x:auto;">';
+    html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
+            '<th style="text-align:left;padding:6px;">When</th>' +
+            '<th style="text-align:left;padding:6px;">By</th>' +
+            '<th style="text-align:left;padding:6px;">File</th>' +
+            '<th style="text-align:left;padding:6px;">Class</th>' +
+            '<th style="text-align:left;padding:6px;">Subject</th>' +
+            '<th style="padding:6px;">Paper</th>' +
+            '<th style="padding:6px;">Term</th>' +
+            '<th style="padding:6px;">Year</th>' +
+            '<th style="padding:6px;">Created</th>' +
+            '<th style="padding:6px;">Replaced</th>' +
+            '<th style="padding:6px;">Skipped</th>' +
+            '</tr></thead><tbody>';
+    rows.forEach(function (u) {
+      const when = u.uploaded_at ? new Date(u.uploaded_at).toLocaleString() : '—';
+      html += '<tr>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(when) + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(u.uploaded_by || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(u.filename || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(u.class_level || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(u.subject_code || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(u.paper || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(u.term_type || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + esc(u.year || '') + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + (u.created_count || 0) + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + (u.replaced_count || 0) + '</td>' +
+        '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' + (u.skipped_count || 0) + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    host.innerHTML = html;
+  }
+
+  // ================================================================
+  // Auto-init on switchTab (app.js will call initCbtTab)
+  // ================================================================
+  console.log('[CBT] cbt-module.js loaded.');
+
+})();
