@@ -2700,25 +2700,70 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
 
     // ---------- Section B ----------
-       if (wantB) {
+        if (wantB) {
       html += '<h2>Section B &mdash; Fees</h2>';
+
+      // Carried in
       html += rowFn('Previous Term Balance B/F',
         prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
-      if (fee.tuition)          html += rowFn('Current Term Tuition', moneyOrDash(fee.tuition));
-      if (fee.scholarship)      html += rowFn('Scholarship / Deductions', moneyOrDash(fee.scholarship));
-      if (fee.additions)        html += rowFn('Additions', moneyOrDash(fee.additions));
-      if (fee.adjusted_tuition) html += rowFn('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
+
+      // Class bill lines — every line the fee picture carries, skipped when zero
+      if (fee.tuition)           html += rowFn('Current Term Tuition', moneyOrDash(fee.tuition));
+      if (fee.other_bills_major) html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
+      if (fee.other_bills_minor) html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
+      if (fee.books)             html += rowFn('Books', moneyOrDash(fee.books));
+      if (fee.uniform)           html += rowFn('Uniform', moneyOrDash(fee.uniform));
+      if (fee.sportswear)        html += rowFn('Sportswear', moneyOrDash(fee.sportswear));
+      if (fee.waist_coat)        html += rowFn('Waist Coat', moneyOrDash(fee.waist_coat));
+      if (fee.tie)               html += rowFn('Tie', moneyOrDash(fee.tie));
+      if (fee.extra_lesson)      html += rowFn('Extra Lesson', moneyOrDash(fee.extra_lesson));
+      if (fee.special_lesson)    html += rowFn('Special Lesson', moneyOrDash(fee.special_lesson));
+
+      // Adjustments
+      if (fee.additions)         html += rowFn('Additions', moneyOrDash(fee.additions));
+      if (fee.scholarship)       html += rowFn('Scholarship / Deductions', moneyOrDash(fee.scholarship));
+
+      // Net Bills: sum of the visible lines above
+      const visibleLines =
+        (fee.tuition || 0) +
+        (fee.other_bills_major || 0) +
+        (fee.other_bills_minor || 0) +
+        (fee.books || 0) +
+        (fee.uniform || 0) +
+        (fee.sportswear || 0) +
+        (fee.waist_coat || 0) +
+        (fee.tie || 0) +
+        (fee.extra_lesson || 0) +
+        (fee.special_lesson || 0) +
+        (fee.additions || 0) -
+        (fee.scholarship || 0);
+
+      html += rowFn('Net Bills (this term)', moneyOrDash(visibleLines));
+
+      // Only shown when a scholarship exists
+      if (fee.scholarship) {
+        html += rowFn('Tuition after Scholarship', moneyOrDash(fee.adjusted_tuition));
+      }
+
+      // Part payments
       if (fee.part_payments && fee.part_payments.length) {
         fee.part_payments.forEach(function (p) {
           html += rowFn('Part Pay ' + p.n,
             (p.date ? fmtDateOrDash(p.date) : '—') + ' — ' + moneyOrDash(p.amount));
         });
+        html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
       }
-      if (fee.total_part_payment) html += rowFn('Total Paid', moneyOrDash(fee.total_part_payment));
-      if (fee.other_bills_major)  html += rowFn('Other Bills Major', moneyOrDash(fee.other_bills_major));
-      if (fee.books)              html += rowFn('Books', moneyOrDash(fee.books));
-      if (fee.other_bills_minor)  html += rowFn('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
-      if (fee.net_bills)          html += rowFn('Net Bills', moneyOrDash(fee.net_bills));
+
+      // Balance C/F: Net Bills + B/F − Paid
+      const owedNow = visibleLines + (fee.balance_bf || 0) - (fee.total_part_payment || 0);
+      html += rowFn('Balance C/F', moneyOrDash(owedNow));
+
+      // Removed lines, if any
+      if (fee.overrides && fee.overrides.length) {
+        html += rowFn('Removed from this learner', String(fee.overrides.length) + ' line(s)');
+      }
+
+      // Non-fee personal data
       html += rowFn('Blood Group', d.blood_group || '—');
       html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
