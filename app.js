@@ -50,7 +50,7 @@
    const ALL_MODULES = [
   'learners', 'prospects', 'staff', 'terms', 'attendance', 'staffatt',
   'broadsheet', 'calendar', 'qr', 'reports', 'results',
-  'classes', 'users', 'idcards', 'collectibles' 'cbt'
+  'classes', 'users', 'idcards', 'collectibles', 'cbt'
 ];
 
   // ================================================================
