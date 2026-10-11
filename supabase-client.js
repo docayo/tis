@@ -1136,8 +1136,21 @@
         newTotal += v;
       }
       patch.total_part_payment = String(newTotal);
-
-      const newBalance = num(row.balance_bf) + num(row.bill) + num(row.other_bill) - newTotal;
+            const newBalance =
+        num(row.balance_bf)
+        + num(row.tuition)
+        + num(row.other_bills_major)
+        + num(row.other_bills_minor)
+        + num(row.books)
+        + num(row.uniform)
+        + num(row.sportswear)
+        + num(row.waist_coat)
+        + num(row.tie)
+        + num(row.extra_lesson)
+        + num(row.special_lesson)
+        + num(row.additions)
+        - num(row.scholarship)
+        - newTotal;
       patch.balance_cf = String(newBalance);
 
       if (newBalance <= 0) {
