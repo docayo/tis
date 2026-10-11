@@ -649,7 +649,7 @@
   }
   window.previousTermOf = previousTermOf;
 
-  async function resolveLearnerFeePicture(learner, termRow, term, year) {
+   async function resolveLearnerFeePicture(learner, termRow, term, year) {
     const empty = {
       source: 'none',
       tuition: 0, scholarship: 0, additions: 0,
@@ -661,6 +661,7 @@
       total_part_payment: 0, balance_cf: 0,
       part_payments: [],
       cleared: '', clearance: '',
+      overrides: [],
       schedule_found: false, adjustment_found: false
     };
     if (!learner || !learner.id || !term) return empty;
@@ -676,7 +677,8 @@
 
     const locked = snapshotHasMoney(termRow);
 
-    let schedRow = null, adjRow = null;
+    // ---- Pull the live sources (only when not locked) ----
+    let schedRow = null, adjRow = null, overrides = [];
     if (!locked) {
       const className = learner.class_name || (termRow && termRow.class_name) || '';
       if (className) {
@@ -689,8 +691,15 @@
         const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
         if (ar && ar.ok && ar.data) adjRow = ar.data;
       } catch (e) { /* silent */ }
+      try {
+        const or = await window.TIS.listLearnerOverrides(learner.id, term.term_type, year);
+        if (or && or.ok) overrides = or.data || [];
+      } catch (e) { /* silent */ }
     }
+    const offSet = {};
+    overrides.forEach(function (o) { offSet[o.item_key] = true; });
 
+    // ---- Part-payment list (snapshot only) ----
     const ppList = [];
     if (termRow) {
       for (let n = 1; n <= 5; n++) {
@@ -718,12 +727,8 @@
         other_bills_minor: otherMinor,
         books: books,
         registration_fee: 0,
-        uniform: 0,
-        sportswear: 0,
-        waist_coat: 0,
-        tie: 0,
-        extra_lesson: 0,
-        special_lesson: 0,
+        uniform: 0, sportswear: 0, waist_coat: 0,
+        tie: 0, extra_lesson: 0, special_lesson: 0,
         adjusted_tuition: tuition - scholarship,
         balance_bf: parseNum(termRow.balance_bf),
         net_bills: netBills,
@@ -732,23 +737,23 @@
         part_payments: ppList,
         cleared: termRow.cleared || '',
         clearance: termRow.clearance || '',
+        overrides: [],
         schedule_found: false,
         adjustment_found: false
       };
     }
 
-    // ---- NOT LOCKED: live schedule + live adjustment ----
-    const tuition        = schedRow ? parseNum(schedRow.tuition)            : parseNum(termRow && termRow.tuition);
-    const otherMajor     = schedRow ? parseNum(schedRow.other_bills_major)  : parseNum(termRow && termRow.other_bills_major);
-    const otherMinor     = schedRow ? parseNum(schedRow.other_bills_minor)  : parseNum(termRow && termRow.other_bills_minor);
-    const books          = schedRow ? parseNum(schedRow.books)              : parseNum(termRow && termRow.books);
-    const uniform        = schedRow ? parseNum(schedRow.uniform)            : 0;
-    const sportswear     = schedRow ? parseNum(schedRow.sportswear)         : 0;
-    const waistCoat      = schedRow ? parseNum(schedRow.waist_coat)         : 0;
-    const tie            = schedRow ? parseNum(schedRow.tie)                : 0;
-    const extraLesson    = schedRow ? parseNum(schedRow.extra_lesson)       : 0;
-    const specialLesson  = schedRow ? parseNum(schedRow.special_lesson)     : 0;
-    // registration_fee is prospect-only — intentionally never read here.
+    // ---- NOT LOCKED: live schedule + live adjustment + per-learner overrides ----
+    const tuition        = offSet.tuition           ? 0 : (schedRow ? parseNum(schedRow.tuition)           : parseNum(termRow && termRow.tuition));
+    const otherMajor     = offSet.other_bills_major ? 0 : (schedRow ? parseNum(schedRow.other_bills_major) : parseNum(termRow && termRow.other_bills_major));
+    const otherMinor     = offSet.other_bills_minor ? 0 : (schedRow ? parseNum(schedRow.other_bills_minor) : parseNum(termRow && termRow.other_bills_minor));
+    const books          = offSet.books             ? 0 : (schedRow ? parseNum(schedRow.books)             : parseNum(termRow && termRow.books));
+    const uniform        = offSet.uniform           ? 0 : (schedRow ? parseNum(schedRow.uniform)           : 0);
+    const sportswear     = offSet.sportswear        ? 0 : (schedRow ? parseNum(schedRow.sportswear)        : 0);
+    const waistCoat      = offSet.waist_coat        ? 0 : (schedRow ? parseNum(schedRow.waist_coat)        : 0);
+    const tie            = offSet.tie               ? 0 : (schedRow ? parseNum(schedRow.tie)               : 0);
+    const extraLesson    = offSet.extra_lesson      ? 0 : (schedRow ? parseNum(schedRow.extra_lesson)      : 0);
+    const specialLesson  = offSet.special_lesson    ? 0 : (schedRow ? parseNum(schedRow.special_lesson)    : 0);
 
     const additions   = adjRow ? parseNum(adjRow.additions)   : 0;
     const deductions  = adjRow ? parseNum(adjRow.deductions)  : 0;
@@ -786,6 +791,7 @@
       part_payments: [],
       cleared: (termRow && termRow.cleared) || '',
       clearance: (termRow && termRow.clearance) || '',
+      overrides: overrides,
       schedule_found: !!schedRow,
       adjustment_found: !!adjRow
     };
@@ -819,7 +825,6 @@
     const term    = termsR && termsR.ok ? termsR.data.term : null;
     const termLabel = term ? term.label : 'No active term';
 
-    // ---- Dynamic previous term, derived from the active term ----
     let prevTermRow = null;
     if (term) {
       const prev = previousTermOf(term.term_type, term.year);
@@ -829,7 +834,6 @@
       }
     }
 
-    // ---- Resolve the fee picture for the active term ----
     const fee = await resolveLearnerFeePicture(d, termRow, term, term ? term.year : null);
 
     const canA = true;
@@ -840,8 +844,6 @@
     const ph2 = phoneFor(d, 2);
     const ph3 = phoneFor(d, 3);
 
-    // Header card shows the "Balance C/F" number, sourced from
-    // whichever side of the rule is in force.
     const headerBalance = fee.balance_cf;
 
     let ppRows = '';
@@ -859,6 +861,22 @@
           ? '<div style="font-size:10px;color:#666;margin-top:4px;">Fees live from class bill' +
             (fee.adjustment_found ? ' + adjustment' : '') + '.</div>'
           : '');
+
+    // ---- Fee-line helper: renders one line with an X button ----
+    // If the line is present, shows the amount and an X to remove it.
+    // If the line is absent (overridden off), the line simply does not
+    // appear here — it shows in the removed-items expandable instead.
+    const feeLine = function (itemKey, label, value) {
+      const on = value && value !== 0;
+      if (!on) return '';
+      return '<div class="info-row">' +
+               '<span class="info-label">' + esc(label) + '</span>' +
+               '<span class="info-value">' + moneyOrDash(value) +
+                 ' <button type="button" class="btn btn-sm btn-danger" ' +
+                 'style="font-size:9px;padding:1px 6px;margin-left:6px;" ' +
+                 'onclick="learnerFeeToggleOff(\'' + escAttr(pin) + '\',\'' + escAttr(itemKey) + '\')">X</button>' +
+               '</span></div>';
+    };
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)closeLearnerModal()">';
     html += '<div class="modal-box wide lbModal" onclick="event.stopPropagation()">';
@@ -903,69 +921,67 @@
     if (canB) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
 
-      // --- Carried in ---
-      html += infoRow('Previous Term Balance B/F', moneyOrDash(fee.balance_bf));
+      html += feeLine('tuition',           'Current Term Tuition',   fee.tuition);
+      html += feeLine('other_bills_major', 'Other Bills Major',      fee.other_bills_major);
+      html += feeLine('other_bills_minor', 'Other Bills Minor',      fee.other_bills_minor);
+      html += feeLine('books',             'Books',                  fee.books);
+      html += feeLine('uniform',           'Uniform',                fee.uniform);
+      html += feeLine('sportswear',        'Sportswear',             fee.sportswear);
+      html += feeLine('waist_coat',        'Waist Coat',             fee.waist_coat);
+      html += feeLine('tie',               'Tie',                    fee.tie);
+      html += feeLine('extra_lesson',      'Extra Lesson',           fee.extra_lesson);
+      html += feeLine('special_lesson',    'Special Lesson',         fee.special_lesson);
 
-      // --- Class bill lines ---
-      if (fee.tuition)           html += infoRow('Current Term Tuition', moneyOrDash(fee.tuition));
-      if (fee.other_bills_major) html += infoRow('Other Bills Major', moneyOrDash(fee.other_bills_major));
-      if (fee.other_bills_minor) html += infoRow('Other Bills Minor', moneyOrDash(fee.other_bills_minor));
-      if (fee.books)             html += infoRow('Books', moneyOrDash(fee.books));
-      if (fee.uniform)           html += infoRow('Uniform', moneyOrDash(fee.uniform));
-      if (fee.sportswear)        html += infoRow('Sportswear', moneyOrDash(fee.sportswear));
-      if (fee.waist_coat)        html += infoRow('Waist Coat', moneyOrDash(fee.waist_coat));
-      if (fee.tie)               html += infoRow('Tie', moneyOrDash(fee.tie));
-      if (fee.extra_lesson)      html += infoRow('Extra Lesson', moneyOrDash(fee.extra_lesson));
-      if (fee.special_lesson)    html += infoRow('Special Lesson', moneyOrDash(fee.special_lesson));
+      if (fee.additions)   html += infoRow('Additions', moneyOrDash(fee.additions));
+      if (fee.scholarship) html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
 
-      // --- Adjustment ---
-      if (fee.additions)         html += infoRow('Additions', moneyOrDash(fee.additions));
-      if (fee.scholarship)       html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
-
-      // --- Net Bills: sum of the visible lines above ---
       const visibleLines =
-        (fee.tuition || 0) +
-        (fee.other_bills_major || 0) +
-        (fee.other_bills_minor || 0) +
-        (fee.books || 0) +
-        (fee.uniform || 0) +
-        (fee.sportswear || 0) +
-        (fee.waist_coat || 0) +
-        (fee.tie || 0) +
-        (fee.extra_lesson || 0) +
-        (fee.special_lesson || 0) +
-        (fee.additions || 0) -
-        (fee.scholarship || 0);
+        (fee.tuition || 0) + (fee.other_bills_major || 0) + (fee.other_bills_minor || 0) +
+        (fee.books || 0) + (fee.uniform || 0) + (fee.sportswear || 0) + (fee.waist_coat || 0) +
+        (fee.tie || 0) + (fee.extra_lesson || 0) + (fee.special_lesson || 0) +
+        (fee.additions || 0) - (fee.scholarship || 0);
 
       html += '<div class="info-row" style="border-top:2px solid #c8e6c9;font-weight:800;background:#f1f8e9;">' +
               '<span class="info-label">Net Bills (this term)</span>' +
               '<span class="info-value">' + moneyOrDash(visibleLines) + '</span></div>';
 
-      // Adjusted Tuition Total only when a deduction exists — no repetition otherwise.
       if (fee.scholarship) {
-        html += infoRow('Adjusted Tuition Total', moneyOrDash(fee.adjusted_tuition));
+        html += infoRow('Tuition after Scholarship', moneyOrDash(fee.adjusted_tuition));
       }
 
-      // --- Payments ---
       if (ppRows) {
         html += '<div style="margin:8px 0 4px;font-weight:700;font-size:11px;color:#0d4d26;">Part Payments</div>';
         html += ppRows;
         html += infoRow('Total Paid', moneyOrDash(fee.total_part_payment));
       }
 
-      // --- Balance C/F: Net Bills + B/F − Paid ---
       const owedNow = visibleLines + (fee.balance_bf || 0) - (fee.total_part_payment || 0);
       html += '<div class="info-row" style="border-top:2px solid #c8e6c9;font-weight:800;background:#fff8e1;">' +
               '<span class="info-label">Balance C/F (what is still owed)</span>' +
               '<span class="info-value">' + moneyOrDash(owedNow) + '</span></div>';
 
-      // --- Non-fee personal data ---
+      if (fee.overrides && fee.overrides.length) {
+        html += '<details style="margin-top:10px;">' +
+                '<summary style="cursor:pointer;font-size:11px;color:#c0392b;font-weight:700;">' +
+                'Removed from this learner (' + fee.overrides.length + ') — click to restore' +
+                '</summary><div style="padding:6px 0;">';
+        fee.overrides.forEach(function (o) {
+          html += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;">' +
+                  '<span>' + esc(o.item_key) + '</span>' +
+                  '<button type="button" class="btn btn-sm btn-secondary" style="font-size:9px;padding:1px 6px;" ' +
+                  'onclick="learnerFeeRestore(\'' + escAttr(pin) + '\',\'' + escAttr(o.item_key) + '\')">Restore</button>' +
+                  '</div>';
+        });
+        html += '</div></details>';
+      }
+
       html += infoRow('Blood Group / Genotype', d.blood_group);
       html += infoRow('Allergy', d.allergy);
       html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
       html += sourceNote;
       html += '</div></div>';
     }
+
     if (canC) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section C — History & Origin</div><div class="expandable-body">';
       html += infoRow('Class Before Admission', d.class_before_admission);
@@ -1005,7 +1021,44 @@
     html += '</div></div>';
     setHTML('modalContainer', html);
   }
+  // ================================================================
+  // Per-learner fee overrides — X (remove line) and restore.
+  // A row in fee_learner_item_overrides means the line is removed
+  // for that learner in that term. Deleting the row restores it.
+  // ================================================================
+  async function learnerFeeToggleOff(pin, itemKey) {
+    const r = await window.TIS.getLearnerByPin(pin);
+    if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); return; }
+    const at = await window.TIS.getActiveTerm();
+    if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); return; }
+    const term = at.data;
 
+    startLoader();
+    const w = await window.TIS.setLearnerItemOff(r.data.id, term.term_type, term.year, itemKey, null);
+    stopLoader();
+    if (!w || !w.ok) { showToast('Could not remove: ' + ((w && w.error) || 'unknown'), 'error'); return; }
+
+    showToast('Line removed for this learner.', 'success');
+    openLearnerViewModal(pin);
+  }
+  window.learnerFeeToggleOff = learnerFeeToggleOff;
+
+  async function learnerFeeRestore(pin, itemKey) {
+    const r = await window.TIS.getLearnerByPin(pin);
+    if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); return; }
+    const at = await window.TIS.getActiveTerm();
+    if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); return; }
+    const term = at.data;
+
+    startLoader();
+    const w = await window.TIS.deleteLearnerOverride(r.data.id, term.term_type, term.year, itemKey);
+    stopLoader();
+    if (!w || !w.ok) { showToast('Could not restore: ' + ((w && w.error) || 'unknown'), 'error'); return; }
+
+    showToast('Line restored for this learner.', 'success');
+    openLearnerViewModal(pin);
+  }
+  window.learnerFeeRestore = learnerFeeRestore;
   function closeLearnerModal() { closeModal(); }
   window.toggleKeysHelp = function () {
     const el = document.getElementById('lbKeysHelp');
@@ -1541,10 +1594,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       collectSetFeedback('Search failed: ' + ((r && r.error) || 'unknown'), 'error');
       return;
     }
-    const rows = (r.data || []).filter(function (l) {
-      const w = (l.date_of_withdrawal || '').toString().trim();
-      return !(w && w !== '' && w !== 'N/A');
-    });
+       const rows = (r.data || []).filter(function (l) { return !learnerIsInactive(l); });
 
     if (rows.length === 0) {
       collectSetFeedback('No active learner matched "' + q + '".', 'error');
@@ -4149,8 +4199,6 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       byClass[r.class_name] = r;
     });
 
-    // Column definitions: core fields + the seven extras that flow
-    // through to the prospect sheet and the report card fee notice.
     const FIELDS = [
       { key: 'tuition',           label: 'Tuition ₦' },
       { key: 'other_bills_major', label: 'Other Major ₦' },
@@ -4177,18 +4225,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     classes.forEach(function (c) {
       const row = byClass[c.name] || {};
-      const total =
-        Number(row.tuition || 0) +
-        Number(row.other_bills_major || 0) +
-        Number(row.other_bills_minor || 0) +
-        Number(row.books || 0) +
-        Number(row.registration_fee || 0) +
-        Number(row.uniform || 0) +
-        Number(row.sportswear || 0) +
-        Number(row.waist_coat || 0) +
-        Number(row.tie || 0) +
-        Number(row.extra_lesson || 0) +
-        Number(row.special_lesson || 0);
+      let total = 0;
+      FIELDS.forEach(function (f) { total += Number(row[f.key] || 0); });
       html += '<tr data-fee-class="' + escAttr(c.name) + '">';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;font-weight:600;' +
               'position:sticky;left:0;background:#fff;">' + esc(c.name) + '</td>';
@@ -4214,11 +4252,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '</tbody></table></div>';
     html += '<p style="font-size:11px;color:#666;margin-top:8px;">' +
             'Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year +
-            '. A blank field is treated as 0. The seven extras ' +
-            '(Registration → Special Lesson) feed the prospect sheet and the report card fee notice. ' +
+            '. A blank field is treated as 0. Registration Fee is not billed to enrolled learners — it is a prospect-only line. ' +
             'Individual learners can be adjusted in the Adjustments view.</p>';
     setHTML('feesContent', html);
   }
+
   async function feesSaveScheduleRow(className) {
     const ty = feesReadTermYear();
     const term = ty.term;
@@ -4260,7 +4298,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const totalEl = rowEl.querySelector('[data-total]');
     if (totalEl) {
       const total =
-        payload.tuition + payload.other_bills_major + payload.other_bills_minor + payload.books + payload.uniform + payload.sportswear + payload.waist_coat +
+        payload.tuition + payload.other_bills_major + payload.other_bills_minor + payload.books +
+        payload.uniform + payload.sportswear + payload.waist_coat +
         payload.tie + payload.extra_lesson + payload.special_lesson;
       totalEl.textContent = total.toLocaleString();
     }
@@ -4279,12 +4318,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       setHTML('feesContent', errorHTML('Could not load learners', learnerR && learnerR.error));
       return;
     }
-    const learners = (learnerR.data || [])
-      .filter(function (l) {
-        const w = (l.date_of_withdrawal || '').toString().trim();
-        return !(w && w !== '' && w !== 'N/A');
-      });
-
+     const learners = (learnerR.data || [])
+      .filter(function (l) { return !learnerIsInactive(l); });
     if (learners.length === 0) {
       setHTML('feesContent', emptyHTML('fa-users', 'No active learners'));
       return;
@@ -8742,9 +8777,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       // 1. Learners in this class.
       const learnersR = await window.TIS.listLearners();
       const learners = (learnersR && learnersR.ok ? learnersR.data : [])
-        .filter(function (l) {
-          const w = (l.date_of_withdrawal || '').toString().trim();
-          if (w && w !== '' && w !== 'N/A') return false;
+             .filter(function (l) {
+          if (learnerIsInactive(l)) return false;
           return l.class_name === cls;
         })
         .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
@@ -10150,10 +10184,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   async function bsFetchLearnersInScope(opts) {
     const r = await window.TIS.listLearners();
     if (!r || !r.ok) return [];
-    let list = (r.data || []).filter(function (l) {
-      const w = (l.date_of_withdrawal || '').toString().trim();
-      return !(w && w !== '' && w !== 'N/A');
-    });
+      let list = (r.data || []).filter(function (l) { return !learnerIsInactive(l); });
     if (opts.scope === 'class' && opts.classFilter) {
       list = list.filter(function (l) { return l.class_name === opts.classFilter; });
     } else if (opts.scope === 'student' && opts.singlePin) {
@@ -11173,11 +11204,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const canonicalSet = {};
       canonicalClasses.forEach(function (n) { canonicalSet[n] = true; });
 
-      const learners = (learnerR && learnerR.ok ? learnerR.data : [])
+          const learners = (learnerR && learnerR.ok ? learnerR.data : [])
         .filter(function (l) {
-          const w = (l.date_of_withdrawal || '').toString().trim();
-          if (w && w !== '' && w !== 'N/A') return false;
-          // Only include learners whose class is in the canonical list.
+          if (learnerIsInactive(l)) return false;
           return canonicalSet[l.class_name];
         });
 
