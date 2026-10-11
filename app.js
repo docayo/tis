@@ -985,7 +985,8 @@
 
     if (canB) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
-
+      html += infoRow('Previous Term Balance B/F',
+        prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
       html += feeLine('tuition',           'Current Term Tuition',   fee.tuition);
       html += feeLine('other_bills_major', 'Other Bills Major',      fee.other_bills_major);
       html += feeLine('other_bills_minor', 'Other Bills Minor',      fee.other_bills_minor);
@@ -2591,23 +2592,42 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   async function openPartPaymentModal(learnerId) {
     closeModal();
     startLoader();
-    const r = await window.TIS.getLearnerTermForActive(learnerId);
+    const termR = await window.TIS.getLearnerTermForActive(learnerId);
     stopLoader();
-    if (!r || !r.ok || !r.data.term) { showToast('No active term set', 'error'); return; }
-    const term = r.data.term;
-    const row  = r.data.row;
+    if (!termR || !termR.ok || !termR.data.term) { showToast('No active term set', 'error'); return; }
+
+    const term    = termR.data.term;
+    const termRow = termR.data.row;
+
+    const learner = (State.cachedLearners || []).find(function (l) { return l.id === learnerId; }) || null;
+    const fee = await resolveLearnerFeePicture(learner, termRow, term, term.year);
+
+    let prevTermRow = null;
+    const prev = previousTermOf(term.term_type, term.year);
+    if (prev && learner) {
+      try {
+        const prevR = await window.TIS.getLearnerTermFor(learner.id, prev.term_type, prev.year);
+        if (prevR && prevR.ok) prevTermRow = prevR.data;
+      } catch (e) { /* silent */ }
+    }
+
+    const bfForDisplay = prevTermRow ? parseNum(prevTermRow.balance_cf) : (fee.balance_bf || 0);
+    const netBills     = fee.net_bills || 0;
+    const paidSoFar    = fee.total_part_payment || 0;
+    const balanceNow   = netBills + bfForDisplay - paidSoFar;
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)closeLearnerModal()">';
-    html += '<div class="modal-box" style="max-width:440px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-box" style="max-width:480px;" onclick="event.stopPropagation()">';
     html += '<div class="modal-header"><h2>Update Payment</h2><button class="close-btn" onclick="closeLearnerModal()">&times;</button></div>';
     html += '<p style="font-size:12px;margin:0 0 10px;">' + esc(term.label) + '</p>';
-    if (row) {
-      html += '<p style="font-size:12px;margin:0 0 10px;">' +
-              'Bill: ' + moneyOrDash(row.bill) +
-              ' · Other: ' + moneyOrDash(row.other_bill) +
-              ' · Paid: ' + moneyOrDash(row.total_part_payment) +
-              ' · Balance: ' + moneyOrDash(row.balance_cf) + '</p>';
-    }
+
+    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px;">';
+    html += '<div>Net Bills: <b>' + moneyOrDash(netBills) + '</b></div>';
+    html += '<div>Balance B/F: <b>' + moneyOrDash(bfForDisplay) + '</b></div>';
+    html += '<div>Paid so far: <b>' + moneyOrDash(paidSoFar) + '</b></div>';
+    html += '<div style="border-top:1px solid #c8e6c9;margin-top:6px;padding-top:6px;">Balance now: <b>' + moneyOrDash(balanceNow) + '</b></div>';
+    html += '</div>';
+
     html += '<div class="form-group"><label>Amount Paid (₦)</label><input id="pp_amount" type="number" step="0.01" placeholder="0.00"></div>';
     html += '<div class="form-group"><label>Date</label><input id="pp_date" type="date" value="' + new Date().toISOString().slice(0,10) + '"></div>';
     html += '<div class="form-group"><label>Mode</label><select id="pp_mode"><option>Cash</option><option>Transfer</option><option>POS</option><option>Cheque</option></select></div>';
