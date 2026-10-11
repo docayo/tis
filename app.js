@@ -2488,11 +2488,6 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (canB) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secB" checked> Section B — Fees</label>';
     if (canC) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secC" checked> Section C — History & Origin</label>';
     html += '</div>';
-    html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:10px;">';
-    html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Paper</div>';
-    html += '<label style="display:block;padding:4px 0;"><input type="radio" name="pp_paper" value="A4" checked> A4 (full page)</label>';
-    html += '<label style="display:block;padding:4px 0;"><input type="radio" name="pp_paper" value="80mm"> POS / Thermal (80mm)</label>';
-    html += '</div>';
     html += '<div style="text-align:right;margin-top:12px;">';
     html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
     html += '<button class="btn btn-gold" onclick="printLearnerCard(\'' + escAttr(pin) + '\')">Print</button>';
@@ -2507,9 +2502,6 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const wantA = secA ? secA.checked : true;
     const wantB = secB ? secB.checked : isAdmin();
     const wantC = secC ? secC.checked : isSuperAdmin();
-    const paperEl = document.querySelector('input[name="pp_paper"]:checked');
-    const paper = paperEl ? paperEl.value : 'A4';
-
     startLoader();
     const r = await window.TIS.getLearnerByPin(pin);
     const termsR = r && r.ok && r.data ? await window.TIS.getLearnerTermForActive(r.data.id) : null;
@@ -2538,13 +2530,6 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
-
-    const cssA4 = 'body{font-family:Arial;padding:24px;color:#111;}' +
-                  '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0b6623;padding-bottom:10px;}' +
-                  '.hdr .mid{text-align:center;flex:1;}h1{color:#0b6623;margin:0 0 4px;font-size:22px;}' +
-                  'h2{margin:14px 0 6px;color:#0b6623;font-size:15px;border-bottom:1px solid #c8e6c9;padding-bottom:4px;}' +
-                  '.info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px;}' +
-                  '.info-label{color:#666;}.info-value{font-weight:600;}';
 
     // 80mm thermal (RawBT / MPT-11_309F).
     // Printable width on an 80mm head is ~72mm — do NOT use 80mm here
@@ -2576,21 +2561,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<!doctype html><html><head><meta charset="utf-8">' +
                '<title>' + esc(d.name) + '</title>' +
-               '<style>' + (paper === '80mm' ? css80 : cssA4) + '</style>' +
+                              '<style>' + css80 + '</style>' +
                '</head><body>';
 
     // ---------- Header ----------
-    html += '<div class="hdr">';
-    if (paper === 'A4') {
-      html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:60px;">';
-      html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>' +
-              '<div class="sub" style="font-style:italic;color:#666;">Scientia est potentia</div></div>';
-      html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
-    } else {
-      // 80mm: text-only, big, centred. No logos — they waste vertical paper.
-      html += '<h1>THE IDEAL SCHOOLS</h1>';
-      html += '<div class="sub">Scientia est potentia</div>';
-    }
+     html += '<div class="hdr">';
+    html += '<h1>THE IDEAL SCHOOLS</h1>';
+    html += '<div class="sub">Scientia est potentia</div>';
     html += '</div>';
 
     // ---------- Who ----------
