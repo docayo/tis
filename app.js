@@ -4114,7 +4114,6 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       { key: 'other_bills_major', label: 'Other Major ₦' },
       { key: 'other_bills_minor', label: 'Other Minor ₦' },
       { key: 'books',             label: 'Books ₦' },
-      { key: 'registration_fee',  label: 'Registration ₦' },
       { key: 'uniform',           label: 'Uniform ₦' },
       { key: 'sportswear',        label: 'Sportswear ₦' },
       { key: 'waist_coat',        label: 'Waist Coat ₦' },
@@ -4199,7 +4198,6 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       other_bills_major: get('other_bills_major'),
       other_bills_minor: get('other_bills_minor'),
       books:             get('books'),
-      registration_fee:  get('registration_fee'),
       uniform:           get('uniform'),
       sportswear:        get('sportswear'),
       waist_coat:        get('waist_coat'),
@@ -4220,8 +4218,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const totalEl = rowEl.querySelector('[data-total]');
     if (totalEl) {
       const total =
-        payload.tuition + payload.other_bills_major + payload.other_bills_minor + payload.books +
-        payload.registration_fee + payload.uniform + payload.sportswear + payload.waist_coat +
+        payload.tuition + payload.other_bills_major + payload.other_bills_minor + payload.books + payload.uniform + payload.sportswear + payload.waist_coat +
         payload.tie + payload.extra_lesson + payload.special_lesson;
       totalEl.textContent = total.toLocaleString();
     }
