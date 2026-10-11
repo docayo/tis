@@ -1136,7 +1136,7 @@
         newTotal += v;
       }
       patch.total_part_payment = String(newTotal);
-            const newBalance =
+                  const newBalance =
         num(row.balance_bf)
         + num(row.tuition)
         + num(row.other_bills_major)
