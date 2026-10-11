@@ -167,7 +167,7 @@
   function applyPermissionsToUI() {
    document.querySelectorAll('.nav-tab').forEach(btn => {
   const mod = btn.dataset.tab;
-  if (mod === 'prospects' || mod === 'collectibles') {
+   if (mod === 'prospects' || mod === 'collectibles' || mod === 'cbt') {
     btn.classList.remove('hidden');
     return;
   }
