@@ -987,6 +987,140 @@ Show Active
   <div class="page-loader"><p>Loading staff and learners…</p></div>
 </div>
 </div>
+<!-- ============ CBT ============ -->
+<div class="module-view hidden" id="module-cbt">
+  <div class="module-title"><i class="fas fa-laptop-code"></i> CBT — Question Bank &amp; Timetable</div>
+  <div class="module-subtitle">Upload questions, schedule sittings, monitor exam readiness. The exam itself runs on the LAN server.</div>
+
+  <div class="card-bg" style="border-left:4px solid #0d4d26;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div>
+        <div style="font-weight:800;color:#0d4d26;font-size:15px;"><i class="fas fa-upload"></i> Upload Questions</div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Pick the class, subject, paper, term and year. Then choose the Excel file. The subject must already be assigned to the class under <b>Classes → Manage Subjects</b>.</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-sm btn-secondary" type="button" id="btnCbtDownloadTemplate">
+          <i class="fas fa-download"></i> Template
+        </button>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Class</label>
+        <select id="cbtClass"><option value="">-- Select --</option></select>
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <select id="cbtSubject"><option value="">-- Select class first --</option></select>
+      </div>
+      <div class="form-group">
+        <label>Paper</label>
+        <select id="cbtPaper">
+          <option value="">-- Select --</option>
+          <option value="A">Paper A — MCQ</option>
+          <option value="B">Paper B — One-word</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Term</label>
+        <select id="cbtTerm">
+          <option value="1st">1st Term</option>
+          <option value="2nd">2nd Term</option>
+          <option value="3rd">3rd Term</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Year</label>
+        <input type="text" id="cbtYear" value="2026">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <input type="file" id="cbtUploadFile" accept=".xlsx,.xls" style="display:none">
+      <button class="btn btn-success" type="button" id="btnCbtUpload">
+        <i class="fas fa-file-import"></i> Upload Excel
+      </button>
+      <button class="btn btn-secondary" type="button" id="btnCbtRefreshBank">
+        <i class="fas fa-sync-alt"></i> Refresh Bank
+      </button>
+    </div>
+
+    <div id="cbtUploadFeedback" style="margin-top:10px;font-size:12px;color:#666;"></div>
+  </div>
+
+  <div class="card-bg" id="cbtBankPanel" style="margin-top:12px;">
+    <div class="page-loader"><p>Loading question bank…</p></div>
+  </div>
+
+  <div class="card-bg" style="margin-top:12px;border-left:4px solid #d4a017;">
+    <div style="font-weight:800;color:#8b6f1f;font-size:15px;margin-bottom:6px;">
+      <i class="fas fa-clock"></i> Timetable
+    </div>
+    <p style="font-size:12px;color:#555;margin:0 0 10px;">
+      Enter the date and time each paper opens. The LAN server uses this to unlock papers automatically.
+      Duration is per paper, in minutes.
+    </p>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Class</label>
+        <select id="cbtTtClass"><option value="">-- Select --</option></select>
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <select id="cbtTtSubject"><option value="">-- Select class first --</option></select>
+      </div>
+      <div class="form-group">
+        <label>Paper</label>
+        <select id="cbtTtPaper">
+          <option value="">-- Select --</option>
+          <option value="A">Paper A — MCQ</option>
+          <option value="B">Paper B — One-word</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Term</label>
+        <select id="cbtTtTerm">
+          <option value="1st">1st Term</option>
+          <option value="2nd">2nd Term</option>
+          <option value="3rd">3rd Term</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Year</label>
+        <input type="text" id="cbtTtYear" value="2026">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Opens at</label>
+        <input type="datetime-local" id="cbtTtOpens">
+      </div>
+      <div class="form-group">
+        <label>Duration (minutes)</label>
+        <input type="number" id="cbtTtDuration" value="45">
+      </div>
+      <div class="form-group" style="flex:0 0 auto;align-self:flex-end;">
+        <button class="btn btn-primary" type="button" id="btnCbtTtSave">
+          <i class="fas fa-save"></i> Save
+        </button>
+      </div>
+    </div>
+
+    <div id="cbtTtFeedback" style="margin-top:8px;font-size:12px;color:#666;"></div>
+
+    <div id="cbtTtList" style="margin-top:12px;"></div>
+  </div>
+
+  <div class="card-bg" style="margin-top:12px;">
+    <div style="font-weight:800;color:#0d4d26;font-size:14px;margin-bottom:8px;">
+      <i class="fas fa-history"></i> Upload History
+    </div>
+    <div id="cbtUploadHistory"></div>
+  </div>
+</div>
 
 </div>
 
