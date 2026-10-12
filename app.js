@@ -743,12 +743,20 @@
     // ---- LOCKED: learner_terms is the receipt ----
        // ---- LOCKED: learner_terms is the receipt ----
     if (locked) {
-      const tuition     = parseNum(termRow.tuition);
+        const tuition     = parseNum(termRow.tuition);
       const scholarship = parseNum(termRow.scholarship);
       const otherMajor  = parseNum(termRow.other_bills_major);
       const otherMinor  = parseNum(termRow.other_bills_minor);
       const books       = parseNum(termRow.books);
-      const netBills    = tuition + otherMajor + otherMinor + books;
+      let   netBills    = tuition + otherMajor + otherMinor + books;
+
+      // Fallback: if the four columns are zero but the snapshot has a
+      // stored bill (from the new recordPartPayment), use that. This
+      // covers rows written before the four columns were populated.
+      if (netBills === 0) {
+        const storedBill = parseNum(termRow.bill) + parseNum(termRow.other_bill);
+        if (storedBill > 0) netBills = storedBill;
+      }
 
       // Fallback: if this snapshot was created before the prior term's
       // C/F was known, add it back now.
