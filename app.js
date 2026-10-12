@@ -821,7 +821,6 @@
     };
   }
   window.resolveLearnerFeePicture = resolveLearnerFeePicture;
-  window.resolveLearnerFeePicture = resolveLearnerFeePicture;
   // ================================================================
   // View modal — three-tier permission gating
   //   A: everyone
