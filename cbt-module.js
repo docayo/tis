@@ -85,7 +85,8 @@
       loadBankSummary();
       loadUploadHistory();
     });
-
+    const bundleBtn = $('btnCbtDownloadBundle');
+    if (bundleBtn) bundleBtn.addEventListener('click', downloadExamBundle);
     // Class → Subject cascades for both panels
     const clsBank = $('cbtClass');
     const clsTt   = $('cbtTtClass');
@@ -597,7 +598,172 @@
     html += '</tbody></table></div>';
     host.innerHTML = html;
   }
+  // ================================================================
+  // Bundle generator — builds bundle.json and downloads it.
+  // One click, no console needed.
+  // ================================================================
+  async function downloadExamBundle() {
+    const btn = $('btnCbtDownloadBundle');
+    const fb = $('cbtUploadFeedback');
 
+    const setFeedback = function (msg, kind) {
+      if (!fb) return;
+      fb.style.color = (kind === 'error') ? '#c0392b' : (kind === 'ok' ? '#0d4d26' : '#666');
+      fb.textContent = msg || '';
+    };
+
+    if (btn) btn.disabled = true;
+    setFeedback('Building bundle…', 'info');
+    loader(true);
+
+    try {
+      // 1. Active term
+      const at = await window.TIS.getActiveTerm();
+      if (!at || !at.ok || !at.data) {
+        setFeedback('No active term set. Set one in the Terms tab first.', 'error');
+        return;
+      }
+      const activeTerm = at.data;
+
+      // 2. Questions — newest session per class+subject+paper
+      const qR = await window.TIS.listCbtQuestions({});
+      if (!qR || !qR.ok) {
+        setFeedback('Could not fetch questions: ' + ((qR && qR.error) || 'unknown'), 'error');
+        return;
+      }
+      const allQuestions = qR.data || [];
+
+      const byKey = {};
+      allQuestions.forEach(function (q) {
+        const key = q.class_level + '|' + q.subject_code + '|' + q.paper;
+        if (!byKey[key]) byKey[key] = { rows: [], newestYear: 0 };
+        byKey[key].rows.push(q);
+        if (Number(q.year) > byKey[key].newestYear) {
+          byKey[key].newestYear = Number(q.year);
+        }
+      });
+
+      const pickedQuestions = [];
+      Object.keys(byKey).forEach(function (k) {
+        byKey[k].rows.forEach(function (q) {
+          if (Number(q.year) === byKey[k].newestYear) {
+            pickedQuestions.push(q);
+          }
+        });
+      });
+
+      const questionsOut = pickedQuestions.map(function (q) {
+        return {
+          id: q.id,
+          class_level: q.class_level,
+          subject_code: q.subject_code,
+          paper: q.paper,
+          term_type: q.term_type,
+          year: q.year,
+          serial_no: q.serial_no,
+          question_type: q.question_type,
+          question_text: q.question_text,
+          option_a: q.option_a || null,
+          option_b: q.option_b || null,
+          option_c: q.option_c || null,
+          option_d: q.option_d || null,
+          correct_option: q.correct_option || null,
+          correct_answer: q.correct_answer || null,
+          question_mark: q.question_mark || 1,
+          illustration: q.illustration || null,
+          explanation: q.explanation || null
+        };
+      });
+
+      // 3. Learners — every active learner
+      const lR = await window.TIS.listLearners();
+      if (!lR || !lR.ok) {
+        setFeedback('Could not fetch learners: ' + ((lR && lR.error) || 'unknown'), 'error');
+        return;
+      }
+      const activeLearners = (lR.data || []).filter(function (l) {
+        return !window.learnerIsInactive || !window.learnerIsInactive(l);
+      });
+      const learnersOut = activeLearners.map(function (l) {
+        return { pin: l.pin, name: l.name, class_name: l.class_name };
+      });
+
+      // 4. Timetable — active term only
+      const tR = await window.TIS.listCbtTimetable();
+      if (!tR || !tR.ok) {
+        setFeedback('Could not fetch timetable: ' + ((tR && tR.error) || 'unknown'), 'error');
+        return;
+      }
+      const activeTT = (tR.data || []).filter(function (t) {
+        return t.term_type === activeTerm.term_type &&
+               Number(t.year) === Number(activeTerm.year);
+      });
+      const timetableOut = activeTT.map(function (t) {
+        return {
+          class_level: t.class_level,
+          subject_code: t.subject_code,
+          paper: t.paper,
+          term_type: t.term_type,
+          year: t.year,
+          opens_at: t.opens_at,
+          duration_minutes: t.duration_minutes
+        };
+      });
+
+      // 5. Build bundle
+      const bundle = {
+        generated_at: new Date().toISOString(),
+        generated_by: sessionName(),
+        term: {
+          term_type: activeTerm.term_type,
+          year: activeTerm.year,
+          label: activeTerm.label
+        },
+        learners: learnersOut,
+        questions: questionsOut,
+        timetable: timetableOut
+      };
+
+      const jsonStr = JSON.stringify(bundle, null, 2);
+      const kb = (jsonStr.length / 1024).toFixed(1);
+
+      // 6. Download
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = 'bundle_' + activeTerm.term_type + '_' + activeTerm.year + '_' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+
+      const summary =
+        'Bundle ready (' + kb + ' KB) · ' +
+        learnersOut.length + ' learners · ' +
+        questionsOut.length + ' questions · ' +
+        timetableOut.length + ' timetable entries. ' +
+        'Copy the downloaded file to C:\\TIS-CBT\\data\\bundle.json on the LAN server.';
+
+      setFeedback(summary, 'ok');
+      toast('Exam bundle downloaded.', 'success');
+
+      if (questionsOut.length === 0) {
+        toast('Warning: no questions in the bundle.', 'warning');
+      }
+      if (timetableOut.length === 0) {
+        toast('Warning: no timetable entries. Every paper will be locked.', 'warning');
+      }
+    } catch (err) {
+      setFeedback('Unexpected error: ' + ((err && err.message) || err), 'error');
+      console.error('[CBT bundle]', err);
+    } finally {
+      if (btn) btn.disabled = false;
+      loader(false);
+    }
+  }
+  window.cbtDownloadExamBundle = downloadExamBundle;
   // ================================================================
   // Auto-init on switchTab (app.js will call initCbtTab)
   // ================================================================
