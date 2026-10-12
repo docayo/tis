@@ -85,8 +85,11 @@
       loadBankSummary();
       loadUploadHistory();
     });
-    const bundleBtn = $('btnCbtDownloadBundle');
+       const bundleBtn = $('btnCbtDownloadBundle');
     if (bundleBtn) bundleBtn.addEventListener('click', downloadExamBundle);
+
+    const exportBtn = $('btnCbtExportLearners');
+    if (exportBtn) exportBtn.addEventListener('click', exportLearnersForCbt);
     // Class → Subject cascades for both panels
     const clsBank = $('cbtClass');
     const clsTt   = $('cbtTtClass');
@@ -840,7 +843,99 @@
       });
     }
   }
+  // ================================================================
+  // Export Learners for CBT — produces one Excel with two sheets:
+  //   1. Learners — PIN, Name, Gender, Class
+  //   2. Classes  — Class, Slot, Subject Code, Subject Name
+  // The LAN server imports both in one upload.
+  // ================================================================
+  async function exportLearnersForCbt() {
+    if (typeof XLSX === 'undefined') {
+      toast('Excel library not loaded.', 'error');
+      return;
+    }
+    const btn = $('btnCbtExportLearners');
+    const fb  = $('cbtUploadFeedback');
+    const setFeedback = function (msg, kind) {
+      if (!fb) return;
+      fb.style.color = (kind === 'error') ? '#c0392b' : (kind === 'ok' ? '#0d4d26' : '#666');
+      fb.textContent = msg || '';
+    };
 
+    if (btn) btn.disabled = true;
+    setFeedback('Reading learners and classes…', 'info');
+    loader(true);
+
+    try {
+      const [lR, cR, csR, sR] = await Promise.all([
+        window.TIS.listLearners(),
+        window.TIS.listClasses(),
+        window.TIS.listSubjects(),
+        // Placeholder to keep the four-thunk structure; empty for now
+        Promise.resolve({ ok: true, data: [] })
+      ]);
+      if (!lR || !lR.ok) { setFeedback('Could not read learners.', 'error'); return; }
+      if (!cR || !cR.ok) { setFeedback('Could not read classes.', 'error'); return; }
+      if (!sR || !sR.ok) { setFeedback('Could not read subjects.', 'error'); return; }
+
+      const subjectsMap = {};
+      (sR.data || []).forEach(function (s) { subjectsMap[s.code] = s.display_name; });
+
+      const learners = (lR.data || []).filter(function (l) {
+        return !window.learnerIsInactive || !window.learnerIsInactive(l);
+      });
+      const classes = (cR.data || []).filter(function (c) { return c.is_active !== false; });
+
+      // Sheet 1 — Learners
+      const learnerRows = [['PIN', 'Name', 'Gender', 'Class']];
+      learners.forEach(function (l) {
+        learnerRows.push([l.pin || '', l.name || '', l.gender || '', l.class_name || '']);
+      });
+
+      // Sheet 2 — Classes and their subjects.
+      // Reads each class's slot map from class_subjects.
+      const classRows = [['Class', 'Sort Order', 'Slot', 'Subject Code', 'Subject Name']];
+      for (const c of classes) {
+        const cs = await window.TIS.getClassSubjects(c.name);
+        const slots = (cs && cs.ok ? cs.data : []) || [];
+        if (slots.length === 0) {
+          classRows.push([c.name, c.sort_order || 9999, '', '', '']);
+          continue;
+        }
+        slots.forEach(function (s) {
+          classRows.push([
+            c.name,
+            c.sort_order || 9999,
+            s.slot,
+            s.subject_code,
+            subjectsMap[s.subject_code] || s.subject_code
+          ]);
+        });
+      }
+
+      const wb = XLSX.utils.book_new();
+      const wsL = XLSX.utils.aoa_to_sheet(learnerRows);
+      const wsC = XLSX.utils.aoa_to_sheet(classRows);
+      XLSX.utils.book_append_sheet(wb, wsL, 'Learners');
+      XLSX.utils.book_append_sheet(wb, wsC, 'Classes');
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, 'TIS_CBT_Learners_' + stamp + '.xlsx');
+
+      setFeedback(
+        'Exported ' + learners.length + ' learners and ' + classes.length +
+        ' classes. Copy the file to the LAN server and open Learners → Import Learner File.',
+        'ok'
+      );
+      toast('Learners file downloaded.', 'success');
+    } catch (err) {
+      setFeedback('Unexpected error: ' + ((err && err.message) || err), 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+      loader(false);
+    }
+  }
+  window.exportLearnersForCbt = exportLearnersForCbt;
   // ================================================================
   // Actual download, given a confirmed context
   // ================================================================
