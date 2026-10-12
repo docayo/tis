@@ -602,9 +602,18 @@
   // Bundle generator — builds bundle.json and downloads it.
   // One click, no console needed.
   // ================================================================
+  // ================================================================
+  // Bundle generator — with pre-flight check.
+  //   1. Reads the bank and the timetable.
+  //   2. Builds a coverage grid: every (class, subject, paper)
+  //      combination that either has a timetable entry or has
+  //      questions in the bank.
+  //   3. Shows a modal so the operator can confirm.
+  //   4. On confirm, builds bundle.json and downloads it.
+  // ================================================================
   async function downloadExamBundle() {
     const btn = $('btnCbtDownloadBundle');
-    const fb = $('cbtUploadFeedback');
+    const fb  = $('cbtUploadFeedback');
 
     const setFeedback = function (msg, kind) {
       if (!fb) return;
@@ -613,11 +622,11 @@
     };
 
     if (btn) btn.disabled = true;
-    setFeedback('Building bundle…', 'info');
+    setFeedback('Reading question bank and timetable…', 'info');
     loader(true);
 
     try {
-      // 1. Active term
+      // ---- 1. Active term ----
       const at = await window.TIS.getActiveTerm();
       if (!at || !at.ok || !at.data) {
         setFeedback('No active term set. Set one in the Terms tab first.', 'error');
@@ -625,7 +634,7 @@
       }
       const activeTerm = at.data;
 
-      // 2. Questions — newest session per class+subject+paper
+      // ---- 2. All questions ----
       const qR = await window.TIS.listCbtQuestions({});
       if (!qR || !qR.ok) {
         setFeedback('Could not fetch questions: ' + ((qR && qR.error) || 'unknown'), 'error');
@@ -633,6 +642,18 @@
       }
       const allQuestions = qR.data || [];
 
+      // ---- 3. All timetable for the active term ----
+      const tR = await window.TIS.listCbtTimetable();
+      if (!tR || !tR.ok) {
+        setFeedback('Could not fetch timetable: ' + ((tR && tR.error) || 'unknown'), 'error');
+        return;
+      }
+      const activeTT = (tR.data || []).filter(function (t) {
+        return t.term_type === activeTerm.term_type &&
+               Number(t.year) === Number(activeTerm.year);
+      });
+
+      // ---- 4. Group questions by (class, subject, paper), newest session wins ----
       const byKey = {};
       allQuestions.forEach(function (q) {
         const key = q.class_level + '|' + q.subject_code + '|' + q.paper;
@@ -652,30 +673,40 @@
         });
       });
 
-      const questionsOut = pickedQuestions.map(function (q) {
-        return {
-          id: q.id,
-          class_level: q.class_level,
-          subject_code: q.subject_code,
-          paper: q.paper,
-          term_type: q.term_type,
-          year: q.year,
-          serial_no: q.serial_no,
-          question_type: q.question_type,
-          question_text: q.question_text,
-          option_a: q.option_a || null,
-          option_b: q.option_b || null,
-          option_c: q.option_c || null,
-          option_d: q.option_d || null,
-          correct_option: q.correct_option || null,
-          correct_answer: q.correct_answer || null,
-          question_mark: q.question_mark || 1,
-          illustration: q.illustration || null,
-          explanation: q.explanation || null
-        };
+      // ---- 5. Build the coverage grid ----
+      // Every (class, subject, paper) that appears in either
+      // the timetable or the bank gets one row.
+      const coverage = {};
+      activeTT.forEach(function (t) {
+        const k = t.class_level + '|' + t.subject_code + '|' + t.paper;
+        if (!coverage[k]) coverage[k] = { cls: t.class_level, sub: t.subject_code, paper: t.paper };
+        coverage[k].scheduled = true;
+        coverage[k].opens_at = t.opens_at;
+      });
+      Object.keys(byKey).forEach(function (k) {
+        const parts = k.split('|');
+        if (!coverage[k]) coverage[k] = { cls: parts[0], sub: parts[1], paper: parts[2] };
+        coverage[k].questionCount = byKey[k].rows.filter(function (q) {
+          return Number(q.year) === byKey[k].newestYear;
+        }).length;
       });
 
-      // 3. Learners — every active learner
+      const coverageRows = Object.keys(coverage).map(function (k) {
+        const c = coverage[k];
+        c.status = (c.scheduled && c.questionCount > 0) ? 'ready'
+                 : (c.scheduled && (!c.questionCount || c.questionCount === 0)) ? 'missing'
+                 : 'no_timetable';
+        return c;
+      });
+
+      // Sort by class, then subject, then paper
+      coverageRows.sort(function (a, b) {
+        if (a.cls !== b.cls) return a.cls.localeCompare(b.cls);
+        if (a.sub !== b.sub) return a.sub.localeCompare(b.sub);
+        return a.paper.localeCompare(b.paper);
+      });
+
+      // ---- 6. Count learners ----
       const lR = await window.TIS.listLearners();
       if (!lR || !lR.ok) {
         setFeedback('Could not fetch learners: ' + ((lR && lR.error) || 'unknown'), 'error');
@@ -684,77 +715,17 @@
       const activeLearners = (lR.data || []).filter(function (l) {
         return !window.learnerIsInactive || !window.learnerIsInactive(l);
       });
-      const learnersOut = activeLearners.map(function (l) {
-        return { pin: l.pin, name: l.name, class_name: l.class_name };
+
+      // ---- 7. Show the pre-flight modal ----
+      loader(false);
+      showBundlePreflightModal({
+        term: activeTerm,
+        learners: activeLearners,
+        questions: pickedQuestions,
+        timetable: activeTT,
+        coverage: coverageRows,
+        setFeedback: setFeedback
       });
-
-      // 4. Timetable — active term only
-      const tR = await window.TIS.listCbtTimetable();
-      if (!tR || !tR.ok) {
-        setFeedback('Could not fetch timetable: ' + ((tR && tR.error) || 'unknown'), 'error');
-        return;
-      }
-      const activeTT = (tR.data || []).filter(function (t) {
-        return t.term_type === activeTerm.term_type &&
-               Number(t.year) === Number(activeTerm.year);
-      });
-      const timetableOut = activeTT.map(function (t) {
-        return {
-          class_level: t.class_level,
-          subject_code: t.subject_code,
-          paper: t.paper,
-          term_type: t.term_type,
-          year: t.year,
-          opens_at: t.opens_at,
-          duration_minutes: t.duration_minutes
-        };
-      });
-
-      // 5. Build bundle
-      const bundle = {
-        generated_at: new Date().toISOString(),
-        generated_by: sessionName(),
-        term: {
-          term_type: activeTerm.term_type,
-          year: activeTerm.year,
-          label: activeTerm.label
-        },
-        learners: learnersOut,
-        questions: questionsOut,
-        timetable: timetableOut
-      };
-
-      const jsonStr = JSON.stringify(bundle, null, 2);
-      const kb = (jsonStr.length / 1024).toFixed(1);
-
-      // 6. Download
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const stamp = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = 'bundle_' + activeTerm.term_type + '_' + activeTerm.year + '_' + stamp + '.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-
-      const summary =
-        'Bundle ready (' + kb + ' KB) · ' +
-        learnersOut.length + ' learners · ' +
-        questionsOut.length + ' questions · ' +
-        timetableOut.length + ' timetable entries. ' +
-        'Copy the downloaded file to C:\\TIS-CBT\\data\\bundle.json on the LAN server.';
-
-      setFeedback(summary, 'ok');
-      toast('Exam bundle downloaded.', 'success');
-
-      if (questionsOut.length === 0) {
-        toast('Warning: no questions in the bundle.', 'warning');
-      }
-      if (timetableOut.length === 0) {
-        toast('Warning: no timetable entries. Every paper will be locked.', 'warning');
-      }
     } catch (err) {
       setFeedback('Unexpected error: ' + ((err && err.message) || err), 'error');
       console.error('[CBT bundle]', err);
@@ -764,6 +735,207 @@
     }
   }
   window.cbtDownloadExamBundle = downloadExamBundle;
+
+  // ================================================================
+  // Pre-flight modal
+  // ================================================================
+  function showBundlePreflightModal(ctx) {
+    const term = ctx.term;
+    const coverage = ctx.coverage;
+    const readyCount   = coverage.filter(function (c) { return c.status === 'ready'; }).length;
+    const missingCount = coverage.filter(function (c) { return c.status === 'missing'; }).length;
+    const noTtCount    = coverage.filter(function (c) { return c.status === 'no_timetable'; }).length;
+
+    const statusChip = function (s) {
+      if (s === 'ready') return '<span style="background:#d4edda;color:#0d4d26;font-size:10px;font-weight:800;padding:2px 8px;border-radius:4px;">READY</span>';
+      if (s === 'missing') return '<span style="background:#f8d7da;color:#721c24;font-size:10px;font-weight:800;padding:2px 8px;border-radius:4px;">MISSING QUESTIONS</span>';
+      if (s === 'no_timetable') return '<span style="background:#fff3cd;color:#8b6f1f;font-size:10px;font-weight:800;padding:2px 8px;border-radius:4px;">NO TIMETABLE</span>';
+      return '';
+    };
+
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
+    html += '<div class="modal-box wide" style="max-width:820px;max-height:88vh;overflow-y:auto;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>Exam Bundle — Pre-flight Check</h2>' +
+            '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
+
+    // Summary bar
+    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">';
+    html += '<div style="background:#e8f5e9;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">Ready</div><div style="font-size:22px;font-weight:900;color:#0d4d26;">' + readyCount + '</div></div>';
+    html += '<div style="background:#fff5f5;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">Missing questions</div><div style="font-size:22px;font-weight:900;color:#c0392b;">' + missingCount + '</div></div>';
+    html += '<div style="background:#fff8e1;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">No timetable</div><div style="font-size:22px;font-weight:900;color:#8b6f1f;">' + noTtCount + '</div></div>';
+    html += '<div style="background:#f0f0f0;border-radius:8px;padding:10px;"><div style="font-size:11px;color:#666;">Learners</div><div style="font-size:22px;font-weight:900;color:#555;">' + ctx.learners.length + '</div></div>';
+    html += '</div>';
+
+    html += '<div style="font-size:13px;color:#333;margin-bottom:12px;">';
+    html += 'Term: <b>' + esc(term.label) + '</b> · ';
+    html += 'Questions: <b>' + ctx.questions.length + '</b> · ';
+    html += 'Timetable entries: <b>' + ctx.timetable.length + '</b>';
+    html += '</div>';
+
+    // Coverage table
+    if (coverage.length > 0) {
+      html += '<div style="max-height:340px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead style="position:sticky;top:0;background:#0d4d26;color:#fff;">';
+      html += '<tr>' +
+              '<th style="text-align:left;padding:6px;">Class</th>' +
+              '<th style="text-align:left;padding:6px;">Subject</th>' +
+              '<th style="padding:6px;text-align:center;">Paper</th>' +
+              '<th style="padding:6px;text-align:center;">Questions</th>' +
+              '<th style="padding:6px;text-align:center;">Scheduled</th>' +
+              '<th style="padding:6px;text-align:center;">Status</th>' +
+              '</tr></thead><tbody>';
+      coverage.forEach(function (c) {
+        const q = c.questionCount || 0;
+        const sched = c.scheduled ? (c.opens_at ? new Date(c.opens_at).toLocaleDateString() : 'yes') : '—';
+        html += '<tr>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(c.cls) + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(c.sub) + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(c.paper) + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + q + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(sched) + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + statusChip(c.status) + '</td>' +
+              '</tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div style="background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:12px;color:#721c24;font-size:13px;">';
+      html += '<b>Nothing to bundle.</b> No questions uploaded and no timetable entries for this term.';
+      html += '</div>';
+    }
+
+    // Warning
+    if (missingCount > 0) {
+      html += '<div style="margin-top:12px;background:#fff5f5;border-left:4px solid #c0392b;padding:10px 12px;border-radius:6px;font-size:12px;color:#721c24;">';
+      html += '<b>' + missingCount + ' paper(s) are scheduled but have no questions.</b> ';
+      html += 'The LAN server will refuse to start those papers. ';
+      html += 'Upload the missing questions, or remove the timetable entry.';
+      html += '</div>';
+    }
+    if (noTtCount > 0) {
+      html += '<div style="margin-top:12px;background:#fff8e1;border-left:4px solid #d4a017;padding:10px 12px;border-radius:6px;font-size:12px;color:#8b6f1f;">';
+      html += '<b>' + noTtCount + ' paper(s) have questions but no timetable entry.</b> ';
+      html += 'They will be carried in the bundle but stay locked on the LAN server.';
+      html += '</div>';
+    }
+
+    // Buttons
+    html += '<div style="margin-top:16px;text-align:right;">';
+    html += '<button class="btn btn-secondary" type="button" onclick="TIS.closeModal()">Cancel</button> ';
+    if (coverage.length > 0) {
+      html += '<button class="btn btn-gold" type="button" id="btnBundleConfirm">';
+      html += '<i class="fas fa-download"></i> Download Bundle';
+      html += '</button>';
+    }
+    html += '</div>';
+    html += '</div></div>';
+
+    setHTML('modalContainer', html);
+
+    const confirmBtn = $('btnBundleConfirm');
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', function () {
+        closeModal();
+        executeBundleDownload(ctx);
+      });
+    }
+  }
+
+  // ================================================================
+  // Actual download, given a confirmed context
+  // ================================================================
+  function executeBundleDownload(ctx) {
+    const term = ctx.term;
+
+    // Questions — newest session per class+subject+paper
+    const byKey = {};
+    ctx.questions.forEach(function (q) {
+      const key = q.class_level + '|' + q.subject_code + '|' + q.paper;
+      if (!byKey[key]) byKey[key] = { rows: [], newestYear: 0 };
+      byKey[key].rows.push(q);
+      if (Number(q.year) > byKey[key].newestYear) byKey[key].newestYear = Number(q.year);
+    });
+    const pickedQuestions = [];
+    Object.keys(byKey).forEach(function (k) {
+      byKey[k].rows.forEach(function (q) {
+        if (Number(q.year) === byKey[k].newestYear) pickedQuestions.push(q);
+      });
+    });
+
+    const questionsOut = pickedQuestions.map(function (q) {
+      return {
+        id: q.id,
+        class_level: q.class_level,
+        subject_code: q.subject_code,
+        paper: q.paper,
+        term_type: q.term_type,
+        year: q.year,
+        serial_no: q.serial_no,
+        question_type: q.question_type,
+        question_text: q.question_text,
+        option_a: q.option_a || null,
+        option_b: q.option_b || null,
+        option_c: q.option_c || null,
+        option_d: q.option_d || null,
+        correct_option: q.correct_option || null,
+        correct_answer: q.correct_answer || null,
+        question_mark: q.question_mark || 1,
+        illustration: q.illustration || null,
+        explanation: q.explanation || null
+      };
+    });
+
+    const learnersOut = ctx.learners.map(function (l) {
+      return { pin: l.pin, name: l.name, class_name: l.class_name };
+    });
+
+    const timetableOut = ctx.timetable.map(function (t) {
+      return {
+        class_level: t.class_level,
+        subject_code: t.subject_code,
+        paper: t.paper,
+        term_type: t.term_type,
+        year: t.year,
+        opens_at: t.opens_at,
+        duration_minutes: t.duration_minutes
+      };
+    });
+
+    const bundle = {
+      generated_at: new Date().toISOString(),
+      generated_by: sessionName(),
+      term: { term_type: term.term_type, year: term.year, label: term.label },
+      learners: learnersOut,
+      questions: questionsOut,
+      timetable: timetableOut
+    };
+
+    const jsonStr = JSON.stringify(bundle, null, 2);
+    const kb = (jsonStr.length / 1024).toFixed(1);
+
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = 'bundle_' + term.term_type + '_' + term.year + '_' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+
+    if (ctx.setFeedback) {
+      ctx.setFeedback(
+        'Bundle ready (' + kb + ' KB) · ' +
+        learnersOut.length + ' learners · ' +
+        questionsOut.length + ' questions · ' +
+        timetableOut.length + ' timetable entries.',
+        'ok'
+      );
+    }
+    toast('Exam bundle downloaded.', 'success');
+  }
+  window.executeBundleDownload = executeBundleDownload;
   // ================================================================
   // Auto-init on switchTab (app.js will call initCbtTab)
   // ================================================================
