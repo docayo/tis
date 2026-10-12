@@ -678,7 +678,7 @@
   // printed card have always used, so neither has to change its
   // shape — only where the numbers come from.
   // ================================================================
-  function previousTermOf(termType, year) {
+   function previousTermOf(termType, year) {
     const t = String(termType || '').trim().toLowerCase();
     if (t === '3rd') return { term_type: '2nd', year: Number(year) };
     if (t === '2nd') return { term_type: '1st', year: Number(year) };
@@ -687,6 +687,18 @@
   }
   window.previousTermOf = previousTermOf;
 
+  // ================================================================
+  // resolveLearnerFeePicture — one function, one body.
+  //
+  // Rule:
+  //   • locked   = at least one payment recorded  → we honour the
+  //                snapshot for B/F and paid, but we ALWAYS rebuild
+  //                the line items from the live class bill (minus
+  //                overrides) so Restore and X still move the number.
+  //   • unlocked = no payment yet  → everything live.
+  //
+  // Both branches return the SAME shape. Callers never see undefined.
+  // ================================================================
   async function resolveLearnerFeePicture(learner, termRow, term, year) {
     const empty = {
       source: 'none',
@@ -715,6 +727,7 @@
 
     const locked = snapshotHasMoney(termRow);
 
+    // Part-payment list (present in both branches)
     const ppList = [];
     if (termRow) {
       for (let n = 1; n <= 5; n++) {
@@ -725,7 +738,7 @@
       }
     }
 
-    // ---- Read overrides once; used by both branches ----
+    // Overrides
     let overrides = [];
     try {
       const oR = await window.TIS.listLearnerOverrides(learner.id, term.term_type, year);
@@ -734,21 +747,21 @@
     const offSet = {};
     overrides.forEach(function (o) { offSet[o.item_key] = true; });
 
-    // ---- Read the live class schedule once; used by both branches ----
+    // Live class schedule
     let schedRow = null;
     try {
       const sr = await window.TIS.getFeeScheduleRow(learner.class_name, term.term_type, year);
       if (sr && sr.ok && sr.data) schedRow = sr.data;
     } catch (e) { /* silent */ }
 
-    // ---- Read the live adjustment once; used by both branches ----
+    // Live adjustment
     let adjRow = null;
     try {
       const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
       if (ar && ar.ok && ar.data) adjRow = ar.data;
     } catch (e) { /* silent */ }
 
-    // ---- Balance B/F fallback via previous term ----
+    // Balance B/F: prefer termRow; else previous term's C/F
     let balanceBf = parseNum(termRow && termRow.balance_bf);
     if (!balanceBf && term) {
       const prev = previousTermOf(term.term_type, term.year);
@@ -760,7 +773,7 @@
       }
     }
 
-    // ---- Rebuild live line items from the class bill, honouring overrides ----
+    // Line items — live class bill, minus overrides.
     const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
     const pick = function (key, fallback) {
       if (offSet[key]) return 0;
@@ -789,7 +802,7 @@
       uniform + sportswear + waistCoat + tie + extraLesson + special +
       additions - deductions;
 
-    const paid = locked ? parseNum(termRow.total_part_payment) : 0;
+    const paid      = locked ? parseNum(termRow.total_part_payment) : 0;
     const balanceCf = netBills + balanceBf - paid;
 
     return {
