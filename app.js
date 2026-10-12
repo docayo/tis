@@ -2667,14 +2667,32 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   async function openPartPaymentModal(learnerId) {
     closeModal();
     startLoader();
+
+    // Cold-safe learner lookup: the modal may open from a scan route,
+    // a fresh page, or a search result, in which case the learners
+    // cache is empty. Fall back to a direct fetch.
+    let learner = (State.cachedLearners || []).find(function (l) {
+      return l.id === learnerId;
+    }) || null;
+
+    if (!learner) {
+      try {
+        const lr = await window.TIS.getLearner(learnerId);
+        if (lr && lr.ok && lr.data) learner = lr.data;
+      } catch (e) { /* silent */ }
+    }
+
     const termR = await window.TIS.getLearnerTermForActive(learnerId);
     stopLoader();
-    if (!termR || !termR.ok || !termR.data.term) { showToast('No active term set', 'error'); return; }
+
+    if (!termR || !termR.ok || !termR.data.term) {
+      showToast('No active term set', 'error');
+      return;
+    }
 
     const term    = termR.data.term;
     const termRow = termR.data.row;
 
-    const learner = (State.cachedLearners || []).find(function (l) { return l.id === learnerId; }) || null;
     const fee = await resolveLearnerFeePicture(learner, termRow, term, term.year);
 
     let prevTermRow = null;
