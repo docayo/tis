@@ -1105,7 +1105,17 @@
       return ok(totals);
     } catch (err) { return fail(err); }
   };
-  TIS.recordPartPayment = async function (learnerId, termType, year, amount, dateISO, mode) {
+  // ================================================================
+  // Records a part payment against a learner's term row.
+  //
+  //   netBillsForSnapshot — optional. The true net class bill for the
+  //     term, computed live from the fee picture. On the FIRST payment
+  //     for this term, this value is stored in the learner_terms row
+  //     so that every later read (locked snapshot) sees the correct
+  //     bill and C/F. If omitted, the function falls back to whatever
+  //     is already stored, or zero.
+  // ================================================================
+  TIS.recordPartPayment = async function (learnerId, termType, year, amount, dateISO, mode, netBillsForSnapshot) {
     try {
       const sb = await loadSdk();
       const { data: row, error: rowErr } = await sb
@@ -1136,20 +1146,43 @@
         newTotal += v;
       }
       patch.total_part_payment = String(newTotal);
-                  const newBalance =
+
+      // Which bill to freeze into the snapshot.
+      //
+      // Rules, in order:
+      //   1. If the caller passed netBillsForSnapshot, use it.
+      //   2. Otherwise if the row already has a stored bill, use it.
+      //   3. Otherwise, compute from the individual columns.
+      //
+      // Rule 1 fires on the first payment. Rules 2 and 3 cover later
+      // payments, where the snapshot is already frozen.
+      const fromCaller = num(netBillsForSnapshot);
+      const storedBill =
+        num(row.tuition) + num(row.other_bills_major) + num(row.other_bills_minor) + num(row.books)
+        + num(row.uniform) + num(row.sportswear) + num(row.waist_coat) + num(row.tie)
+        + num(row.extra_lesson) + num(row.special_lesson)
+        + num(row.additions) - num(row.scholarship);
+
+      let frozenBill;
+      if (fromCaller > 0) frozenBill = fromCaller;
+      else if (storedBill > 0) frozenBill = storedBill;
+      else frozenBill = num(row.bill) + num(row.other_bill);
+
+      // Store the frozen bill in the legacy columns so the locked branch
+      // of resolveLearnerFeePicture reads the correct number.
+      patch.bill = String(frozenBill);
+      patch.other_bill = '0';
+
+      // Also store the individual columns, so the locked branch can
+      // optionally rebuild the breakdown.
+      patch.tuition           = String(num(row.tuition));
+      patch.other_bills_major = String(num(row.other_bills_major));
+      patch.other_bills_minor = String(num(row.other_bills_minor));
+      patch.books             = String(num(row.books));
+
+      const newBalance =
         num(row.balance_bf)
-        + num(row.tuition)
-        + num(row.other_bills_major)
-        + num(row.other_bills_minor)
-        + num(row.books)
-        + num(row.uniform)
-        + num(row.sportswear)
-        + num(row.waist_coat)
-        + num(row.tie)
-        + num(row.extra_lesson)
-        + num(row.special_lesson)
-        + num(row.additions)
-        - num(row.scholarship)
+        + frozenBill
         - newTotal;
       patch.balance_cf = String(newBalance);
 
