@@ -807,6 +807,20 @@
       return ok({ deleted: true });
     } catch (err) { return fail(err); }
   };
+    // Direct write to a learner_terms row. Used by the fee recompute
+  // path after X / Restore.
+  TIS.updateLearnerTermSnapshot = async function (learnerId, termType, year, patch) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('learner_terms')
+        .update(patch)
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (error) return fail(error.message);
+      return ok({ updated: true });
+    } catch (err) { return fail(err); }
+  };
     // ================================================================
   // [FEE_ADVANCE] — copy one term's class bills and per-learner
   // adjustments into another term. Used when a new term becomes
