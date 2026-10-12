@@ -687,7 +687,7 @@
   }
   window.previousTermOf = previousTermOf;
 
-   async function resolveLearnerFeePicture(learner, termRow, term, year) {
+  async function resolveLearnerFeePicture(learner, termRow, term, year) {
     const empty = {
       source: 'none',
       tuition: 0, scholarship: 0, additions: 0,
@@ -715,7 +715,6 @@
 
     const locked = snapshotHasMoney(termRow);
 
-    // ---- Part-payment list (works for both branches) ----
     const ppList = [];
     if (termRow) {
       for (let n = 1; n <= 5; n++) {
@@ -726,180 +725,75 @@
       }
     }
 
-    // ============================================================
-    // LOCKED: learner_terms is the receipt.
-    //
-    // The snapshot freezes:  net_bills, balance_bf, total_paid.
-    // It does NOT freeze:    the list of removed lines. That list
-    // still lives in fee_learner_item_overrides so the operator can
-    // restore a line — restoring raises net_bills and therefore C/F.
-    //
-    // Recompute path (always):
-    //   live net bill  =  base_sched − removed_lines + adjustments
-    //   where base_sched is rebuilt by ADDING BACK any item that
-    //   currently has an override row (because the override zeroed it).
-    // ============================================================
-    if (locked) {
-      // -- 1. Snapshot fields the office already trusted --
-      const snapTuition   = parseNum(termRow.tuition);
-      const snapOtherMaj  = parseNum(termRow.other_bills_major);
-      const snapOtherMin  = parseNum(termRow.other_bills_minor);
-      const snapBooks     = parseNum(termRow.books);
-      const snapUniform   = parseNum(termRow.uniform);
-      const snapSport     = parseNum(termRow.sportswear);
-      const snapWaist     = parseNum(termRow.waist_coat);
-      const snapTie       = parseNum(termRow.tie);
-      const snapExtra     = parseNum(termRow.extra_lesson);
-      const snapSpecial   = parseNum(termRow.special_lesson);
-      const snapAdditions = parseNum(termRow.additions);
-      const snapScholar   = parseNum(termRow.scholarship);
+    // ---- Read overrides once; used by both branches ----
+    let overrides = [];
+    try {
+      const oR = await window.TIS.listLearnerOverrides(learner.id, term.term_type, year);
+      if (oR && oR.ok) overrides = oR.data || [];
+    } catch (e) { /* silent */ }
+    const offSet = {};
+    overrides.forEach(function (o) { offSet[o.item_key] = true; });
 
-      const balanceBf = parseNum(termRow.balance_bf);
-      const paid      = parseNum(termRow.total_part_payment);
+    // ---- Read the live class schedule once; used by both branches ----
+    let schedRow = null;
+    try {
+      const sr = await window.TIS.getFeeScheduleRow(learner.class_name, term.term_type, year);
+      if (sr && sr.ok && sr.data) schedRow = sr.data;
+    } catch (e) { /* silent */ }
 
-      // -- 2. Read the live overrides so Restore/X can act --
-      let overrides = [];
-      try {
-        const oR = await window.TIS.listLearnerOverrides(learner.id, term.term_type, year);
-        if (oR && oR.ok) overrides = oR.data || [];
-      } catch (e) { /* silent */ }
-      const offSet = {};
-      overrides.forEach(function (o) { offSet[o.item_key] = true; });
+    // ---- Read the live adjustment once; used by both branches ----
+    let adjRow = null;
+    try {
+      const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
+      if (ar && ar.ok && ar.data) adjRow = ar.data;
+    } catch (e) { /* silent */ }
 
-      // -- 3. Rebuild the true class bill from the live schedule --
-      //     Even in locked mode, we honour the class bill. Every
-      //     item that has an override row is added back to the base
-      //     BEFORE we apply the override (i.e. exclude it).
-      let schedTuition = 0, schedOtherMaj = 0, schedOtherMin = 0, schedBooks = 0;
-      let schedUniform = 0, schedSport = 0, schedWaist = 0, schedTie = 0;
-      let schedExtra = 0, schedSpecial = 0;
-      try {
-        const sr = await window.TIS.getFeeScheduleRow(learner.class_name, term.term_type, year);
-        if (sr && sr.ok && sr.data) {
-          schedTuition  = parseNum(sr.data.tuition);
-          schedOtherMaj = parseNum(sr.data.other_bills_major);
-          schedOtherMin = parseNum(sr.data.other_bills_minor);
-          schedBooks    = parseNum(sr.data.books);
-          schedUniform  = parseNum(sr.data.uniform);
-          schedSport    = parseNum(sr.data.sportswear);
-          schedWaist    = parseNum(sr.data.waist_coat);
-          schedTie      = parseNum(sr.data.tie);
-          schedExtra    = parseNum(sr.data.extra_lesson);
-          schedSpecial  = parseNum(sr.data.special_lesson);
-        }
-      } catch (e) { /* silent */ }
-
-      // If schedule has no numbers at all, fall back to the snapshot.
-      const scheduleEmpty = !schedTuition && !schedOtherMaj && !schedOtherMin &&
-                            !schedBooks && !schedUniform && !schedSport &&
-                            !schedWaist && !schedTie && !schedExtra && !schedSpecial;
-
-      const baseTuition  = scheduleEmpty ? snapTuition  : schedTuition;
-      const baseOtherMaj = scheduleEmpty ? snapOtherMaj : schedOtherMaj;
-      const baseOtherMin = scheduleEmpty ? snapOtherMin : schedOtherMin;
-      const baseBooks    = scheduleEmpty ? snapBooks    : schedBooks;
-      const baseUniform  = scheduleEmpty ? snapUniform  : schedUniform;
-      const baseSport    = scheduleEmpty ? snapSport    : schedSport;
-      const baseWaist    = scheduleEmpty ? snapWaist    : schedWaist;
-      const baseTie      = scheduleEmpty ? snapTie      : schedTie;
-      const baseExtra    = scheduleEmpty ? snapExtra    : schedExtra;
-      const baseSpecial  = scheduleEmpty ? snapSpecial  : schedSpecial;
-
-      // Apply overrides: item with an override row is zeroed.
-      const tuition     = offSet.tuition           ? 0 : baseTuition;
-      const otherMajor  = offSet.other_bills_major ? 0 : baseOtherMaj;
-      const otherMinor  = offSet.other_bills_minor ? 0 : baseOtherMin;
-      const books       = offSet.books             ? 0 : baseBooks;
-      const uniform     = offSet.uniform           ? 0 : baseUniform;
-      const sportswear  = offSet.sportswear        ? 0 : baseSport;
-      const waistCoat   = offSet.waist_coat        ? 0 : baseWaist;
-      const tie         = offSet.tie               ? 0 : baseTie;
-      const extraLesson = offSet.extra_lesson      ? 0 : baseExtra;
-      const special     = offSet.special_lesson    ? 0 : baseSpecial;
-
-      // Adjustments still apply.
-      const additions  = snapAdditions;
-      const scholarship = snapScholar;
-
-      const netBills =
-        tuition + otherMajor + otherMinor + books +
-        uniform + sportswear + waistCoat + tie + extraLesson + special +
-        additions - scholarship;
-
-      const balanceCf = netBills + balanceBf - paid;
-
-      return {
-        source: 'snapshot',
-        tuition: tuition,
-        scholarship: scholarship,
-        additions: additions,
-        other_bills_major: otherMajor,
-        other_bills_minor: otherMinor,
-        books: books,
-        registration_fee: 0,
-        uniform: uniform,
-        sportswear: sportswear,
-        waist_coat: waistCoat,
-        tie: tie,
-        extra_lesson: extraLesson,
-        special_lesson: special,
-        adjusted_tuition: tuition - scholarship,
-        balance_bf: balanceBf,
-        net_bills: netBills,
-        total_part_payment: paid,
-        balance_cf: balanceCf,
-        part_payments: ppList,
-        cleared: termRow.cleared || '',
-        clearance: termRow.clearance || '',
-        overrides: overrides,
-        schedule_found: !scheduleEmpty,
-        adjustment_found: false
-      };
-    }
-    // ---- NOT LOCKED: live schedule + live adjustment + per-learner overrides ----
-    const tuition        = offSet.tuition           ? 0 : (schedRow ? parseNum(schedRow.tuition)           : parseNum(termRow && termRow.tuition));
-    const otherMajor     = offSet.other_bills_major ? 0 : (schedRow ? parseNum(schedRow.other_bills_major) : parseNum(termRow && termRow.other_bills_major));
-    const otherMinor     = offSet.other_bills_minor ? 0 : (schedRow ? parseNum(schedRow.other_bills_minor) : parseNum(termRow && termRow.other_bills_minor));
-    const books          = offSet.books             ? 0 : (schedRow ? parseNum(schedRow.books)             : parseNum(termRow && termRow.books));
-    const uniform        = offSet.uniform           ? 0 : (schedRow ? parseNum(schedRow.uniform)           : 0);
-    const sportswear     = offSet.sportswear        ? 0 : (schedRow ? parseNum(schedRow.sportswear)        : 0);
-    const waistCoat      = offSet.waist_coat        ? 0 : (schedRow ? parseNum(schedRow.waist_coat)        : 0);
-    const tie            = offSet.tie               ? 0 : (schedRow ? parseNum(schedRow.tie)               : 0);
-    const extraLesson    = offSet.extra_lesson      ? 0 : (schedRow ? parseNum(schedRow.extra_lesson)      : 0);
-    const specialLesson  = offSet.special_lesson    ? 0 : (schedRow ? parseNum(schedRow.special_lesson)    : 0);
-
-       const additions   = adjRow ? parseNum(adjRow.additions)   : 0;
-    const deductions  = adjRow ? parseNum(adjRow.deductions)  : 0;
-
-    // ---- Balance B/F fallback ----
-    // If the current term's own row has balance_bf = 0, try the
-    // previous term's balance_cf. This covers the case where the
-    // term promotion has not yet run for this learner, or ran
-    // without carrying the value.
+    // ---- Balance B/F fallback via previous term ----
     let balanceBf = parseNum(termRow && termRow.balance_bf);
     if (!balanceBf && term) {
       const prev = previousTermOf(term.term_type, term.year);
       if (prev) {
         try {
           const pR = await window.TIS.getLearnerTermFor(learner.id, prev.term_type, prev.year);
-          if (pR && pR.ok && pR.data) {
-            balanceBf = parseNum(pR.data.balance_cf);
-          }
+          if (pR && pR.ok && pR.data) balanceBf = parseNum(pR.data.balance_cf);
         } catch (e) { /* silent */ }
       }
     }
 
+    // ---- Rebuild live line items from the class bill, honouring overrides ----
+    const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
+    const pick = function (key, fallback) {
+      if (offSet[key]) return 0;
+      if (schedRow && schedRow[key] !== undefined && schedRow[key] !== null && schedRow[key] !== '') {
+        return num(schedRow[key]);
+      }
+      return fallback;
+    };
+
+    const tuition     = pick('tuition',           num(termRow && termRow.tuition));
+    const otherMajor  = pick('other_bills_major', num(termRow && termRow.other_bills_major));
+    const otherMinor  = pick('other_bills_minor', num(termRow && termRow.other_bills_minor));
+    const books       = pick('books',             num(termRow && termRow.books));
+    const uniform     = pick('uniform',           num(termRow && termRow.uniform));
+    const sportswear  = pick('sportswear',        num(termRow && termRow.sportswear));
+    const waistCoat   = pick('waist_coat',        num(termRow && termRow.waist_coat));
+    const tie         = pick('tie',               num(termRow && termRow.tie));
+    const extraLesson = pick('extra_lesson',      num(termRow && termRow.extra_lesson));
+    const special     = pick('special_lesson',    num(termRow && termRow.special_lesson));
+
+    const additions   = adjRow ? num(adjRow.additions)  : num(termRow && termRow.additions);
+    const deductions  = adjRow ? num(adjRow.deductions) : num(termRow && termRow.scholarship);
+
     const netBills =
       tuition + otherMajor + otherMinor + books +
-      uniform + sportswear + waistCoat + tie + extraLesson + specialLesson +
+      uniform + sportswear + waistCoat + tie + extraLesson + special +
       additions - deductions;
 
-    const adjusted  = tuition - deductions;
-    const paid      = 0;
+    const paid = locked ? parseNum(termRow.total_part_payment) : 0;
     const balanceCf = netBills + balanceBf - paid;
 
     return {
-      source: 'live',
+      source: locked ? 'snapshot' : 'live',
       tuition: tuition,
       scholarship: deductions,
       additions: additions,
@@ -912,13 +806,13 @@
       waist_coat: waistCoat,
       tie: tie,
       extra_lesson: extraLesson,
-      special_lesson: specialLesson,
-      adjusted_tuition: adjusted,
+      special_lesson: special,
+      adjusted_tuition: tuition - deductions,
       balance_bf: balanceBf,
       net_bills: netBills,
       total_part_payment: paid,
       balance_cf: balanceCf,
-      part_payments: [],
+      part_payments: ppList,
       cleared: (termRow && termRow.cleared) || '',
       clearance: (termRow && termRow.clearance) || '',
       overrides: overrides,
@@ -926,6 +820,7 @@
       adjustment_found: !!adjRow
     };
   }
+  window.resolveLearnerFeePicture = resolveLearnerFeePicture;
   window.resolveLearnerFeePicture = resolveLearnerFeePicture;
   // ================================================================
   // View modal — three-tier permission gating
