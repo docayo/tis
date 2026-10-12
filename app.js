@@ -2613,6 +2613,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     const bfForDisplay = prevTermRow ? parseNum(prevTermRow.balance_cf) : (fee.balance_bf || 0);
     const netBills     = fee.net_bills || 0;
+    window.__ppNetBills = netBills;
     const paidSoFar    = fee.total_part_payment || 0;
     const balanceNow   = netBills + bfForDisplay - paidSoFar;
 
@@ -2633,22 +2634,30 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div class="form-group"><label>Mode</label><select id="pp_mode"><option>Cash</option><option>Transfer</option><option>POS</option><option>Cheque</option></select></div>';
     html += '<div style="text-align:right;margin-top:12px;">';
     html += '<button class="btn btn-secondary" onclick="closeLearnerModal()">Cancel</button> ';
-    html += '<button class="btn btn-success" onclick="submitPartPayment(' + learnerId + ', \'' + escAttr(term.term_type) + '\', ' + term.year + ')">Record</button>';
+    html += '<button class="btn btn-success" onclick="submitPartPayment(' + learnerId + ', \'' + escAttr(term.term_type) + '\', ' + term.year + ', ' + netBills + ')">Record</button>';
     html += '</div></div></div>';
     setHTML('modalContainer', html);
   }
 
-  async function submitPartPayment(learnerId, termType, year) {
+   async function submitPartPayment(learnerId, termType, year, netBills) {
     const amount = $('pp_amount') ? $('pp_amount').value : '';
     const date   = $('pp_date')   ? $('pp_date').value   : '';
     const mode   = $('pp_mode')   ? $('pp_mode').value   : 'Cash';
     if (!amount || Number(amount) <= 0) { showToast('Enter a positive amount', 'warning'); return; }
 
+    // netBills comes from the modal, which computed it from the live
+    // fee picture. We pass it to recordPartPayment so the frozen
+    // snapshot knows the true class bill at the moment of the first
+    // payment.
+    const snapshotBill = Number(netBills || 0);
+
     startLoader();
-    const r = await window.TIS.recordPartPayment(learnerId, termType, year, amount, date, mode);
+    const r = await window.TIS.recordPartPayment(
+      learnerId, termType, year, amount, date, mode, snapshotBill
+    );
     stopLoader();
 
-     if (r && r.ok) {
+    if (r && r.ok) {
       showToast('Payment recorded (slot ' + r.data.slot + ')', 'success');
       closeModal();
       const l = State.cachedLearners.find(function (x) { return x.id === learnerId; });
