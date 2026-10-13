@@ -227,7 +227,7 @@
 
   async function doLogout() {
     closeModal();
-    try { await window.TIS.signOut(); } catch (e)
+    try { await window.TIS.signOut(); } catch (e) {}
     State.profile = null;
     State.permissions = {};
     showLoginScreen();
