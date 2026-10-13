@@ -1039,7 +1039,6 @@
                   '</div>';
         });
         html += '</div></details>';
-      }
 
       html += infoRow('Blood Group / Genotype', d.blood_group);
       html += infoRow('Allergy', d.allergy);
