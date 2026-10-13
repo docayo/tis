@@ -845,7 +845,7 @@
   //   fee_schedule + fee_adjustments until a payment is recorded,
   //   then frozen from learner_terms.
   // ================================================================
-  /*async function openLearnerViewModal(pin) {
+  /* async function openLearnerViewModal(pin) {
     closeModal();
     startLoader();
     const learnerR = await window.TIS.getLearnerByPin(pin);
