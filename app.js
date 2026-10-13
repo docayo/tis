@@ -2727,13 +2727,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ================================================================
   // Part payment
   // ================================================================
-  async function openPartPaymentModal(learnerId) {
+    async function openPartPaymentModal(learnerId) {
     closeModal();
     startLoader();
 
-    // Cold-safe learner lookup: the modal may open from a scan route,
-    // a fresh page, or a search result, in which case the learners
-    // cache is empty. Fall back to a direct fetch.
+    // Cold-safe learner lookup. The modal may be opened from a scan
+    // route, a fresh page, or a search result, in which case the
+    // learners cache is empty. Fall back to a direct fetch.
     let learner = (State.cachedLearners || []).find(function (l) {
       return l.id === learnerId;
     }) || null;
@@ -2742,7 +2742,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       try {
         const lr = await window.TIS.getLearner(learnerId);
         if (lr && lr.ok && lr.data) learner = lr.data;
-      } catch (e) { /* silent */ }
+      } catch (e) {}
     }
 
     const termR = await window.TIS.getLearnerTermForActive(learnerId);
@@ -2764,7 +2764,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       try {
         const prevR = await window.TIS.getLearnerTermFor(learner.id, prev.term_type, prev.year);
         if (prevR && prevR.ok) prevTermRow = prevR.data;
-      } catch (e) { /* silent */ }
+      } catch (e) {}
     }
 
     const bfForDisplay = prevTermRow ? parseNum(prevTermRow.balance_cf) : (fee.balance_bf || 0);
