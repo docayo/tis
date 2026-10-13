@@ -33,7 +33,7 @@
 // ================================================================
 
 (function () {
-  'use strict'; /*
+  'use strict'; 
 
   // ================================================================
   // [S01] STATE
@@ -578,7 +578,7 @@
     renderLearnerStats(all);
   }
   window.applyLearnerFilter = applyLearnerFilter;
-
+/*
    function renderLearners(rows) {
     if (!rows || rows.length === 0) {
       setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
