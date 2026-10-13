@@ -564,7 +564,7 @@
     const hasClass  = klass  && klass  !== 'N/A';
     const hasReason = reason && reason !== 'N/A';
     return !!(hasDate || hasClass || hasReason);
-  }
+  } */
   window.learnerIsInactive = learnerIsInactive;
 
   // Filter the cached learners based on the "show inactive" flag and
@@ -1091,7 +1091,7 @@
   // A row in fee_learner_item_overrides means the line is removed
   // for that learner in that term. Deleting the row restores it.
   // ================================================================
-*/  async function learnerFeeToggleOff(pin, itemKey) {
+  async function learnerFeeToggleOff(pin, itemKey) {
     const r = await window.TIS.getLearnerByPin(pin);
     if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); return; }
     const at = await window.TIS.getActiveTerm();
