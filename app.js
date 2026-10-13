@@ -533,7 +533,7 @@
       try {
         const cr = await window.TIS.listClasses();
         if (cr && cr.ok) State.cachedClasses = cr.data || [];
-      } catch (e) { /* silent */ }
+      } catch (e)
     }
 
     const r = await window.TIS.listLearners();
