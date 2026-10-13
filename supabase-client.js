@@ -1148,11 +1148,12 @@
       }
       if (slot === null) return fail('All 5 part-payment slots are full. See Accounts.');
 
+      const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
+
       const patch = {};
       patch['part_payment_' + slot + '_amount'] = String(amount);
       patch['part_payment_' + slot + '_date']   = dateISO || new Date().toISOString().slice(0, 10);
 
-      const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
       let newTotal = 0;
       for (var j = 0; j < slots.length; j++) {
         const m = slots[j];
@@ -1161,49 +1162,106 @@
       }
       patch.total_part_payment = String(newTotal);
 
-      // Which bill to freeze into the snapshot.
-      //
-      // Rules, in order:
-      //   1. If the caller passed netBillsForSnapshot, use it.
-      //   2. Otherwise if the row already has a stored bill, use it.
-      //   3. Otherwise, compute from the individual columns.
-      //
-      // Rule 1 fires on the first payment. Rules 2 and 3 cover later
-      // payments, where the snapshot is already frozen.
-      const fromCaller = num(netBillsForSnapshot);
-      const storedBill =
-        num(row.tuition) + num(row.other_bills_major) + num(row.other_bills_minor) + num(row.books)
-        + num(row.uniform) + num(row.sportswear) + num(row.waist_coat) + num(row.tie)
-        + num(row.extra_lesson) + num(row.special_lesson)
-        + num(row.additions) - num(row.scholarship);
+      // ------------------------------------------------------------------
+      // First payment: freeze the picture.
+      // ------------------------------------------------------------------
+      const wasUnlocked = (num(row.total_part_payment) === 0);
 
-      let frozenBill;
-      if (fromCaller > 0) frozenBill = fromCaller;
-      else if (storedBill > 0) frozenBill = storedBill;
-      else frozenBill = num(row.bill) + num(row.other_bill);
+      if (wasUnlocked) {
+        const fromCaller = num(netBillsForSnapshot);
+        let frozenBill = 0;
 
-      // Store the frozen bill in the legacy columns so the locked branch
-      // of resolveLearnerFeePicture reads the correct number.
-      patch.bill = String(frozenBill);
-      patch.other_bill = '0';
+        if (fromCaller > 0) {
+          frozenBill = fromCaller;
+        } else {
+          // Caller did not pass a bill — rebuild from the live class bill
+          // and adjustments, minus per-learner overrides.
+          try {
+            const learnerR = await TIS.getLearner(learnerId);
+            const learner = (learnerR && learnerR.ok) ? learnerR.data : null;
+            const cls = learner ? learner.class_name : null;
 
-      // Also store the individual columns, so the locked branch can
-      // optionally rebuild the breakdown.
-      patch.tuition           = String(num(row.tuition));
-      patch.other_bills_major = String(num(row.other_bills_major));
-      patch.other_bills_minor = String(num(row.other_bills_minor));
-      patch.books             = String(num(row.books));
+            const sR = cls ? await TIS.getFeeScheduleRow(cls, termType, year) : null;
+            const sched = (sR && sR.ok) ? sR.data : null;
 
-      const newBalance =
-        num(row.balance_bf)
-        + frozenBill
-        - newTotal;
-      patch.balance_cf = String(newBalance);
+            const aR = await TIS.getFeeAdjustment(learnerId, termType, year);
+            const adj = (aR && aR.ok) ? aR.data : null;
 
-      if (newBalance <= 0) {
-        patch.cleared   = 'Yes';
-        patch.clearance = dateISO || new Date().toISOString().slice(0, 10);
+            const oR = await TIS.listLearnerOverrides(learnerId, termType, year);
+            const overrides = (oR && oR.ok) ? (oR.data || []) : [];
+            const offSet = {};
+            overrides.forEach(function (o) { offSet[o.item_key] = true; });
+
+            const pick = function (key) {
+              if (offSet[key]) return 0;
+              if (sched && sched[key] !== undefined && sched[key] !== null && sched[key] !== '') {
+                return num(sched[key]);
+              }
+              return 0;
+            };
+
+            const t   = pick('tuition');
+            const om  = pick('other_bills_major');
+            const on  = pick('other_bills_minor');
+            const bk  = pick('books');
+            const uni = pick('uniform');
+            const sw  = pick('sportswear');
+            const wc  = pick('waist_coat');
+            const ti  = pick('tie');
+            const el  = pick('extra_lesson');
+            const sl  = pick('special_lesson');
+            const add = adj ? num(adj.additions)  : 0;
+            const ded = adj ? num(adj.deductions) : 0;
+
+            frozenBill = t + om + on + bk + uni + sw + wc + ti + el + sl + add - ded;
+            patch.tuition           = String(t);
+            patch.other_bills_major = String(om);
+            patch.other_bills_minor = String(on);
+            patch.books             = String(bk);
+            patch.uniform           = String(uni);
+            patch.sportswear        = String(sw);
+            patch.waist_coat        = String(wc);
+            patch.tie               = String(ti);
+            patch.extra_lesson      = String(el);
+            patch.special_lesson    = String(sl);
+            patch.additions         = String(add);
+            patch.scholarship       = String(ded);
+          } catch (e) {
+            frozenBill = num(row.bill);
+          }
+        }
+
+        patch.bill       = String(frozenBill);
+        patch.other_bill = '0';
+
+        const newBalance = num(row.balance_bf) + frozenBill - newTotal;
+        patch.balance_cf = String(newBalance);
+
+        if (newBalance <= 0) {
+          patch.cleared   = 'Yes';
+          patch.clearance = dateISO || new Date().toISOString().slice(0, 10);
+        }
+      } else {
+        // ------------------------------------------------------------------
+        // Later payments: the snapshot is frozen. Only recompute the C/F.
+        // ------------------------------------------------------------------
+        let frozenBill = num(row.bill);
+        if (frozenBill === 0) {
+          frozenBill =
+            num(row.tuition) + num(row.other_bills_major) + num(row.other_bills_minor) + num(row.books)
+            + num(row.uniform) + num(row.sportswear) + num(row.waist_coat) + num(row.tie)
+            + num(row.extra_lesson) + num(row.special_lesson)
+            + num(row.additions) - num(row.scholarship);
+        }
+        const newBalance = num(row.balance_bf) + frozenBill - newTotal;
+        patch.balance_cf = String(newBalance);
+
+        if (newBalance <= 0) {
+          patch.cleared   = 'Yes';
+          patch.clearance = dateISO || new Date().toISOString().slice(0, 10);
+        }
       }
+
       patch.updated_at = new Date().toISOString();
 
       const { error: updErr } = await sb.from('learner_terms')
@@ -1213,8 +1271,10 @@
         .eq('year', year);
       if (updErr) return fail(updErr.message);
 
-      return ok({ slot: slot, patch: patch });
-    } catch (err) { return fail(err); }
+      return ok({ slot: slot, total: newTotal, balance_cf: patch.balance_cf });
+    } catch (err) {
+      return fail(err && err.message ? err.message : String(err));
+    }
   };
 
   // ================================================================
