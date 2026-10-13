@@ -845,7 +845,7 @@
   //   fee_schedule + fee_adjustments until a payment is recorded,
   //   then frozen from learner_terms.
   // ================================================================
-  /* async function openLearnerViewModal(pin) {
+ async function openLearnerViewModal(pin) {
     closeModal();
     startLoader();
     const learnerR = await window.TIS.getLearnerByPin(pin);
@@ -1091,7 +1091,7 @@
   // A row in fee_learner_item_overrides means the line is removed
   // for that learner in that term. Deleting the row restores it.
   // ================================================================
-  */ async function learnerFeeToggleOff(pin, itemKey) {
+    async function learnerFeeToggleOff(pin, itemKey) {
     const r = await window.TIS.getLearnerByPin(pin);
     if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); return; }
     const at = await window.TIS.getActiveTerm();
