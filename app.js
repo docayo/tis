@@ -564,7 +564,7 @@
     const hasClass  = klass  && klass  !== 'N/A';
     const hasReason = reason && reason !== 'N/A';
     return !!(hasDate || hasClass || hasReason);
-  } */
+  } 
   window.learnerIsInactive = learnerIsInactive;
 
   // Filter the cached learners based on the "show inactive" flag and
@@ -578,7 +578,7 @@
     renderLearnerStats(all);
   }
   window.applyLearnerFilter = applyLearnerFilter;
-
+*/
    function renderLearners(rows) {
     if (!rows || rows.length === 0) {
       setHTML('learnersGrid', emptyHTML('fa-users', 'No learners to show', 'Try clearing the search box.'));
