@@ -699,7 +699,7 @@
   //
   // Both branches return the SAME shape. Callers never see undefined.
   // ================================================================
-  async function resolveLearnerFeePicture(learner, termRow, term, year) {
+   async function resolveLearnerFeePicture(learner, termRow, term, year) {
     const empty = {
       source: 'none',
       tuition: 0, scholarship: 0, additions: 0,
@@ -716,11 +716,13 @@
     };
     if (!learner || !learner.id || !term) return empty;
 
+    const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
+
     function snapshotHasMoney(row) {
       if (!row) return false;
-      if (parseNum(row.total_part_payment) > 0) return true;
+      if (num(row.total_part_payment) > 0) return true;
       for (let n = 1; n <= 5; n++) {
-        if (parseNum(row['part_payment_' + n + '_amount']) > 0) return true;
+        if (num(row['part_payment_' + n + '_amount']) > 0) return true;
       }
       return false;
     }
@@ -738,7 +740,9 @@
       }
     }
 
-    // Overrides
+    // Overrides — always from the live table. The X and Restore
+    // actions write to fee_learner_item_overrides, so it is the
+    // canonical list, locked or not.
     let overrides = [];
     try {
       const oR = await window.TIS.listLearnerOverrides(learner.id, term.term_type, year);
@@ -747,34 +751,95 @@
     const offSet = {};
     overrides.forEach(function (o) { offSet[o.item_key] = true; });
 
-    // Live class schedule
+    // Live class schedule (used for the UNLOCKED branch only)
     let schedRow = null;
     try {
       const sr = await window.TIS.getFeeScheduleRow(learner.class_name, term.term_type, year);
       if (sr && sr.ok && sr.data) schedRow = sr.data;
     } catch (e) {}
 
-    // Live adjustment
+    // Live adjustment (used for the UNLOCKED branch only)
     let adjRow = null;
     try {
       const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
       if (ar && ar.ok && ar.data) adjRow = ar.data;
     } catch (e) {}
 
-    // Balance B/F: prefer termRow; else previous term's C/F
-    let balanceBf = parseNum(termRow && termRow.balance_bf);
+    // Balance B/F — locked row wins; else previous term's C/F
+    let balanceBf = num(termRow && termRow.balance_bf);
     if (!balanceBf && term) {
       const prev = previousTermOf(term.term_type, term.year);
       if (prev) {
         try {
           const pR = await window.TIS.getLearnerTermFor(learner.id, prev.term_type, prev.year);
-          if (pR && pR.ok && pR.data) balanceBf = parseNum(pR.data.balance_cf);
+          if (pR && pR.ok && pR.data) balanceBf = num(pR.data.balance_cf);
         } catch (e) {}
       }
     }
 
-    // Line items — live class bill, minus overrides.
-    const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
+    // ------------------------------------------------------------------
+    // LOCKED branch — the snapshot is frozen. Read every number from
+    // the learner_terms row. The four columns tuition / other_major /
+    // other_minor / books were written at first payment, and bill was
+    // written with the same total, so either source agrees.
+    // ------------------------------------------------------------------
+    if (locked) {
+      const t   = num(termRow.tuition);
+      const om  = num(termRow.other_bills_major);
+      const on  = num(termRow.other_bills_minor);
+      const bk  = num(termRow.books);
+      const uni = num(termRow.uniform);
+      const sw  = num(termRow.sportswear);
+      const wc  = num(termRow.waist_coat);
+      const ti  = num(termRow.tie);
+      const el  = num(termRow.extra_lesson);
+      const sl  = num(termRow.special_lesson);
+      const add = num(termRow.additions);
+      const ded = num(termRow.scholarship);
+      const paid = num(termRow.total_part_payment);
+
+      // If the four main columns are zero but bill is not, the row
+      // was written by an older version of recordPartPayment. Fall
+      // back to bill as the net bills figure.
+      let netBills = t + om + on + bk + uni + sw + wc + ti + el + sl + add - ded;
+      if (netBills === 0 && num(termRow.bill) > 0) {
+        netBills = num(termRow.bill);
+      }
+
+      const balanceCf = netBills + balanceBf - paid;
+
+      return {
+        source: 'snapshot',
+        tuition: t,
+        scholarship: ded,
+        additions: add,
+        other_bills_major: om,
+        other_bills_minor: on,
+        books: bk,
+        registration_fee: 0,
+        uniform: uni,
+        sportswear: sw,
+        waist_coat: wc,
+        tie: ti,
+        extra_lesson: el,
+        special_lesson: sl,
+        adjusted_tuition: t - ded,
+        balance_bf: balanceBf,
+        net_bills: netBills,
+        total_part_payment: paid,
+        balance_cf: balanceCf,
+        part_payments: ppList,
+        cleared: (termRow && termRow.cleared) || '',
+        clearance: (termRow && termRow.clearance) || '',
+        overrides: overrides,
+        schedule_found: !!schedRow,
+        adjustment_found: !!adjRow
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // UNLOCKED branch — nothing has been paid. Everything live.
+    // ------------------------------------------------------------------
     const pick = function (key, fallback) {
       if (offSet[key]) return 0;
       if (schedRow && schedRow[key] !== undefined && schedRow[key] !== null && schedRow[key] !== '') {
@@ -802,11 +867,10 @@
       uniform + sportswear + waistCoat + tie + extraLesson + special +
       additions - deductions;
 
-    const paid      = locked ? parseNum(termRow.total_part_payment) : 0;
-    const balanceCf = netBills + balanceBf - paid;
+    const balanceCf = netBills + balanceBf;
 
     return {
-      source: locked ? 'snapshot' : 'live',
+      source: 'live',
       tuition: tuition,
       scholarship: deductions,
       additions: additions,
@@ -823,9 +887,9 @@
       adjusted_tuition: tuition - deductions,
       balance_bf: balanceBf,
       net_bills: netBills,
-      total_part_payment: paid,
+      total_part_payment: 0,
       balance_cf: balanceCf,
-      part_payments: ppList,
+      part_payments: [],
       cleared: (termRow && termRow.cleared) || '',
       clearance: (termRow && termRow.clearance) || '',
       overrides: overrides,
