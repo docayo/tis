@@ -743,7 +743,7 @@
     try {
       const oR = await window.TIS.listLearnerOverrides(learner.id, term.term_type, year);
       if (oR && oR.ok) overrides = oR.data || [];
-    } catch (e) 
+    } catch (e) {}
     const offSet = {};
     overrides.forEach(function (o) { offSet[o.item_key] = true; });
 
