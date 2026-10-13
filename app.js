@@ -752,14 +752,14 @@
     try {
       const sr = await window.TIS.getFeeScheduleRow(learner.class_name, term.term_type, year);
       if (sr && sr.ok && sr.data) schedRow = sr.data;
-    } catch (e) 
+    } catch (e) {}
 
     // Live adjustment
     let adjRow = null;
     try {
       const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
       if (ar && ar.ok && ar.data) adjRow = ar.data;
-    } catch (e) 
+    } catch (e) {}
 
     // Balance B/F: prefer termRow; else previous term's C/F
     let balanceBf = parseNum(termRow && termRow.balance_bf);
@@ -769,7 +769,7 @@
         try {
           const pR = await window.TIS.getLearnerTermFor(learner.id, prev.term_type, prev.year);
           if (pR && pR.ok && pR.data) balanceBf = parseNum(pR.data.balance_cf);
-        } catch (e) 
+        } catch (e) {}
       }
     }
 
