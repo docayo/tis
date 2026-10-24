@@ -1040,6 +1040,14 @@
 
     if (canB) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
+      html += '<div style="display:flex;justify-content:flex-end;margin-bottom:6px;">' +
+                '<label style="font-size:11px;cursor:pointer;color:#0d4d26;user-select:none;">' +
+                  '<input type="checkbox" style="margin-right:4px;" ' +
+                  (__feeSelectMode ? 'checked ' : '') +
+                  'onchange="feeToggleSelectMode(this.checked,\' + escAttr(pin) + \')">' +
+                  ' Batch mode' +
+                '</label>' +
+              '</div>';
       html += infoRow('Previous Term Balance B/F',
         prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
       // ---- Itemized fee lines (X to remove for this learner) ----
@@ -1110,6 +1118,22 @@
         html += '<div class="info-row" style="border-top:2px solid #c8e6c9;font-weight:800;background:#fff8e1;">' +
                 '<span class="info-label">Balance C/F (what is still owed)</span>' +
                 '<span class="info-value">' + moneyOrDash(finalRunning) + '</span></div>';
+      }
+      // NEW: batch bar (visible only when __feeSelectMode is on)
+      if (__feeSelectMode) {
+        html += '<div id="feeBatchBar" style="margin-top:10px;padding:8px;' +
+                  'background:#fff8e1;border:1px solid #f0c419;border-radius:6px;' +
+                  'display:flex;justify-content:space-between;align-items:center;gap:10px;">' +
+                  '<span style="font-size:11px;color:#7a5e00;">Click X to mark items, then Apply.</span>' +
+                  '<span>' +
+                    '<button type="button" class="btn btn-sm btn-danger" id="feeBatchApplyBtn" ' +
+                    'onclick="feeApplyBatch(\'' + escAttr(pin) + '\')"' +
+                    (__feePendingRemovals.size === 0 ? ' disabled' : '') + '>' +
+                    'Remove ' + __feePendingRemovals.size + ' item' + (__feePendingRemovals.size === 1 ? '' : 's') +
+                    '</button> ' +
+                    '<button type="button" class="btn btn-sm btn-secondary" ' +
+                    'onclick="feeCancelBatch(\'' + escAttr(pin) + '\')">Cancel</button>' +
+                  '</span></div>';
       }
         html += '<details style="margin-top:10px;">' +
                 '<summary style="cursor:pointer;font-size:11px;color:#c0392b;font-weight:700;">' +
