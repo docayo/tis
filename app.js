@@ -1049,7 +1049,7 @@
                 '<label style="font-size:11px;cursor:pointer;color:#0d4d26;user-select:none;">' +
                   '<input type="checkbox" style="margin-right:4px;" ' +
                   (__feeSelectMode ? 'checked ' : '') +
-                  'onchange="feeToggleSelectMode(this.checked,\' + escAttr(pin) + \')">' +
+                  'onchange="feeToggleSelectMode(this.checked,\'' + escAttr(pin) + '\')">' +
                   ' Batch mode' +
                 '</label>' +
               '</div>';
