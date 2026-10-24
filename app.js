@@ -2948,12 +2948,36 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += rowFn('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
       html += rowFn('Balance C/F', moneyOrDash(fee.balance_cf));
     }
-// ---------- Section B ----------
-if (wantB) {
-  html += '<h2>Section B &mdash; Fees</h2>';
-  const visibleLines = (fee.tuition || 0) + ...;
-  // ... everything through the ph2 row ...
-}
+    // ---------- Section B ----------
+    if (wantB) {
+      html += '<h2>Section B &mdash; Fees</h2>';
+
+      const visibleLines =
+        (fee.tuition || 0) + (fee.other_bills_major || 0) + (fee.other_bills_minor || 0) +
+        (fee.books || 0) + (fee.uniform || 0) + (fee.sportswear || 0) + (fee.waist_coat || 0) +
+        (fee.tie || 0) + (fee.extra_lesson || 0) + (fee.special_lesson || 0) +
+        (fee.additions || 0) - (fee.scholarship || 0);
+
+      html += rowFn('Net Bills (this term)', moneyOrDash(visibleLines));
+      html += rowFn('Carried forward B/F', moneyOrDash(fee.balance_bf || 0));
+
+      let running = visibleLines + (fee.balance_bf || 0);
+      html += rowFn('Running balance', moneyOrDash(running));
+
+      if (fee.part_payments && fee.part_payments.length) {
+        fee.part_payments.forEach(function (p) {
+          running -= parseNum(p.amount);
+          html += rowFn('Less Payment ' + p.n + ' (' + (p.date ? fmtDateOrDash(p.date) : '—') + ')',
+                        '− ' + moneyOrDash(p.amount));
+          html += rowFn('Running balance', moneyOrDash(running));
+        });
+      }
+
+      html += rowFn('Balance C/F', moneyOrDash(running));
+      html += rowFn('Blood Group', d.blood_group || '—');
+      html += rowFn('Allergy', d.allergy || '—');
+      html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
+    }
     // ---------- Section C ----------
     if (wantC) {
       html += '<h2>Section C &mdash; History</h2>';
