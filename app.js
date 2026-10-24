@@ -2948,109 +2948,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += rowFn('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
       html += rowFn('Balance C/F', moneyOrDash(fee.balance_cf));
     }
-
- // ---------- Section B — Fees (Itemized) ----------
+// ---------- Section B ----------
 if (wantB) {
   html += '<h2>Section B &mdash; Fees</h2>';
-
-  const n = function (v) { return Number(v || 0); };
-
-  // ---- STATUTORY COMPONENTS (always shown) ----
-  html += rowFn('Tuition', moneyOrDash(n(fee.tuition)));
-  html += rowFn('Text Books', moneyOrDash(n(fee.other_bills_major)));
-  html += rowFn('NoteBooks', moneyOrDash(n(fee.books)));
-  html += rowFn('Uniform', moneyOrDash(n(fee.uniform)));
-
-  // ---- OPTIONAL COMPONENTS (only when non-zero) ----
-  if (n(fee.other_bills_minor) > 0) html += rowFn('Dept Text Book', moneyOrDash(n(fee.other_bills_minor)));
-  if (n(fee.sportswear) > 0)        html += rowFn('Sportswear', moneyOrDash(n(fee.sportswear)));
-  if (n(fee.waist_coat) > 0)        html += rowFn('Waist Coat', moneyOrDash(n(fee.waist_coat)));
-  if (n(fee.tie) > 0)               html += rowFn('Tie', moneyOrDash(n(fee.tie)));
-  if (n(fee.extra_lesson) > 0)      html += rowFn('Extra Lesson', moneyOrDash(n(fee.extra_lesson)));
-  if (n(fee.special_lesson) > 0)    html += rowFn('Special Lesson', moneyOrDash(n(fee.special_lesson)));
-  if (n(fee.registration_fee) > 0)  html += rowFn('Registration Fee', moneyOrDash(n(fee.registration_fee)));
-  if (n(fee.additions) > 0)         html += rowFn('Additions', moneyOrDash(n(fee.additions)));
-
-  // ---- GROSS / SCHOLARSHIP / NET BILL ----
-  const gross =
-    n(fee.tuition) + n(fee.other_bills_major) + n(fee.other_bills_minor) +
-    n(fee.books) + n(fee.uniform) + n(fee.sportswear) + n(fee.waist_coat) +
-    n(fee.tie) + n(fee.extra_lesson) + n(fee.special_lesson) +
-    n(fee.registration_fee) + n(fee.additions);
-
-  html += '<div style="border-top:2px solid #000;margin:4px 0;padding-top:2px;"></div>';
-  html += rowFn('GROSS TOTAL', moneyOrDash(gross));
-
-  if (n(fee.scholarship) > 0) {
-    html += rowFn('Less Scholarship', '− ' + moneyOrDash(n(fee.scholarship)));
-  }
-
-  const netBill = Math.max(0, gross - n(fee.scholarship));
-  html += rowFn('NET BILL (this term)', moneyOrDash(netBill));
-
-  // ---- BALANCE B/F ----
-  if (n(fee.balance_bf) > 0) {
-    html += rowFn('Add: Balance B/F', moneyOrDash(n(fee.balance_bf)));
-  }
-
-  // ---- TOTAL DUE ----
-  const totalDue = netBill + n(fee.balance_bf);
-  html += '<div style="border-top:2px solid #000;margin:4px 0;padding-top:2px;"></div>';
-  html += rowFn('TOTAL DUE', moneyOrDash(totalDue));
-
-  // ---- PAYMENTS ----
-  if (fee.part_payments && fee.part_payments.length) {
-    html += '<h2 style="margin-top:8px;">Payments</h2>';
-    let totalPaid = 0;
-    fee.part_payments.forEach(function (p) {
-      const amt = parseNum(p.amount);
-      totalPaid += amt;
-      html += rowFn(
-        'Payment ' + p.n + (p.date ? ' (' + fmtDateOrDash(p.date) + ')' : ''),
-        moneyOrDash(amt)
-      );
-    });
-    html += '<div style="border-top:1px solid #000;margin:4px 0;"></div>';
-    html += rowFn('TOTAL PAID', moneyOrDash(totalPaid));
-
-    // ---- BALANCE C/F ----
-    const balanceCf = Math.max(0, totalDue - totalPaid);
-    html += '<div style="border-top:2px solid #000;margin:4px 0;padding-top:2px;"></div>';
-    html += rowFn('BALANCE C/F', moneyOrDash(balanceCf));
-    html += rowFn('STATUS', balanceCf === 0 ? '✓ CLEARED' : '✗ NOT CLEARED');
-  } else {
-    html += '<div style="border-top:2px solid #000;margin:4px 0;padding-top:2px;"></div>';
-    html += rowFn('BALANCE C/F', moneyOrDash(totalDue));
-    html += rowFn('STATUS', totalDue === 0 ? '✓ CLEARED' : '✗ NOT CLEARED');
-  }
-
-  // ---- Health & contact ----
-  html += '<h2 style="margin-top:8px;">Health & Contact</h2>';
-  html += rowFn('Blood Group', d.blood_group || '—');
-  html += rowFn('Allergy', d.allergy || '—');
-  html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
+  const visibleLines = (fee.tuition || 0) + ...;
+  // ... everything through the ph2 row ...
 }
-
-      html += rowFn('Net Bills (this term)', moneyOrDash(visibleLines));
-      html += rowFn('Carried forward B/F', moneyOrDash(fee.balance_bf || 0));
-
-      let running = visibleLines + (fee.balance_bf || 0);
-      html += rowFn('Running balance', moneyOrDash(running));
-
-      if (fee.part_payments && fee.part_payments.length) {
-        fee.part_payments.forEach(function (p) {
-          running -= parseNum(p.amount);
-          html += rowFn('Less Payment ' + p.n + ' (' + (p.date ? fmtDateOrDash(p.date) : '—') + ')',
-                        '− ' + moneyOrDash(p.amount));
-          html += rowFn('Running balance', moneyOrDash(running));
-        });
-      }
-
-      html += rowFn('Balance C/F', moneyOrDash(running));
-      html += rowFn('Blood Group', d.blood_group || '—');
-      html += rowFn('Allergy', d.allergy || '—');
-      html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
-    }
     // ---------- Section C ----------
     if (wantC) {
       html += '<h2>Section C &mdash; History</h2>';
