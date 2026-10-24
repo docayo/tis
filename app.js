@@ -1593,9 +1593,9 @@
 
     html += '<h2>Class Bill</h2>';
     html += rowFn('Tuition', '₦' + Number(fee.class_bill.tuition).toLocaleString());
-    html += rowFn('Other Bills Major', '₦' + Number(fee.class_bill.other_bills_major).toLocaleString());
-    html += rowFn('Other Bills Minor', '₦' + Number(fee.class_bill.other_bills_minor).toLocaleString());
-    html += rowFn('Books', '₦' + Number(fee.class_bill.books).toLocaleString());
+    html += rowFn('Text Books', '₦' + Number(fee.class_bill.other_bills_major).toLocaleString());
+    html += rowFn('Dept Text Book', '₦' + Number(fee.class_bill.other_bills_minor).toLocaleString());
+    html += rowFn('NoteBooks', '₦' + Number(fee.class_bill.books).toLocaleString());
     html += rowFn('Subtotal', '₦' + Number(fee.class_bill.total).toLocaleString());
 
     html += '<h2>Extras</h2>';
@@ -4263,9 +4263,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ================================================================
   const FEE_ADVANCE_FIELDS = [
     { key: 'tuition',           label: 'Tuition' },
-    { key: 'other_bills_major', label: 'Other Bills Major' },
-    { key: 'other_bills_minor', label: 'Other Bills Minor' },
-    { key: 'books',             label: 'Books' },
+    { key: 'other_bills_major', label: 'Text Books' },
+    { key: 'other_bills_minor', label: 'Dept Text Book' },
+    { key: 'books',             label: 'NoteBooks' },
     { key: 'registration_fee',  label: 'Registration Fee' },
     { key: 'uniform',           label: 'Uniform' },
     { key: 'sportswear',        label: 'Sportswear' },
@@ -4471,9 +4471,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     const FIELDS = [
       { key: 'tuition',           label: 'Tuition ₦' },
-      { key: 'other_bills_major', label: 'Other Major ₦' },
-      { key: 'other_bills_minor', label: 'Other Minor ₦' },
-      { key: 'books',             label: 'Books ₦' },
+      { key: 'other_bills_major', label: 'Text Books ₦' },
+      { key: 'other_bills_minor', label: 'Dept Text Book ₦' },
+      { key: 'books',             label: 'NoteBooks ₦' },
       { key: 'uniform',           label: 'Uniform ₦' },
       { key: 'sportswear',        label: 'Sportswear ₦' },
       { key: 'waist_coat',        label: 'Waist Coat ₦' },
