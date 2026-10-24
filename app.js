@@ -2952,6 +2952,20 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     // ---------- Section B ----------
     if (wantB) {
       html += '<h2>Section B &mdash; Fees</h2>';
+      // ---- Itemized fee lines (paper record - no X buttons) ----
+      html += rowFn('Tuition',            moneyOrDash(fee.tuition));
+      html += rowFn('Text Books',         moneyOrDash(fee.other_bills_major));
+      html += rowFn('NoteBooks',          moneyOrDash(fee.books));
+      html += rowFn('Uniform',            moneyOrDash(fee.uniform));
+      if (fee.other_bills_minor > 0) html += rowFn('Dept Text Book',   moneyOrDash(fee.other_bills_minor));
+      if (fee.sportswear > 0)        html += rowFn('Sportswear',        moneyOrDash(fee.sportswear));
+      if (fee.waist_coat > 0)        html += rowFn('Waist Coat',        moneyOrDash(fee.waist_coat));
+      if (fee.tie > 0)               html += rowFn('Tie',               moneyOrDash(fee.tie));
+      if (fee.extra_lesson > 0)      html += rowFn('Extra Lesson',      moneyOrDash(fee.extra_lesson));
+      if (fee.special_lesson > 0)    html += rowFn('Special Lesson',    moneyOrDash(fee.special_lesson));
+      if (fee.registration_fee > 0)  html += rowFn('Registration Fee',  moneyOrDash(fee.registration_fee));
+      if (fee.additions)             html += rowFn('Additions',          moneyOrDash(fee.additions));
+      if (fee.scholarship)           html += rowFn('Scholarship / Deductions', moneyOrDash(fee.scholarship));
 
       const visibleLines =
         (fee.tuition || 0) + (fee.other_bills_major || 0) + (fee.other_bills_minor || 0) +
