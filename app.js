@@ -1038,22 +1038,6 @@
 
       if (fee.additions)   html += infoRow('Additions', moneyOrDash(fee.additions));
       if (fee.scholarship) html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
-      // ---- Statutory components (always shown) ----
-      html += infoRow('Tuition', moneyOrDash(fee.tuition || 0));
-      html += infoRow('Text Books', moneyOrDash(fee.other_bills_major || 0));
-      html += infoRow('NoteBooks', moneyOrDash(fee.books || 0));
-      html += infoRow('Uniform', moneyOrDash(fee.uniform || 0));
-
-      // ---- Optional components (only when non-zero) ----
-      if (fee.other_bills_minor > 0) html += infoRow('Dept Text Book', moneyOrDash(fee.other_bills_minor));
-      if (fee.sportswear > 0)        html += infoRow('Sportswear', moneyOrDash(fee.sportswear));
-      if (fee.waist_coat > 0)        html += infoRow('Waist Coat', moneyOrDash(fee.waist_coat));
-      if (fee.tie > 0)               html += infoRow('Tie', moneyOrDash(fee.tie));
-      if (fee.extra_lesson > 0)      html += infoRow('Extra Lesson', moneyOrDash(fee.extra_lesson));
-      if (fee.special_lesson > 0)    html += infoRow('Special Lesson', moneyOrDash(fee.special_lesson));
-      if (fee.registration_fee > 0)  html += infoRow('Registration Fee', moneyOrDash(fee.registration_fee));
-      if (fee.additions > 0)         html += infoRow('Additions', moneyOrDash(fee.additions));
-
       const visibleLines =
         (fee.tuition || 0) + (fee.other_bills_major || 0) + (fee.other_bills_minor || 0) +
         (fee.books || 0) + (fee.uniform || 0) + (fee.sportswear || 0) + (fee.waist_coat || 0) +
