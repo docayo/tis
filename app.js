@@ -911,6 +911,9 @@
   // ================================================================
  async function openLearnerViewModal(pin) {
     closeModal();
+    // Batch mode is transient - reset on every modal open.
+    __feeSelectMode = false;
+    __feePendingRemovals.clear();
     startLoader();
     const learnerR = await window.TIS.getLearnerByPin(pin);
     const termsR   = learnerR && learnerR.ok && learnerR.data
@@ -1198,21 +1201,21 @@
   // A row in fee_learner_item_overrides means the line is removed
   // for that learner in that term. Deleting the row restores it.
   // ================================================================
-    async function learnerFeeToggleOff(pin, itemKey) {
+    async function learnerFeeToggleOff(pin, itemKey, skipRefresh) {
     const r = await window.TIS.getLearnerByPin(pin);
     if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); return; }
     const at = await window.TIS.getActiveTerm();
     if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); return; }
     const term = at.data;
 
-    startLoader();
+    if (!skipRefresh) startLoader();
     const w = await window.TIS.setLearnerItemOff(r.data.id, term.term_type, term.year, itemKey, null);
-    stopLoader();
+    if (!skipRefresh) stopLoader();
     if (!w || !w.ok) { showToast('Could not remove: ' + ((w && w.error) || 'unknown'), 'error'); return; }
 
     await feeRecomputeSnapshot(r.data.id, term.term_type, term.year);
-    showToast('Line removed for this learner.', 'success');
-    openLearnerViewModal(pin);
+    if (!skipRefresh) showToast('Line removed for this learner.', 'success');
+    if (!skipRefresh) openLearnerViewModal(pin);
   }
   window.learnerFeeToggleOff = learnerFeeToggleOff;
 
@@ -1233,6 +1236,65 @@
     openLearnerViewModal(pin);
   }
   window.learnerFeeRestore = learnerFeeRestore;
+  function feeToggleSelectMode(on, pin) {
+    __feeSelectMode = !!on;
+    __feePendingRemovals.clear();
+    openLearnerViewModal(pin);
+  }
+  window.feeToggleSelectMode = feeToggleSelectMode;
+
+  function feeTogglePending(itemKey, pin) {
+    if (__feePendingRemovals.has(itemKey)) {
+      __feePendingRemovals.delete(itemKey);
+    } else {
+      __feePendingRemovals.add(itemKey);
+    }
+    const row = document.querySelector('[data-fee-key="' + itemKey + '"]');
+    if (row) {
+      if (__feePendingRemovals.has(itemKey)) {
+        row.style.textDecoration = 'line-through';
+        row.style.opacity = '0.6';
+      } else {
+        row.style.textDecoration = '';
+        row.style.opacity = '';
+      }
+      const btn = row.querySelector('.fee-mark-btn');
+      if (btn) btn.textContent = __feePendingRemovals.has(itemKey) ? 'UNDO' : 'X';
+    }
+    const applyBtn = document.getElementById('feeBatchApplyBtn');
+    if (applyBtn) {
+      applyBtn.disabled = (__feePendingRemovals.size === 0);
+      applyBtn.textContent = 'Remove ' + __feePendingRemovals.size + ' item' +
+        (__feePendingRemovals.size === 1 ? '' : 's');
+    }
+  }
+  window.feeTogglePending = feeTogglePending;
+
+  async function feeApplyBatch(pin) {
+    if (__feePendingRemovals.size === 0) return;
+    const items = Array.from(__feePendingRemovals);
+    __feePendingRemovals.clear();
+    const btn = document.getElementById('feeBatchApplyBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Removing...'; }
+    for (const key of items) {
+      try {
+        await learnerFeeToggleOff(pin, key, true);
+      } catch (e) {
+        console.error('batch removal failed for', key, e);
+      }
+    }
+    showToast(items.length + ' line' + (items.length === 1 ? '' : 's') + ' removed.', 'success');
+    __feeSelectMode = false;
+    openLearnerViewModal(pin);
+  }
+  window.feeApplyBatch = feeApplyBatch;
+
+  function feeCancelBatch(pin) {
+    __feePendingRemovals.clear();
+    __feeSelectMode = false;
+    openLearnerViewModal(pin);
+  }
+  window.feeCancelBatch = feeCancelBatch;
 
   // ================================================================
   // Recompute the learner_terms snapshot from the live sources:
