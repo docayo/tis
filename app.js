@@ -963,13 +963,32 @@
             (fee.adjustment_found ? ' + adjustment' : '') + '.</div>'
           : '');
 
-    // ---- Fee-line helper: renders one line with an X button ----
-    // If the line is present, shows the amount and an X to remove it.
-    // If the line is absent (overridden off), the line simply does not
-    // appear here — it shows in the removed-items expandable instead.
+    // Transient batch state for the view modal; reset on every open.
+    let __feeSelectMode = false;
+    let __feePendingRemovals = new Set();
+
+    // ---- Fee-line helper ----
+    // Default: renders one line with an X button that removes immediately.
+    // Batch mode: renders one line with a mark toggle; marks queue
+    //             the item for batch removal via the bottom bar.
     const feeLine = function (itemKey, label, value) {
       const on = value && value !== 0;
       if (!on) return '';
+      if (__feeSelectMode) {
+        const marked = __feePendingRemovals.has(itemKey);
+        const rowStyle = marked ? 'text-decoration:line-through;opacity:.6;' : '';
+        const btnStyle = marked
+          ? 'font-size:9px;padding:1px 6px;margin-left:6px;background:#c0392b;color:#fff;border:none;border-radius:3px;'
+          : 'font-size:9px;padding:1px 6px;margin-left:6px;background:#f5f5f5;color:#333;border:1px solid #bbb;border-radius:3px;';
+        return '<div class="info-row" data-fee-key="' + escAttr(itemKey) + '" style="' + rowStyle + '">' +
+                 '<span class="info-label">' + esc(label) + '</span>' +
+                 '<span class="info-value">' + moneyOrDash(value) +
+                   ' <button type="button" class="fee-mark-btn" style="' + btnStyle + '" ' +
+                   'onclick="feeTogglePending(\'' + escAttr(itemKey) + '\',\'' + escAttr(pin) + '\')">' +
+                   (marked ? 'UNDO' : 'X') +
+                   '</button>' +
+                 '</span></div>';
+      }
       return '<div class="info-row">' +
                '<span class="info-label">' + esc(label) + '</span>' +
                '<span class="info-value">' + moneyOrDash(value) +
