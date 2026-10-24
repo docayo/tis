@@ -3210,6 +3210,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     const printBtn = document.getElementById('btnPrintLearners');
     if (printBtn && !printBtn.__wired) { printBtn.addEventListener('click', function (e) { e.preventDefault(); printLearnerList(); }); printBtn.__wired = true; }
+    const unclearedBtn = document.getElementById('btnPrintUncleared');
+    if (unclearedBtn && !unclearedBtn.__wired) { unclearedBtn.addEventListener('click', function (e) { e.preventDefault(); printUnclearedList(); }); unclearedBtn.__wired = true; }
 
     const dl = document.getElementById('btnDownloadTemplate');
     if (dl && !dl.__wired) { dl.addEventListener('click', function (e) { e.preventDefault(); downloadLearnerTemplate(); }); dl.__wired = true; }
@@ -4299,6 +4301,106 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.openStaffPhotoModal  = openStaffPhotoModal;
   window.submitStaffPhoto     = submitStaffPhoto;
   window.printStaffCard       = printStaffCard;
+  async function printUnclearedList() {
+    try {
+      startLoader();
+
+      const at = await window.TIS.getActiveTerm();
+      if (!at || !at.ok || !at.data) {
+        showToast('No active term.', 'error');
+        stopLoader();
+        return;
+      }
+      const term = at.data;
+
+      const lr = await window.TIS.listLearners();
+      if (!lr || !lr.ok || !lr.data) {
+        showToast('Could not load learners.', 'error');
+        stopLoader();
+        return;
+      }
+      const learners = lr.data;
+
+      const uncleared = [];
+      for (const L of learners) {
+        let row = null;
+        try {
+          const tr = await window.TIS.getLearnerTermFor(L.id, term.term_type, term.year);
+          row = (tr && tr.ok) ? tr.data : null;
+        } catch (e) { row = null; }
+        const balance = row ? parseFloat(row.balance_cf || 0) : 0;
+        if (balance > 0) {
+          const phone = L.father_phone || L.mother_phone || L.guardian_phone || '-';
+          const parent = L.parents_name || L.father_name || L.mother_name || '-';
+          uncleared.push({
+            name: L.name || '-',
+            cls: L.class_name || '-',
+            phone: phone,
+            parent: parent,
+            balance: balance
+          });
+        }
+      }
+
+      uncleared.sort(function (a, b) { return (a.cls + a.name).localeCompare(b.cls + b.name); });
+      const total = uncleared.reduce(function (s, x) { return s + x.balance; }, 0);
+
+      let html = '<!doctype html><html><head><meta charset="utf-8">';
+      html += '<title>Uncleared Learners - ' + esc(term.term_type) + ' ' + term.year + '</title>';
+      html += '<style>';
+      html += '@page { size: A4 landscape; margin: 12mm; }';
+      html += 'body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; }';
+      html += 'h1 { font-size: 15px; margin: 0 0 4px; text-align: center; }';
+      html += '.sub { text-align: center; font-size: 11px; color: #444; margin-bottom: 8px; }';
+      html += 'table { width: 100%; border-collapse: collapse; }';
+      html += 'th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; }';
+      html += 'th { background: #1a3f8f; color: #fff; font-size: 10px; }';
+      html += 'tr:nth-child(even) td { background: #f4f6fa; }';
+      html += '.num { text-align: right; font-weight: 600; }';
+      html += '.total td { background: #fff8e1; font-weight: 800; }';
+      html += '</style></head><body>';
+      html += '<h1>THE IDEAL SCHOOLS - UNCLEARED LEARNERS</h1>';
+      html += '<div class="sub">' + esc(term.term_type) + ' Term, ' + term.year + ' &middot; Printed ' + new Date().toLocaleString() + ' &middot; ' + uncleared.length + ' learner(s)</div>';
+      html += '<table><thead><tr>';
+      html += '<th style="width:30px;">#</th>';
+      html += '<th>Learner Name</th>';
+      html += '<th style="width:110px;">Class</th>';
+      html += '<th>Parent / Guardian</th>';
+      html += '<th style="width:120px;">Phone</th>';
+      html += '<th style="width:100px;text-align:right;">Balance</th>';
+      html += '</tr></thead><tbody>';
+
+      uncleared.forEach(function (u, i) {
+        html += '<tr>';
+        html += '<td>' + (i + 1) + '</td>';
+        html += '<td>' + esc(u.name) + '</td>';
+        html += '<td>' + esc(u.cls) + '</td>';
+        html += '<td>' + esc(u.parent) + '</td>';
+        html += '<td>' + esc(u.phone) + '</td>';
+        html += '<td class="num">' + u.balance.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</td>';
+        html += '</tr>';
+      });
+
+      html += '<tr class="total"><td colspan="5" style="text-align:right;">TOTAL OUTSTANDING</td>';
+      html += '<td class="num">' + total.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</td></tr>';
+      html += '</tbody></table>';
+      html += '<div style="margin-top:8px;font-size:10px;text-align:center;color:#666;">Powered by TIS-EMIS &middot; The Ideal Schools</div>';
+      html += '</body></html>';
+
+      const w = window.open('', '_blank', 'width=1100,height=800');
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 500);
+
+      stopLoader();
+    } catch (e) {
+      stopLoader();
+      console.error(e);
+      showToast('Print failed: ' + (e.message || e), 'error');
+    }
+  }
+  window.printUnclearedList = printUnclearedList;
   window.printStaffList       = printStaffList;
   window.closeStaffModal      = closeStaffModal;
   
