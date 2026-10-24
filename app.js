@@ -1023,16 +1023,18 @@
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
       html += infoRow('Previous Term Balance B/F',
         prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
-      html += feeLine('tuition',           'Current Term Tuition',   fee.tuition);
-      html += feeLine('other_bills_major', 'Other Bills Major',      fee.other_bills_major);
-      html += feeLine('other_bills_minor', 'Other Bills Minor',      fee.other_bills_minor);
-      html += feeLine('books',             'Books',                  fee.books);
-      html += feeLine('uniform',           'Uniform',                fee.uniform);
-      html += feeLine('sportswear',        'Sportswear',             fee.sportswear);
-      html += feeLine('waist_coat',        'Waist Coat',             fee.waist_coat);
-      html += feeLine('tie',               'Tie',                    fee.tie);
-      html += feeLine('extra_lesson',      'Extra Lesson',           fee.extra_lesson);
-      html += feeLine('special_lesson',    'Special Lesson',         fee.special_lesson);
+      // ---- Itemized fee lines (X to remove for this learner) ----
+      html += feeLine('tuition',           'Tuition',            fee.tuition);
+      html += feeLine('other_bills_major', 'Text Books',         fee.other_bills_major);
+      html += feeLine('books',             'NoteBooks',          fee.books);
+      html += feeLine('uniform',           'Uniform',            fee.uniform);
+      if (fee.other_bills_minor > 0) html += feeLine('other_bills_minor', 'Dept Text Book',   fee.other_bills_minor);
+      if (fee.sportswear > 0)        html += feeLine('sportswear',        'Sportswear',        fee.sportswear);
+      if (fee.waist_coat > 0)        html += feeLine('waist_coat',        'Waist Coat',        fee.waist_coat);
+      if (fee.tie > 0)               html += feeLine('tie',               'Tie',               fee.tie);
+      if (fee.extra_lesson > 0)      html += feeLine('extra_lesson',      'Extra Lesson',      fee.extra_lesson);
+      if (fee.special_lesson > 0)    html += feeLine('special_lesson',    'Special Lesson',    fee.special_lesson);
+      if (fee.registration_fee > 0)  html += feeLine('registration_fee',  'Registration Fee',  fee.registration_fee);
 
       if (fee.additions)   html += infoRow('Additions', moneyOrDash(fee.additions));
       if (fee.scholarship) html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
