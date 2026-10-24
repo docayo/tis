@@ -35,6 +35,11 @@
 (function () {
   'use strict'; 
 
+  // Batch mode state for the learner view modal.
+  // Declared at IIFE top so it is initialized before any modal-open call.
+  let __feeSelectMode = false;
+  let __feePendingRemovals = new Set();
+
   // ================================================================
   // [S01] STATE
   // ================================================================
@@ -966,9 +971,6 @@
             (fee.adjustment_found ? ' + adjustment' : '') + '.</div>'
           : '');
 
-    // Transient batch state for the view modal; reset on every open.
-    let __feeSelectMode = false;
-    let __feePendingRemovals = new Set();
 
     // ---- Fee-line helper ----
     // Default: renders one line with an X button that removes immediately.
