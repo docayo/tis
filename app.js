@@ -3,9 +3,9 @@
 //   Read HANDOVER.md (repo root) or /handover (live URL).
 //   It is the master reference for state, rules, and conventions.
 //   Section map: [S01] STATE through [S22] RESULTS.
-//   Sections [S01]â€“[S14], [S19], [S20], [S21] are frozen production.
+//   Sections [S01]–[S14], [S19], [S20], [S21] are frozen production.
 // ================================================================
-// TIS EMIS â€” APPLICATION LOGIC
+// TIS EMIS — APPLICATION LOGIC
 // File: app.js
 // ================================================================
 // SECTION MAP:
@@ -85,7 +85,7 @@
            String(d.getDate()).padStart(2, '0');
   }
   function fmtDate(v) {
-    if (!v) return 'â€”';
+    if (!v) return '—';
     if (v instanceof Date) {
       const dd = String(v.getDate()).padStart(2, '0');
       const mm = String(v.getMonth() + 1).padStart(2, '0');
@@ -360,15 +360,15 @@
     }
   }
   // ================================================================
-  // [S07] LEARNERS â€” three-tier permission-gated record
+  // [S07] LEARNERS — three-tier permission-gated record
   // Single canonical implementation. Contains:
-  //   â€¢ module-scope constants (CONTACT_LABELS, RELIGION_OPTIONS, EXIT_REASONS)
-  //   â€¢ three-tier view modal (A: all, B: admin+, C: super_admin only)
-  //   â€¢ edit modal with class / religion / gender dropdowns + date picker
-  //   â€¢ part-payment recording
-  //   â€¢ print (A4 + 80mm) with section chooser
-  //   â€¢ add learner, bulk upload, template download
-  //   â€¢ live search + keyboard shortcuts
+  //   • module-scope constants (CONTACT_LABELS, RELIGION_OPTIONS, EXIT_REASONS)
+  //   • three-tier view modal (A: all, B: admin+, C: super_admin only)
+  //   • edit modal with class / religion / gender dropdowns + date picker
+  //   • part-payment recording
+  //   • print (A4 + 80mm) with section chooser
+  //   • add learner, bulk upload, template download
+  //   • live search + keyboard shortcuts
   // ================================================================
 
    // ---------- Module-scope constants ----------
@@ -455,13 +455,13 @@
     return isNaN(n) ? 0 : n;
   }
   function moneyOrDash(v) {
-    if (v === null || v === undefined || v === '') return 'â€”';
+    if (v === null || v === undefined || v === '') return '—';
     const s = String(v);
-    if (/^[â‚¦$]/.test(s)) return s;
-    return 'â‚¦' + parseNum(s).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (/^[₦$]/.test(s)) return s;
+    return '₦' + parseNum(s).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   function fmtDateOrDash(v) {
-    if (!v) return 'â€”';
+    if (!v) return '—';
     if (typeof v === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) return v;
     const d = new Date(v);
     if (isNaN(d.getTime())) return String(v);
@@ -493,15 +493,15 @@
   }
   function phoneFor(learner, slot) {
     const role = contactOrderOf(learner)[slot - 1];
-    if (!role) return { role: null, label: 'â€”', value: 'â€”' };
-    let value = 'â€”';
-    if (role === 'father')   value = learner.father_phone   || 'â€”';
-    if (role === 'mother')   value = learner.mother_phone   || 'â€”';
-    if (role === 'guardian') value = learner.guardian_phone || 'â€”';
+    if (!role) return { role: null, label: '—', value: '—' };
+    let value = '—';
+    if (role === 'father')   value = learner.father_phone   || '—';
+    if (role === 'mother')   value = learner.mother_phone   || '—';
+    if (role === 'guardian') value = learner.guardian_phone || '—';
     return { role: role, label: CONTACT_LABELS[role], value: value };
   }
   function infoRow(label, value) {
-    const v = (value !== undefined && value !== null && value !== '') ? esc(value) : 'â€”';
+    const v = (value !== undefined && value !== null && value !== '') ? esc(value) : '—';
     return '<div class="info-row"><span class="info-label">' + esc(label) + '</span><span class="info-value">' + v + '</span></div>';
   }
 
@@ -532,7 +532,7 @@
       return;
     }
 
-    setHTML('learnersGrid', pageLoaderHTML('Loading learnersâ€¦'));
+    setHTML('learnersGrid', pageLoaderHTML('Loading learners…'));
     startLoader();
 
     // Fetch classes once per session so the grid can sort by class.
@@ -557,9 +557,9 @@
    // ================================================================
   // Single source of truth for "is this learner inactive?"
   // A learner is INACTIVE if ANY of the following is present:
-  //   â€¢ date_of_withdrawal (the canonical exit date)
-  //   â€¢ class_at_withdrawal (they were assigned an exit class)
-  //   â€¢ exit_reason (they were given a reason to leave)
+  //   • date_of_withdrawal (the canonical exit date)
+  //   • class_at_withdrawal (they were assigned an exit class)
+  //   • exit_reason (they were given a reason to leave)
   // This matches how the office actually uses the form: sometimes
   // only the reason is recorded, sometimes only the date.
   // ================================================================
@@ -628,7 +628,7 @@
               (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
       html += '<div class="card-title">';
       html += '<h3 style="color:' + nameColor + ';">' + esc(name) + '</h3>';
-      html += '<div class="pin">' + esc(pin) + ' Â· ' + esc(cls) + '</div>';
+      html += '<div class="pin">' + esc(pin) + ' · ' + esc(cls) + '</div>';
       html += '</div></div>';
       html += '<div class="card-actions" style="display:flex;gap:6px;margin-top:8px;">';
       html += '<button type="button" class="btn btn-sm btn-secondary" data-action="view" data-pin="' + escAttr(pin) + '"><i class="fas fa-eye"></i> View</button>';
@@ -666,24 +666,24 @@
       '<div class="stat-card red"><div class="stat-label">Inactive</div><div class="stat-value red">' + exited + '</div></div>');
   }
   // ================================================================
-  // View modal â€” three-tier permission gating
+  // View modal — three-tier permission gating
   //   A: everyone
   //   B: admin / super_admin
   //   C: super_admin only
   // ================================================================
    // ================================================================
-  // Resolve the fee picture for one learner Ã— term Ã— year.
+  // Resolve the fee picture for one learner × term × year.
   //
   // Source of truth rule:
-  //   â€¢ Before any naira hits learner_terms for that term â†’ read
+  //   • Before any naira hits learner_terms for that term → read
   //     fee_schedule + fee_adjustments LIVE. Office edits to the
   //     class bill or a learner adjustment show up immediately.
-  //   â€¢ After the first part-payment is recorded â†’ read
+  //   • After the first part-payment is recorded → read
   //     learner_terms. The snapshot is now a receipt and is frozen.
   //
   // Returns an object with the same field names the modal and the
   // printed card have always used, so neither has to change its
-  // shape â€” only where the numbers come from.
+  // shape — only where the numbers come from.
   // ================================================================
    function previousTermOf(termType, year) {
     const t = String(termType || '').trim().toLowerCase();
@@ -695,14 +695,14 @@
   window.previousTermOf = previousTermOf;
 
   // ================================================================
-  // resolveLearnerFeePicture â€” one function, one body.
+  // resolveLearnerFeePicture — one function, one body.
   //
   // Rule:
-  //   â€¢ locked   = at least one payment recorded  â†’ we honour the
+  //   • locked   = at least one payment recorded  → we honour the
   //                snapshot for B/F and paid, but we ALWAYS rebuild
   //                the line items from the live class bill (minus
   //                overrides) so Restore and X still move the number.
-  //   â€¢ unlocked = no payment yet  â†’ everything live.
+  //   • unlocked = no payment yet  → everything live.
   //
   // Both branches return the SAME shape. Callers never see undefined.
   // ================================================================
@@ -747,7 +747,7 @@
       }
     }
 
-    // Overrides â€” always from the live table. The X and Restore
+    // Overrides — always from the live table. The X and Restore
     // actions write to fee_learner_item_overrides, so it is the
     // canonical list, locked or not.
     let overrides = [];
@@ -781,7 +781,7 @@
       if (ar && ar.ok && ar.data) adjRow = ar.data;
     } catch (e) {}
 
-    // Balance B/F â€” locked row wins; else previous term's C/F
+    // Balance B/F — locked row wins; else previous term's C/F
     let balanceBf = num(termRow && termRow.balance_bf);
     if (!balanceBf && term) {
       const prev = previousTermOf(term.term_type, term.year);
@@ -794,7 +794,7 @@
     }
 
     // ------------------------------------------------------------------
-    // LOCKED branch â€” the snapshot is frozen. Read every number from
+    // LOCKED branch — the snapshot is frozen. Read every number from
     // the learner_terms row. The four columns tuition / other_major /
     // other_minor / books were written at first payment, and bill was
     // written with the same total, so either source agrees.
@@ -855,7 +855,7 @@
     }
 
     // ------------------------------------------------------------------
-    // UNLOCKED branch â€” nothing has been paid. Everything live.
+    // UNLOCKED branch — nothing has been paid. Everything live.
     // ------------------------------------------------------------------
     const pick = function (key, fallback) {
       if (offSet[key]) return 0;
@@ -917,7 +917,7 @@
   }
   window.resolveLearnerFeePicture = resolveLearnerFeePicture;
   // ================================================================
-  // View modal â€” three-tier permission gating
+  // View modal — three-tier permission gating
   //   A: everyone
   //   B: admin / super_admin
   //   C: super_admin only
@@ -978,7 +978,7 @@
       fee.part_payments.forEach(function (p) {
         ppRows += '<div class="info-row" style="background:#f7fbf7;">' +
                   '<span class="info-label">Part Payment ' + p.n + '</span>' +
-                  '<span class="info-value">' + fmtDateOrDash(p.date) + ' â€” ' + moneyOrDash(p.amount) + '</span></div>';
+                  '<span class="info-value">' + fmtDateOrDash(p.date) + ' — ' + moneyOrDash(p.amount) + '</span></div>';
       });
     }
 
@@ -1049,7 +1049,7 @@
     }
     html += '<div>';
     html += '<div style="font-weight:800;font-size:15px;letter-spacing:1px;">' + esc(d.name || '') + '</div>';
-    html += '<div style="font-size:11px;opacity:.9;">PIN: ' + esc(d.pin || '') + ' Â· Class: ' + esc(d.class_name || '') + '</div>';
+    html += '<div style="font-size:11px;opacity:.9;">PIN: ' + esc(d.pin || '') + ' · Class: ' + esc(d.class_name || '') + '</div>';
     html += '<div style="font-size:11px;opacity:.9;">Active Term: ' + esc(termLabel) + '</div>';
     html += '</div></div>';
     html += '<div>';
@@ -1058,27 +1058,27 @@
     html += '</div></div>';
 
     html += '<div id="lbKeysHelp" style="display:none;background:#e8f5e9;padding:6px 18px;font-size:11px;color:#0d4d26;border-bottom:1px solid #c8e6c9;">';
-    html += '<b>E</b> expand all Â· <b>C</b> collapse all Â· <b>P</b> print Â· <b>Esc</b> close';
+    html += '<b>E</b> expand all · <b>C</b> collapse all · <b>P</b> print · <b>Esc</b> close';
     html += '</div>';
 
     html += '<div style="padding:14px 18px;" id="lbModalBody">';
 
     if (canA) {
-      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section A â€” Identity</div><div class="expandable-body">';
+      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section A — Identity</div><div class="expandable-body">';
       html += infoRow('Class', d.class_name);
       html += infoRow('PIN', d.pin);
       html += infoRow('Learner Name', d.name);
       html += infoRow('Gender', d.gender);
       html += infoRow('1st Phone (' + ph1.label + ')', ph1.value);
       html += infoRow('Account Number', d.account_number);
-      html += infoRow('Clearance Status', fee.cleared || 'â€”');
-      html += infoRow('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : 'â€”');
+      html += infoRow('Clearance Status', fee.cleared || '—');
+      html += infoRow('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
       html += infoRow('Balance C/F', moneyOrDash(headerBalance));
       html += '</div></div>';
     }
 
     if (canB) {
-      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B â€” Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
+      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
       html += '<div style="display:flex;justify-content:flex-end;margin-bottom:6px;">' +
                 '<label style="font-size:11px;cursor:pointer;color:#0d4d26;user-select:none;">' +
                   '<input type="checkbox" style="margin-right:4px;" ' +
@@ -1164,8 +1164,8 @@
         html += infoRow('Tuition after Scholarship', moneyOrDash(fee.adjusted_tuition));
       }
 
-      // Net Bill line â€” always shown, constant across the term.
-      // Progression is shown as a series of "Net Bill Â· Less Payment n Â· Balance"
+      // Net Bill line — always shown, constant across the term.
+      // Progression is shown as a series of "Net Bill · Less Payment n · Balance"
       // lines, one per recorded payment, so the reader can trace the deduction
       // on paper without arithmetic.
       html += '<div class="info-row" style="background:#f7fbf7;">' +
@@ -1179,16 +1179,16 @@
           running -= parseNum(p.amount);
           html += '<div class="info-row" style="background:#fdfdfd;font-size:12px;">' +
                   '<span class="info-label">Net Bill ' + moneyOrDash(visibleLines) +
-                    ' Â· Less Payment ' + p.n + ' (' + fmtDateOrDash(p.date) + '): ' +
+                    ' · Less Payment ' + p.n + ' (' + fmtDateOrDash(p.date) + '): ' +
                     moneyOrDash(p.amount) +
-                    ' Â· Balance C/F</span>' +
+                    ' · Balance C/F</span>' +
                   '<span class="info-value">' + moneyOrDash(running) + '</span></div>';
         });
       } else {
         const running = visibleLines + (fee.balance_bf || 0);
         html += '<div class="info-row" style="background:#fdfdfd;font-size:12px;">' +
                 '<span class="info-label">Net Bill ' + moneyOrDash(visibleLines) +
-                  ' Â· No payments recorded Â· Balance C/F</span>' +
+                  ' · No payments recorded · Balance C/F</span>' +
                 '<span class="info-value">' + moneyOrDash(running) + '</span></div>';
       }
 
@@ -1219,7 +1219,7 @@
       }
         html += '<details style="margin-top:10px;">' +
                 '<summary style="cursor:pointer;font-size:11px;color:#c0392b;font-weight:700;">' +
-                'Removed from this learner (' + fee.overrides.length + ') â€” click to restore' +
+                'Removed from this learner (' + fee.overrides.length + ') — click to restore' +
                 '</summary><div style="padding:6px 0;">';
         fee.overrides.forEach(function (o) {
           html += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;">' +
@@ -1237,7 +1237,7 @@
       html += '</div></div>';
     }
     if (canC) {
-      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section C â€” History & Origin</div><div class="expandable-body">';
+      html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section C — History & Origin</div><div class="expandable-body">';
       html += infoRow('Class Before Admission', d.class_before_admission);
       html += infoRow('Date of Admission', d.date_of_admission);
       html += infoRow('Class Admitted Into', d.class_admitted_into);
@@ -1276,7 +1276,7 @@
     setHTML('modalContainer', html);
   }
   // ================================================================
-  // Per-learner fee overrides â€” X (remove line) and restore.
+  // Per-learner fee overrides — X (remove line) and restore.
   // A row in fee_learner_item_overrides means the line is removed
   // for that learner in that term. Deleting the row restores it.
   // ================================================================
@@ -1559,7 +1559,7 @@
   }
   window.feeRecomputeSnapshot = feeRecomputeSnapshot;
   // ================================================================
-  // [S07b] PROSPECTS â€” prospective learners, pre-admission.
+  // [S07b] PROSPECTS — prospective learners, pre-admission.
   //   Separate from [S07] Learners: no PIN, no learner_terms.
   //   On Admit, a real learner row is created and the learner edit
   //   modal opens so the office can fill remaining fields.
@@ -1574,7 +1574,7 @@
       renderProspects(__prospectsCache);
       return;
     }
-    setHTML('prospectsGrid', pageLoaderHTML('Loading prospectsâ€¦'));
+    setHTML('prospectsGrid', pageLoaderHTML('Loading prospects…'));
     startLoader();
     const r = await window.TIS.listProspectiveLearners();
     stopLoader();
@@ -1689,7 +1689,7 @@
              '<input id="' + fieldId + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
     };
 
-    let classOpts = '<option value="">â€” Select class â€”</option>';
+    let classOpts = '<option value="">— Select class —</option>';
     classes.forEach(function (c) {
       classOpts += '<option value="' + escAttr(c.name) + '"' + (c.name === p.proposed_class ? ' selected' : '') + '>' + esc(c.name) + '</option>';
     });
@@ -1702,7 +1702,7 @@
     html += '<div class="form-row">' + f('pr_name', 'Full Name', p.full_name) +
             '<div class="form-group"><label>Proposed Class</label><select id="pr_class">' + classOpts + '</select></div></div>';
     html += '<div class="form-row">' +
-            '<div class="form-group"><label>Gender</label><select id="pr_gender"><option value="">â€”</option>' +
+            '<div class="form-group"><label>Gender</label><select id="pr_gender"><option value="">—</option>' +
             '<option value="Male"' + (p.gender === 'Male' ? ' selected' : '') + '>Male</option>' +
             '<option value="Female"' + (p.gender === 'Female' ? ' selected' : '') + '>Female</option></select></div>' +
             f('pr_dob', 'Date of Birth', p.date_of_birth, 'date') + '</div>';
@@ -1783,7 +1783,7 @@
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box wide" onclick="event.stopPropagation()" style="max-width:520px;">';
-    html += '<div class="modal-header"><h2>Fee Preview â€” ' + esc(p.full_name) + '</h2>' +
+    html += '<div class="modal-header"><h2>Fee Preview — ' + esc(p.full_name) + '</h2>' +
             '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
 
     html += '<div style="background:#f7fbf7;padding:12px;border-radius:8px;font-family:Arial;color:#000;font-size:13px;line-height:1.5;">';
@@ -1797,17 +1797,17 @@
     html += '<div style="font-size:11px;margin-bottom:8px;">Proposed: ' + esc(p.proposed_class) + '</div>';
 
     html += '<div style="font-weight:900;border-top:2px solid #000;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;font-size:12px;">Class Bill</div>';
-    html += '<div>Tuition ....... â‚¦' + Number(fee.class_bill.tuition).toLocaleString() + '</div>';
-    html += '<div>Other Major ... â‚¦' + Number(fee.class_bill.other_bills_major).toLocaleString() + '</div>';
-    html += '<div>Other Minor ... â‚¦' + Number(fee.class_bill.other_bills_minor).toLocaleString() + '</div>';
-    html += '<div>Books ......... â‚¦' + Number(fee.class_bill.books).toLocaleString() + '</div>';
+    html += '<div>Tuition ....... ₦' + Number(fee.class_bill.tuition).toLocaleString() + '</div>';
+    html += '<div>Other Major ... ₦' + Number(fee.class_bill.other_bills_major).toLocaleString() + '</div>';
+    html += '<div>Other Minor ... ₦' + Number(fee.class_bill.other_bills_minor).toLocaleString() + '</div>';
+    html += '<div>Books ......... ₦' + Number(fee.class_bill.books).toLocaleString() + '</div>';
 
     html += '<div style="font-weight:900;border-top:2px solid #000;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;font-size:12px;margin-top:8px;">Extras</div>';
     fee.extras.forEach(function (e, i) {
       const on = e.default_on !== false;
       html += '<div data-extra-index="' + i + '" style="display:flex;justify-content:space-between;padding:2px 0;' + (on ? '' : 'text-decoration:line-through;color:#999;') + '">';
       html += '<span>' + esc(e.item_label) + '</span>';
-      html += '<span>â‚¦' + Number(e.default_amount).toLocaleString();
+      html += '<span>₦' + Number(e.default_amount).toLocaleString();
       html += ' <button type="button" class="btn btn-sm btn-danger" style="font-size:9px;padding:1px 5px;margin-left:6px;" onclick="toggleExtra(' + i + ')">X</button></span>';
       html += '</div>';
     });
@@ -1817,7 +1817,7 @@
     const grand = fee.class_bill.total + extrasTotal;
 
     html += '<div style="font-weight:900;border-top:2px solid #000;padding-top:4px;margin-top:6px;font-size:14px;display:flex;justify-content:space-between;">';
-    html += '<span>TOTAL</span><span>â‚¦' + grand.toLocaleString() + '</span></div>';
+    html += '<span>TOTAL</span><span>₦' + grand.toLocaleString() + '</span></div>';
 
     html += '</div>';
 
@@ -1880,24 +1880,24 @@
     html += '<div class="who-sub">Proposed: ' + esc(p.proposed_class) + ' &middot; ' + esc(term.label) + '</div>';
 
     html += '<h2>Class Bill</h2>';
-    html += rowFn('Tuition', 'â‚¦' + Number(fee.class_bill.tuition).toLocaleString());
-    html += rowFn('Text Books', 'â‚¦' + Number(fee.class_bill.other_bills_major).toLocaleString());
-    html += rowFn('Dept Text Book', 'â‚¦' + Number(fee.class_bill.other_bills_minor).toLocaleString());
-    html += rowFn('NoteBooks', 'â‚¦' + Number(fee.class_bill.books).toLocaleString());
-    html += rowFn('Subtotal', 'â‚¦' + Number(fee.class_bill.total).toLocaleString());
+    html += rowFn('Tuition', '₦' + Number(fee.class_bill.tuition).toLocaleString());
+    html += rowFn('Text Books', '₦' + Number(fee.class_bill.other_bills_major).toLocaleString());
+    html += rowFn('Dept Text Book', '₦' + Number(fee.class_bill.other_bills_minor).toLocaleString());
+    html += rowFn('NoteBooks', '₦' + Number(fee.class_bill.books).toLocaleString());
+    html += rowFn('Subtotal', '₦' + Number(fee.class_bill.total).toLocaleString());
 
     html += '<h2>Extras</h2>';
     const on = fee.extras.filter(function (e) { return e.default_on !== false; });
     if (on.length === 0) {
-      html += rowFn('(none selected)', 'â€”');
+      html += rowFn('(none selected)', '—');
     } else {
       on.forEach(function (e) {
-        html += rowFn(e.item_label, 'â‚¦' + Number(e.default_amount).toLocaleString());
+        html += rowFn(e.item_label, '₦' + Number(e.default_amount).toLocaleString());
       });
     }
     const extrasTotal = on.reduce(function (s, e) { return s + Number(e.default_amount); }, 0);
 
- html += '<div class="total"><span>TOTAL</span><span>â‚¦' + (fee.class_bill.total + extrasTotal).toLocaleString() + '</span></div>';
+ html += '<div class="total"><span>TOTAL</span><span>₦' + (fee.class_bill.total + extrasTotal).toLocaleString() + '</span></div>';
 html += tisBankBlockHtml80mm();
 html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '</body></html>';
@@ -1974,7 +1974,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
     html += '<thead><tr style="background:#0d4d26;color:#fff;">' +
             '<th style="text-align:left;padding:6px;">Item</th>' +
-            '<th style="padding:6px;">Amount â‚¦</th>' +
+            '<th style="padding:6px;">Amount ₦</th>' +
             '<th style="padding:6px;">Active</th>' +
             '<th style="padding:6px;">Save</th></tr></thead><tbody>';
     extras.forEach(function (e, i) {
@@ -2031,7 +2031,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
   window.initProspectsTab = initProspectsTab;
   // ================================================================
-  // [S07c] COLLECTIBLES â€” flat checklist per learner.
+  // [S07c] COLLECTIBLES — flat checklist per learner.
   //   Items come from `collectible_items` (one checkbox each).
   //   Ticks come from `collectible_ticks` keyed on
   //   (learner_id, item_key, sub_key=''). No sub-rows.
@@ -2078,7 +2078,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     if (!q) { collectSetFeedback(''); return; }
 
-    collectSetFeedback('Searchingâ€¦');
+    collectSetFeedback('Searching…');
     startLoader();
     const r = await window.TIS.searchLearners(q);
     stopLoader();
@@ -2100,7 +2100,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return;
     }
 
-    // Multiple matches â†’ let the operator pick.
+    // Multiple matches → let the operator pick.
     __collectState.matched = rows;
     let html = '<div class="card-bg" style="padding:0;overflow-x:auto;">';
     html += '<table class="users-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
@@ -2135,8 +2135,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     __collectState.learner = learner;
     __collectState.dirty = {};
     setHTML('collectMatchList', '');
-    collectSetFeedback('Loading checklist for ' + (learner.name || learner.pin) + 'â€¦');
-    setHTML('collectChecklist', pageLoaderHTML('Loading checklistâ€¦'));
+    collectSetFeedback('Loading checklist for ' + (learner.name || learner.pin) + '…');
+    setHTML('collectChecklist', pageLoaderHTML('Loading checklist…'));
     startLoader();
 
     try {
@@ -2154,7 +2154,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       collectRenderChecklist(items, learner);
       collectSetFeedback(
         items.length + ' item(s) for ' + (learner.name || learner.pin) +
-        ' Â· ' + (learner.class_name || 'â€”'),
+        ' · ' + (learner.class_name || '—'),
         'ok'
       );
     } catch (err) {
@@ -2182,7 +2182,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div style="font-weight:800;color:#0d4d26;font-size:15px;">' +
             esc(learner.name || '') + '</div>';
     html += '<div style="font-size:11px;color:#666;">' +
-            esc(learner.pin || '') + ' Â· ' + esc(learner.class_name || '') + '</div>';
+            esc(learner.pin || '') + ' · ' + esc(learner.class_name || '') + '</div>';
     html += '</div>';
     html += '<div><button class="btn btn-sm btn-success" type="button" ' +
             'onclick="collectSaveAll()">Save Changed</button></div>';
@@ -2249,7 +2249,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.collectSaveAll = collectSaveAll;
 
   // ----------------------------------------------------------------
-  // Manage items â€” add / edit / retire rows in collectible_items
+  // Manage items — add / edit / retire rows in collectible_items
   // ----------------------------------------------------------------
   async function collectOpenManageModal() {
     closeModal();
@@ -2326,7 +2326,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const active = tr.querySelector('.ci-active').checked;
     if (!label) { showToast('Label cannot be empty.', 'warning'); return; }
 
-    // There is no dedicated updateItem method in the client yet â€”
+    // There is no dedicated updateItem method in the client yet —
     // fall back to a direct upsert via the same table contract used
     // by listCollectibleItems. If your client gains `upsertCollectibleItem`,
     // swap this block for a single call.
@@ -2375,7 +2375,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.collectAddItem = collectAddItem;
 
   // ----------------------------------------------------------------
-  // Print checklist â€” only what was ticked.
+  // Print checklist — only what was ticked.
   // ----------------------------------------------------------------
   function collectPrintChecklist() {
     const learner = __collectState.learner;
@@ -2386,7 +2386,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
 
-    let html = '<html><head><title>Checklist â€” ' + esc(learner.name || '') + '</title>' +
+    let html = '<html><head><title>Checklist — ' + esc(learner.name || '') + '</title>' +
       '<style>' +
       'body{font-family:Arial;padding:20px;color:#111;}' +
       '.hdr{text-align:center;border-bottom:3px solid #0d4d26;padding-bottom:8px;margin-bottom:12px;}' +
@@ -2401,8 +2401,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       '</style></head><body>';
     html += '<div class="hdr"><h1>THE IDEAL SCHOOLS</h1>' +
             '<div class="sub">Scientia est potentia</div></div>';
-    html += '<div class="who"><b>' + esc(learner.name || '') + '</b> Â· ' +
-            esc(learner.pin || '') + ' Â· ' + esc(learner.class_name || '') + '</div>';
+    html += '<div class="who"><b>' + esc(learner.name || '') + '</b> · ' +
+            esc(learner.pin || '') + ' · ' + esc(learner.class_name || '') + '</div>';
     html += '<table><thead><tr><th>Item</th><th style="width:80px;">Collected</th>' +
             '<th style="width:120px;">Date</th></tr></thead><tbody>';
     items.forEach(function (it) {
@@ -2410,7 +2410,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<tr><td>' + esc(it.item_label || it.item_key) + '</td>' +
               '<td class="' + (t.collected ? 'yes' : 'no') + '">' +
               (t.collected ? 'Yes' : 'No') + '</td>' +
-              '<td>' + (t.collected_at ? new Date(t.collected_at).toLocaleDateString() : 'â€”') +
+              '<td>' + (t.collected_at ? new Date(t.collected_at).toLocaleDateString() : '—') +
               '</td></tr>';
     });
     html += '</tbody></table>';
@@ -2445,7 +2445,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
   window.initCollectiblesTab = initCollectiblesTab;
   // ================================================================
-  // Edit modal â€” dropdowns for class / gender / religion,
+  // Edit modal — dropdowns for class / gender / religion,
   //              native date picker for DOB
   // ================================================================
   async function openLearnerEditModal(pin) {
@@ -2471,7 +2471,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
              '<input id="' + id + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
     };
     const classField = function (id, label, value) {
-      let opts = '<option value="">â€” Select class â€”</option>';
+      let opts = '<option value="">— Select class —</option>';
       classNames.forEach(function (c) {
         opts += '<option value="' + escAttr(c) + '"' + (c === value ? ' selected' : '') + '>' + esc(c) + '</option>';
       });
@@ -2481,7 +2481,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + id + '">' + opts + '</select></div>';
     };
     const religionField = function (id, label, value) {
-      let opts = '<option value="">â€” Select â€”</option>';
+      let opts = '<option value="">— Select —</option>';
       RELIGION_OPTIONS.forEach(function (rel) {
         opts += '<option value="' + escAttr(rel) + '"' + (rel === value ? ' selected' : '') + '>' + esc(rel) + '</option>';
       });
@@ -2492,7 +2492,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     };
     const genderField = function (id, label, value) {
       const opts = ['', 'Male', 'Female'].map(function (g) {
-        return '<option value="' + g + '"' + (g === value ? ' selected' : '') + '>' + (g || 'â€”') + '</option>';
+        return '<option value="' + g + '"' + (g === value ? ' selected' : '') + '>' + (g || '—') + '</option>';
       }).join('');
       return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + id + '">' + opts + '</select></div>';
     };
@@ -2540,7 +2540,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const p3 = order[2] || 'guardian';
 
     let contactBlock = '<div style="background:#f7fbf7;padding:12px;border-radius:8px;margin:8px 0;">';
-    contactBlock += '<div style="font-weight:700;font-size:13px;color:#0d4d26;margin-bottom:8px;">Contact priority â€” the order to call when we need a parent</div>';
+    contactBlock += '<div style="font-weight:700;font-size:13px;color:#0d4d26;margin-bottom:8px;">Contact priority — the order to call when we need a parent</div>';
 
     // Priority section
     contactBlock += '<div style="background:#fff;border:1px solid #e0e8e2;border-radius:6px;padding:8px 10px;margin-bottom:10px;">';
@@ -2552,7 +2552,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     // Number section
     contactBlock += '<div style="background:#fff;border:1px solid #e0e8e2;border-radius:6px;padding:8px 10px;">';
-    contactBlock += '<div style="font-size:11px;color:#666;margin-bottom:6px;">Phone numbers â€” one per role. Leave blank if not available.</div>';
+    contactBlock += '<div style="font-size:11px;color:#666;margin-bottom:6px;">Phone numbers — one per role. Leave blank if not available.</div>';
     contactBlock += numberField('ed_num_father',   "Father's number",   d.father_phone);
     contactBlock += numberField('ed_num_mother',   "Mother's number",   d.mother_phone);
     contactBlock += numberField('ed_num_guardian', "Guardian's number", d.guardian_phone);
@@ -2562,7 +2562,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Edit â€” ' + esc(d.name) + '</h2>' +
+    html += '<div class="modal-header"><h2>Edit — ' + esc(d.name) + '</h2>' +
             '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
 
     html += photoPanel;
@@ -2584,7 +2584,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       textField('ed_lga_of_birth',   'LGA of Birth',   d.lga_of_birth) + '</div>';
     html += textField('ed_lin', 'LIN', d.lin);
 
-       let exitOpts = '<option value="">â€” none â€”</option>';
+       let exitOpts = '<option value="">— none —</option>';
     EXIT_REASONS.forEach(function (rs) {
       exitOpts += '<option value="' + escAttr(rs) + '"' + (rs === d.exit_reason ? ' selected' : '') + '>' + esc(rs) + '</option>';
     });
@@ -2694,7 +2694,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
   }
   // ----------------------------------------------------------------
-  // Learner photo modal â€” picks a file, uploads to
+  // Learner photo modal — picks a file, uploads to
   // TISAssets/learners/<PIN>.png, saves the URL with a cache-bust.
   // ----------------------------------------------------------------
   function openLearnerPhotoModal(pin) {
@@ -2705,7 +2705,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box" style="max-width:440px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Photo â€” ' + esc(learnerName) + '</h2>' +
+    html += '<div class="modal-header"><h2>Photo — ' + esc(learnerName) + '</h2>' +
             '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
 
     html += '<div style="text-align:center;">';
@@ -2817,10 +2817,10 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ================================================================
   async function openAddLearnerModal() {
     const classNames = await getClassNamesForDropdown();
-    let classOpts = '<option value="">â€” Select class â€”</option>';
+    let classOpts = '<option value="">— Select class —</option>';
     classNames.forEach(function (c) { classOpts += '<option value="' + escAttr(c) + '">' + esc(c) + '</option>'; });
 
-    let relOpts = '<option value="">â€” Select â€”</option>';
+    let relOpts = '<option value="">— Select —</option>';
     RELIGION_OPTIONS.forEach(function (rel) { relOpts += '<option value="' + escAttr(rel) + '">' + esc(rel) + '</option>'; });
 
     const f = function (id, label, value, type) {
@@ -2841,7 +2841,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     html += '<div class="form-row">' +
       '<div class="form-group"><label>Class</label><select id="nl_class_name">' + classOpts + '</select></div>' +
-      '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">â€”</option><option>Male</option><option>Female</option></select></div>' +
+      '<div class="form-group"><label>Gender</label><select id="nl_gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>' +
       '</div>';
 
     html += '<div class="form-row">' +
@@ -2906,7 +2906,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     nlSetFeedback('');
 
-    // Basic validation â€” name is the only hard requirement besides class.
+    // Basic validation — name is the only hard requirement besides class.
     if (!name) { nlSetFeedback('Learner Name is required.'); return; }
 
     // If the operator typed a PIN, validate the format strictly.
@@ -2951,7 +2951,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         if (!ok) {
           stopLoader();
           if (submitBtn) submitBtn.disabled = false;
-          nlSetFeedback('Cancelled â€” no learner was added.');
+          nlSetFeedback('Cancelled — no learner was added.');
           return;
         }
       }
@@ -2983,7 +2983,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
           if (r && r.ok) {
         const assignedPin = r.data && r.data.pin ? r.data.pin : (row.pin || '(auto)');
-        showToast('Learner added: ' + row.name + ' â€” PIN ' + assignedPin, 'success');
+        showToast('Learner added: ' + row.name + ' — PIN ' + assignedPin, 'success');
         window.TIS.logAudit({
           actor_name:  (State.profile && State.profile.name) || 'Operator',
           actor_role:  (State.profile && State.profile.role) || '',
@@ -3074,7 +3074,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div style="border-top:1px solid #c8e6c9;margin-top:6px;padding-top:6px;">Balance now: <b>' + moneyOrDash(balanceNow) + '</b></div>';
     html += '</div>';
 
-    html += '<div class="form-group"><label>Amount Paid (â‚¦)</label><input id="pp_amount" type="number" step="0.01" placeholder="0.00"></div>';
+    html += '<div class="form-group"><label>Amount Paid (₦)</label><input id="pp_amount" type="number" step="0.01" placeholder="0.00"></div>';
     html += '<div class="form-group"><label>Date</label><input id="pp_date" type="date" value="' + new Date().toISOString().slice(0,10) + '"></div>';
     html += '<div class="form-group"><label>Mode</label><select id="pp_mode"><option>Cash</option><option>Transfer</option><option>POS</option><option>Cheque</option></select></div>';
     html += '<div style="text-align:right;margin-top:12px;">';
@@ -3113,7 +3113,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ================================================================
-  // Print â€” A4 or 80mm, section chooser
+  // Print — A4 or 80mm, section chooser
   // ================================================================
   async function openPrintOptionsModal(pin) {
     closeModal();
@@ -3132,9 +3132,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<p style="font-size:12px;margin:0 0 8px;">Choose sections and paper size.</p>';
     html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:10px;">';
     html += '<div style="font-weight:700;font-size:12px;color:#0d4d26;margin-bottom:6px;">Sections</div>';
-    if (canA) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secA" checked> Section A â€” Identity</label>';
-    if (canB) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secB" checked> Section B â€” Fees</label>';
-    if (canC) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secC" checked> Section C â€” History & Origin</label>';
+    if (canA) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secA" checked> Section A — Identity</label>';
+    if (canB) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secB" checked> Section B — Fees</label>';
+    if (canC) html += '<label style="display:block;padding:4px 0;"><input type="checkbox" id="pp_secC" checked> Section C — History & Origin</label>';
     html += '</div>';
     html += '<div style="text-align:right;margin-top:12px;">';
     html += '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button> ';
@@ -3180,7 +3180,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
 
     // 80mm thermal (RawBT / MPT-11_309F).
-    // Printable width on an 80mm head is ~72mm â€” do NOT use 80mm here
+    // Printable width on an 80mm head is ~72mm — do NOT use 80mm here
     // or the driver shrinks everything to fit, which is what made the
     // previous output unreadable. Base font is 14px (~3.5mm tall).
     const css80 =
@@ -3227,14 +3227,14 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     // ---------- Section A ----------
     if (wantA) {
       html += '<h2>Section A &mdash; Identity</h2>';
-      html += rowFn('Class', d.class_name || 'â€”');
-      html += rowFn('PIN', d.pin || 'â€”');
-      html += rowFn('Name', d.name || 'â€”');
-      html += rowFn('Gender', d.gender || 'â€”');
+      html += rowFn('Class', d.class_name || '—');
+      html += rowFn('PIN', d.pin || '—');
+      html += rowFn('Name', d.name || '—');
+      html += rowFn('Gender', d.gender || '—');
       html += rowFn('1st Phone (' + ph1.label + ')', ph1.value);
-      html += rowFn('Account', d.account_number || 'â€”');
-      html += rowFn('Clearance', fee.cleared || 'â€”');
-      html += rowFn('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : 'â€”');
+      html += rowFn('Account', d.account_number || '—');
+      html += rowFn('Clearance', fee.cleared || '—');
+      html += rowFn('Clearance Date', fee.clearance ? fmtDateOrDash(fee.clearance) : '—');
       html += rowFn('Balance C/F', moneyOrDash(fee.balance_cf));
     }
     // ---------- Section B ----------
@@ -3270,34 +3270,34 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       if (fee.part_payments && fee.part_payments.length) {
         fee.part_payments.forEach(function (p) {
           running -= parseNum(p.amount);
-          html += rowFn('Less Payment ' + p.n + ' (' + (p.date ? fmtDateOrDash(p.date) : 'â€”') + ')',
-                        'âˆ’ ' + moneyOrDash(p.amount));
+          html += rowFn('Less Payment ' + p.n + ' (' + (p.date ? fmtDateOrDash(p.date) : '—') + ')',
+                        '− ' + moneyOrDash(p.amount));
           html += rowFn('Running balance', moneyOrDash(running));
         });
       }
 
       html += rowFn('Balance C/F', moneyOrDash(running));
-      html += rowFn('Blood Group', d.blood_group || 'â€”');
-      html += rowFn('Allergy', d.allergy || 'â€”');
+      html += rowFn('Blood Group', d.blood_group || '—');
+      html += rowFn('Allergy', d.allergy || '—');
       html += rowFn('2nd Phone (' + ph2.label + ')', ph2.value);
     }
     // ---------- Section C ----------
     if (wantC) {
       html += '<h2>Section C &mdash; History</h2>';
-      html += rowFn('Class Before Adm.', d.class_before_admission || 'â€”');
-      html += rowFn('Date of Admission', d.date_of_admission || 'â€”');
-      html += rowFn('Class Admitted Into', d.class_admitted_into || 'â€”');
-      html += rowFn('LIN', d.lin || 'â€”');
-      html += rowFn('Exit Class', d.class_at_withdrawal || 'â€”');
-      html += rowFn('Exit Reason', d.exit_reason || 'â€”');
-      html += rowFn('Religion', d.religion || 'â€”');
-      html += rowFn('Date of Birth', d.date_of_birth || 'â€”');
-      html += rowFn('Parents Name', d.parents_name || 'â€”');
-      html += rowFn('Address', d.address || 'â€”');
-      html += rowFn('State of Origin', d.state_of_origin || 'â€”');
-      html += rowFn('LGA of Origin', d.lga_of_origin || 'â€”');
-      html += rowFn('State of Birth', d.state_of_birth || 'â€”');
-      html += rowFn('LGA of Birth', d.lga_of_birth || 'â€”');
+      html += rowFn('Class Before Adm.', d.class_before_admission || '—');
+      html += rowFn('Date of Admission', d.date_of_admission || '—');
+      html += rowFn('Class Admitted Into', d.class_admitted_into || '—');
+      html += rowFn('LIN', d.lin || '—');
+      html += rowFn('Exit Class', d.class_at_withdrawal || '—');
+      html += rowFn('Exit Reason', d.exit_reason || '—');
+      html += rowFn('Religion', d.religion || '—');
+      html += rowFn('Date of Birth', d.date_of_birth || '—');
+      html += rowFn('Parents Name', d.parents_name || '—');
+      html += rowFn('Address', d.address || '—');
+      html += rowFn('State of Origin', d.state_of_origin || '—');
+      html += rowFn('LGA of Origin', d.lga_of_origin || '—');
+      html += rowFn('State of Birth', d.state_of_birth || '—');
+      html += rowFn('LGA of Birth', d.lga_of_birth || '—');
       html += rowFn('3rd Phone (' + ph3.label + ')', ph3.value);
     }
 
@@ -3429,7 +3429,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // Excel template download + upload
   // ================================================================
   function downloadLearnerTemplate() {
-    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded â€” reload the page', 'error'); return; }
+    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded — reload the page', 'error'); return; }
     const columns = [
       'PIN','LEARNERS NAME','CLASS','GENDER','DATE OF BIRTH',
       'FATHERS PHONE NUMBER','MOTHERS PHONE NUMBER','GUARDIAN PHONE NUMBER',
@@ -3454,7 +3454,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 // ... (other parts of [S07] remain the same) ...
 
   async function uploadLearnerUpdates(file) {
-    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded â€” reload the page', 'error'); return; }
+    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded — reload the page', 'error'); return; }
     if (!confirm('Upload "' + file.name + '"?\n\nRows matching an existing PIN will be updated. New PINs will be created.\n\n' +
                  'IMPORTANT: An empty cell in the spreadsheet will CLEAR the corresponding field for that learner.')) return;
     startLoader();
@@ -3509,9 +3509,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       }
     }
     stopLoader();
-    const msg = 'Updated ' + updated + ' Â· Created ' + created + ' Â· Failed ' + failed;
+    const msg = 'Updated ' + updated + ' · Created ' + created + ' · Failed ' + failed;
     if (failed === 0) showToast(msg, 'success');
-    else { showToast(msg + ' â€” see console for details', 'warning'); console.warn('[Upload errors]', errors); }
+    else { showToast(msg + ' — see console for details', 'warning'); console.warn('[Upload errors]', errors); }
     loadLearners();
   }
 
@@ -3553,8 +3553,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       'table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:#fff;padding:8px;font-size:11px;text-align:left;}' +
       'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}' +
       '.m{color:#1a5276;font-weight:600;}.f{color:#c0392b;font-weight:600;}</style></head><body>';
-    html += '<h1>THE IDEAL SCHOOLS â€” Learners List</h1>';
-    html += '<div style="text-align:center;font-size:11px;color:#666;margin-bottom:10px;">Printed ' + new Date().toLocaleString() + ' Â· ' + rowsToPrint.length + ' learners</div>';
+    html += '<h1>THE IDEAL SCHOOLS — Learners List</h1>';
+    html += '<div style="text-align:center;font-size:11px;color:#666;margin-bottom:10px;">Printed ' + new Date().toLocaleString() + ' · ' + rowsToPrint.length + ' learners</div>';
     html += '<table><thead><tr><th>Class</th><th>PIN</th><th>Name</th><th>Gender</th><th>Father Phone</th><th>Mother Phone</th></tr></thead><tbody>';
     rowsToPrint.forEach(function (r) {
       const g = (r.gender || '').toLowerCase();
@@ -3568,14 +3568,14 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     w.document.write(html); w.document.close(); setTimeout(function () { w.print(); }, 250);
   }
   // ================================================================
-  // [S07.x] BULK PHOTO UPLOAD â€” learners and staff
+  // [S07.x] BULK PHOTO UPLOAD — learners and staff
   //   ZIP of photos, named <code>.jpg / .png / .webp.
   //   For learners: <code> = learner PIN  (e.g. TIS0241.jpg)
   //   For staff:    <code> = staff_id    (e.g. TIS2406.jpg)
   //
   //   Per-file flow:
   //     1. Look up the learner/staff by code.
-  //     2. If they already have a photo_url â†’ ask "replace?".
+  //     2. If they already have a photo_url → ask "replace?".
   //     3. Upload via TIS.uploadAsset('<folder>', <code>.<ext>, file).
   //     4. Save the returned URL (with cache-bust) into photo_url.
   //
@@ -3584,7 +3584,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ================================================================
   function openBulkPhotoUploadDialog(kind) {
     if (typeof JSZip === 'undefined') {
-      showToast('JSZip not loaded â€” reload the page.', 'error');
+      showToast('JSZip not loaded — reload the page.', 'error');
       return;
     }
     const isStaff = kind === 'staff';
@@ -3592,20 +3592,20 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box" style="max-width:520px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Bulk Upload Photos â€” ' + label + '</h2>' +
+    html += '<div class="modal-header"><h2>Bulk Upload Photos — ' + label + '</h2>' +
             '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
 
     html += '<p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6;">';
     html += 'Select a ZIP file containing one photo per ' + (isStaff ? 'staff member' : 'learner') + '. ';
-    html += 'Each photo must be named <code>' + (isStaff ? 'TIS2406.jpg' : 'TIS0241.jpg') + '</code> â€” ';
+    html += 'Each photo must be named <code>' + (isStaff ? 'TIS2406.jpg' : 'TIS0241.jpg') + '</code> — ';
     html += 'the file name must exactly match the ' + (isStaff ? 'Staff ID' : 'PIN') + '. ';
     html += 'Accepted formats: JPG, PNG, WEBP. Size limit: 5 MB per photo.';
     html += '</p>';
 
     html += '<div style="background:#f7fbf7;padding:10px;border-radius:8px;margin-bottom:12px;font-size:11px;color:#555;line-height:1.6;">';
-    html += '<b>Compression tip:</b> if your source photos are 3â€“4 MB each, compress them first. ';
+    html += '<b>Compression tip:</b> if your source photos are 3–4 MB each, compress them first. ';
     html += 'Free tool: <b>Caesium Image Compressor</b> (caesium.app). ';
-    html += 'For 100+ photos, aim for ~300â€“500 KB each to keep upload under 10 minutes.';
+    html += 'For 100+ photos, aim for ~300–500 KB each to keep upload under 10 minutes.';
     html += '</div>';
 
     html += '<input type="file" id="bulkPhotoZip" accept=".zip,application/zip" style="margin-bottom:14px;">';
@@ -3615,7 +3615,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div style="background:#e8f5e9;border-radius:6px;height:12px;overflow:hidden;">';
     html += '<div id="bulkPhotoBar" style="background:#0d4d26;height:100%;width:0%;transition:width .2s;"></div>';
     html += '</div>';
-    html += '<div id="bulkPhotoProgressText" style="font-size:12px;color:#555;margin-top:6px;text-align:center;">Startingâ€¦</div>';
+    html += '<div id="bulkPhotoProgressText" style="font-size:12px;color:#555;margin-top:6px;text-align:center;">Starting…</div>';
     html += '</div>';
 
     html += '<div style="text-align:right;margin-top:16px;">';
@@ -3654,9 +3654,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     function setProgress(done, total, extra) {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       if (bar) bar.style.width = pct + '%';
-      if (txt) txt.textContent = done + ' of ' + total + ' processed' + (extra ? ' â€” ' + extra : '');
+      if (txt) txt.textContent = done + ' of ' + total + ' processed' + (extra ? ' — ' + extra : '');
     }
-    setProgress(0, 0, 'unzippingâ€¦');
+    setProgress(0, 0, 'unzipping…');
 
     // ---------- Load and read the ZIP ----------
     let zip;
@@ -3674,7 +3674,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       if (entry.dir) return;
       const lower = relPath.toLowerCase();
       if (!/\.(jpg|jpeg|png|webp)$/.test(lower)) return;
-      // Strip folder prefixes â€” we only care about the filename
+      // Strip folder prefixes — we only care about the filename
       const justName = relPath.split('/').pop();
       const extRaw = (justName.split('.').pop() || '').toLowerCase();
       const code = justName.substring(0, justName.lastIndexOf('.')).trim().toUpperCase();
@@ -3738,7 +3738,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
       if (!lk) {
         failCount++;
-        failList.push(e.code + ' â€” no matching ' + (isStaff ? 'staff' : 'learner') + ' found');
+        failList.push(e.code + ' — no matching ' + (isStaff ? 'staff' : 'learner') + ' found');
         setProgress(i + 1, entries.length, 'skipped ' + e.code);
         continue;
       }
@@ -3760,7 +3760,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         });
       } catch (err) {
         failCount++;
-        failList.push(e.code + ' â€” could not read from ZIP');
+        failList.push(e.code + ' — could not read from ZIP');
         setProgress(i + 1, entries.length);
         continue;
       }
@@ -3769,7 +3769,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const r = await window.TIS.uploadAsset(folder, filename, blob);
       if (!r || !r.ok) {
         failCount++;
-        failList.push(e.code + ' â€” upload failed: ' + ((r && r.error) || 'unknown'));
+        failList.push(e.code + ' — upload failed: ' + ((r && r.error) || 'unknown'));
         setProgress(i + 1, entries.length);
         continue;
       }
@@ -3782,7 +3782,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
       if (!upd || !upd.ok) {
         failCount++;
-        failList.push(e.code + ' â€” uploaded but DB update failed');
+        failList.push(e.code + ' — uploaded but DB update failed');
       } else {
         okCount++;
       }
@@ -3859,12 +3859,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ================================================================
   // [S08] STAFF
   // Single canonical implementation.
-  //   â€¢ grid with live search + stats
-  //   â€¢ profile modal
-  //   â€¢ edit modal (all real columns, incl. position / school / bvn / DOB)
-  //   â€¢ add staff modal
-  //   â€¢ photo upload (base64 today; move to Storage later)
-  //   â€¢ print single card + whole list
+  //   • grid with live search + stats
+  //   • profile modal
+  //   • edit modal (all real columns, incl. position / school / bvn / DOB)
+  //   • add staff modal
+  //   • photo upload (base64 today; move to Storage later)
+  //   • print single card + whole list
   // ================================================================
     let __staffShowInactive = false;   // toggled by the toolbar button
 
@@ -3885,7 +3885,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return;
     }
 
-    setHTML('staffGrid', pageLoaderHTML('Loading staffâ€¦'));
+    setHTML('staffGrid', pageLoaderHTML('Loading staff…'));
     startLoader();
     const r = await window.TIS.listStaff();
     stopLoader();
@@ -3930,7 +3930,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<div class="card-header">';
       html += '<div class="card-avatar">' + (photo ? '<img src="' + esc(photo) + '" alt="">' : esc(name.charAt(0) || '?')) + '</div>';
       html += '<div class="card-title"><h3>' + esc(name) + '</h3>';
-      html += '<div class="pin">' + esc(s.staff_id || s.id || '') + ' â€¢ ' + esc(s.department || '') + '</div>';
+      html += '<div class="pin">' + esc(s.staff_id || s.id || '') + ' • ' + esc(s.department || '') + '</div>';
       if (s.position) {
         html += '<div class="pin" style="font-size:10px;opacity:.75;">' + esc(s.position) + '</div>';
       }
@@ -3998,7 +3998,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '</div>';
     html += '<div style="flex:1;min-width:220px;">';
     html += '<div style="font-weight:800;font-size:15px;color:#0d4d26;">' + esc(name) + '</div>';
-    html += '<div style="font-size:12px;color:#666;">' + esc(s.staff_id || '') + ' Â· ' + esc(s.department || '') + '</div>';
+    html += '<div style="font-size:12px;color:#666;">' + esc(s.staff_id || '') + ' · ' + esc(s.department || '') + '</div>';
     if (s.position) html += '<div style="font-size:12px;color:#666;">' + esc(s.position) + '</div>';
     if (s.school)   html += '<div style="font-size:11px;color:#888;">' + esc(s.school) + '</div>';
     html += '</div>';
@@ -4069,7 +4069,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return '<div class="form-group"><label>' + esc(label) + '</label><input id="' + fid + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
     };
     const sel = function (fid, label, value, options, allowBlank) {
-      let o = allowBlank ? '<option value="">â€”</option>' : '';
+      let o = allowBlank ? '<option value="">—</option>' : '';
       options.forEach(function (opt) {
         o += '<option value="' + escAttr(opt) + '"' + (opt === value ? ' selected' : '') + '>' + esc(opt) + '</option>';
       });
@@ -4081,7 +4081,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)closeStaffModal()">';
     html += '<div class="modal-box wide" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Edit â€” ' + esc(staffName(s)) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
+    html += '<div class="modal-header"><h2>Edit — ' + esc(staffName(s)) + '</h2><button class="close-btn" onclick="closeStaffModal()">&times;</button></div>';
 
     html += '<div class="form-row">' + f('es_staff_id', 'Staff ID', s.staff_id) + f('es_surname', 'Surname', s.surname) + '</div>';
     html += '<div class="form-row">' + f('es_first_name', 'First Name', s.first_name) + f('es_middle_name', 'Middle Name', s.middle_name) + '</div>';
@@ -4092,7 +4092,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div class="form-row">' + f('es_employment_date', 'Employment Date', s.employment_date, 'date') + f('es_graduation_year', 'Graduation Year', s.graduation_year) + '</div>';
     html += '<div class="form-row">' + f('es_course_of_study', 'Course of Study', s.course_of_study) + f('es_subjects_taught', 'Subjects Taught', s.subjects_taught) + '</div>';
     html += '<div class="form-row">' + f('es_bank', 'Bank', s.bank) + f('es_account_number', 'Account Number', s.account_number) + '</div>';
-    html += '<div class="form-row">' + f('es_bvn', 'BVN', s.bvn) + f('es_salary', 'Salary (â‚¦)', s.salary) + '</div>';
+    html += '<div class="form-row">' + f('es_bvn', 'BVN', s.bvn) + f('es_salary', 'Salary (₦)', s.salary) + '</div>';
     html += '<div class="form-row">' + f('es_resume_time', 'Resume Time', s.resume_time) + f('es_close_time', 'Close Time', s.close_time) + '</div>';
     html += '<div class="form-row">' + f('es_late_cutoff', 'Late Cutoff', s.late_cutoff) + f('es_early_cutoff', 'Early Cutoff', s.early_cutoff) + '</div>';
     html += '<div class="form-row">' + sel('es_status', 'Status', s.status || 'Active', STAFF_STATUSES, false) + '</div>';
@@ -4167,7 +4167,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return '<div class="form-group"><label>' + esc(label) + '</label><input id="' + fid + '" type="' + t + '" value="' + escAttr(value || '') + '"></div>';
     };
     const sel = function (fid, label, options, blank) {
-      let o = blank ? '<option value="">â€”</option>' : '';
+      let o = blank ? '<option value="">—</option>' : '';
       options.forEach(function (opt) { o += '<option value="' + escAttr(opt) + '">' + esc(opt) + '</option>'; });
       return '<div class="form-group"><label>' + esc(label) + '</label><select id="' + fid + '">' + o + '</select></div>';
     };
@@ -4185,7 +4185,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div class="form-row">' + f('ns_employment_date', 'Employment Date', '', 'date') + f('ns_graduation_year', 'Graduation Year', '') + '</div>';
     html += '<div class="form-row">' + f('ns_course_of_study', 'Course of Study', '') + f('ns_subjects_taught', 'Subjects Taught', '') + '</div>';
     html += '<div class="form-row">' + f('ns_bank', 'Bank', '') + f('ns_account_number', 'Account Number', '') + '</div>';
-    html += '<div class="form-row">' + f('ns_bvn', 'BVN', '') + f('ns_salary', 'Salary (â‚¦)', '') + '</div>';
+    html += '<div class="form-row">' + f('ns_bvn', 'BVN', '') + f('ns_salary', 'Salary (₦)', '') + '</div>';
     html += '<div class="form-row">' + f('ns_resume_time', 'Resume Time', '07:00') + f('ns_close_time', 'Close Time', '16:30') + '</div>';
     html += '<div class="form-row">' + f('ns_late_cutoff', 'Late Cutoff', '') + f('ns_early_cutoff', 'Early Cutoff', '') + '</div>';
 
@@ -4242,7 +4242,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ----------------------------------------------------------------
-  // Photo modal â€” shows staff_id in the title, not UUID
+  // Photo modal — shows staff_id in the title, not UUID
   // ----------------------------------------------------------------
   function openStaffPhotoModal(id) {
     const s = (State.cachedStaff || []).find(function (x) { return String(x.id) === String(id); });
@@ -4251,7 +4251,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box" style="max-width:440px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Photo â€” ' + esc(display) + '</h2>' +
+    html += '<div class="modal-header"><h2>Photo — ' + esc(display) + '</h2>' +
             '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
 
     html += '<div style="text-align:center;">';
@@ -4367,7 +4367,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1><div style="font-style:italic;color:#666;font-size:12px;">Scientia est potentia</div></div>';
     html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:60px;">';
     html += '</div>';
-    html += '<h2 style="margin-top:16px;color:#0b6623;">' + esc(name) + ' â€” ' + esc(s.staff_id || '') + '</h2>';
+    html += '<h2 style="margin-top:16px;color:#0b6623;">' + esc(name) + ' — ' + esc(s.staff_id || '') + '</h2>';
     html += '<table>';
     const rows = [
       ['School', s.school],
@@ -4404,7 +4404,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       'body{font-family:Arial;padding:20px;}h1{color:#0b6623;text-align:center;}' +
       'table{width:100%;border-collapse:collapse;}th{background:#0b6623;color:white;padding:8px;font-size:11px;}' +
       'td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;}</style></head><body>';
-    html += '<h1>THE IDEAL SCHOOLS â€” Staff List</h1>';
+    html += '<h1>THE IDEAL SCHOOLS — Staff List</h1>';
     html += '<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Position</th><th>Phone</th><th>Status</th></tr></thead><tbody>';
     State.cachedStaff.forEach(function (s) {
       html += '<tr><td>' + esc(s.staff_id || '') + '</td><td>' + esc(staffName(s)) + '</td>' +
@@ -4596,10 +4596,10 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ================================================================
-  // [S09.x] FEES MODULE â€” lives inside the Terms tab.
+  // [S09.x] FEES MODULE — lives inside the Terms tab.
   //   Two views:
-  //     â€¢ Class Bill   â€” one row per class Ã— term Ã— year
-  //     â€¢ Adjustments  â€” one row per learner Ã— term Ã— year
+  //     • Class Bill   — one row per class × term × year
+  //     • Adjustments  — one row per learner × term × year
   //   Feeds the FEE NOTICE line on the report card.
   // ================================================================
   let __feesMode = 'schedule';   // 'schedule' | 'adjustments'
@@ -4647,7 +4647,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
   window.initFeesPanel = initFeesPanel;
   // ================================================================
-  // FEE ADVANCE â€” inline card that appears when the currently
+  // FEE ADVANCE — inline card that appears when the currently
   // selected term has no class bills yet. Copies from the prior
   // term with per-line toggles. Skipped lines are omitted entirely
   // from the new term.
@@ -4760,7 +4760,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     });
 
     const fb = $('feeAdvanceFeedback');
-    if (fb) { fb.style.color = '#666'; fb.textContent = 'Advancingâ€¦'; }
+    if (fb) { fb.style.color = '#666'; fb.textContent = 'Advancing…'; }
 
     const btn = $('feeAdvanceGo');
     if (btn) btn.disabled = true;
@@ -4785,9 +4785,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const d = r.data || {};
     let msg = 'Copied ' + (d.classesCopied || 0) + ' class bill';
     msg += (d.classesCopied === 1 ? '' : 's');
-    if (d.adjustmentsCopied) msg += ' Â· ' + d.adjustmentsCopied + ' adjustment(s)';
+    if (d.adjustmentsCopied) msg += ' · ' + d.adjustmentsCopied + ' adjustment(s)';
     if (d.classesSkipped && d.classesSkipped.length) {
-      msg += ' Â· ' + d.classesSkipped.length + ' class(es) skipped (already had a bill)';
+      msg += ' · ' + d.classesSkipped.length + ' class(es) skipped (already had a bill)';
     }
     if (fb) { fb.style.color = '#0d4d26'; fb.textContent = msg; }
 
@@ -4830,8 +4830,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   async function feesLoad() {
     const { term, year } = feesReadTermYear();
     if (!year) { feesSetFeedback('Pick a year.', 'error'); return; }
-    feesSetFeedback('Loadingâ€¦');
-    setHTML('feesContent', pageLoaderHTML('Loading feesâ€¦'));
+    feesSetFeedback('Loading…');
+    setHTML('feesContent', pageLoaderHTML('Loading fees…'));
     startLoader();
     try {
       if (__feesMode === 'schedule')   await feesLoadSchedule(term, year);
@@ -4861,16 +4861,16 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     });
 
     const FIELDS = [
-      { key: 'tuition',           label: 'Tuition â‚¦' },
-      { key: 'other_bills_major', label: 'Text Books â‚¦' },
-      { key: 'other_bills_minor', label: 'Dept Text Book â‚¦' },
-      { key: 'books',             label: 'NoteBooks â‚¦' },
-      { key: 'uniform',           label: 'Uniform â‚¦' },
-      { key: 'sportswear',        label: 'Sportswear â‚¦' },
-      { key: 'waist_coat',        label: 'Waist Coat â‚¦' },
-      { key: 'tie',               label: 'Tie â‚¦' },
-      { key: 'extra_lesson',      label: 'Extra Lesson â‚¦' },
-      { key: 'special_lesson',    label: 'Special Lesson â‚¦' }
+      { key: 'tuition',           label: 'Tuition ₦' },
+      { key: 'other_bills_major', label: 'Text Books ₦' },
+      { key: 'other_bills_minor', label: 'Dept Text Book ₦' },
+      { key: 'books',             label: 'NoteBooks ₦' },
+      { key: 'uniform',           label: 'Uniform ₦' },
+      { key: 'sportswear',        label: 'Sportswear ₦' },
+      { key: 'waist_coat',        label: 'Waist Coat ₦' },
+      { key: 'tie',               label: 'Tie ₦' },
+      { key: 'extra_lesson',      label: 'Extra Lesson ₦' },
+      { key: 'special_lesson',    label: 'Special Lesson ₦' }
     ];
 
     let html = '<div style="overflow-x:auto;">';
@@ -4880,7 +4880,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     FIELDS.forEach(function (f) {
       html += '<th style="padding:6px;white-space:nowrap;">' + esc(f.label) + '</th>';
     });
-    html += '<th style="padding:6px;">Total â‚¦</th>';
+    html += '<th style="padding:6px;">Total ₦</th>';
     html += '<th style="padding:6px;">Save</th>';
     html += '</tr></thead><tbody>';
 
@@ -4913,7 +4913,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '</tbody></table></div>';
     html += '<p style="font-size:11px;color:#666;margin-top:8px;">' +
             'Each row is the class bill for ' + esc(term.toUpperCase()) + ' TERM ' + year +
-            '. A blank field is treated as 0. Registration Fee is not billed to enrolled learners â€” it is a prospect-only line. ' +
+            '. A blank field is treated as 0. Registration Fee is not billed to enrolled learners — it is a prospect-only line. ' +
             'Individual learners can be adjusted in the Adjustments view.</p>';
     setHTML('feesContent', html);
   }
@@ -4973,7 +4973,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   //   deductions for the selected term and year.
   // ----------------------------------------------------------------
    async function feesLoadAdjustments(term, year) {
-    feesSetFeedback('Loading learnersâ€¦');
+    feesSetFeedback('Loading learners…');
     const learnerR = await window.TIS.listLearners();
     if (!learnerR || !learnerR.ok) {
       setHTML('feesContent', errorHTML('Could not load learners', learnerR && learnerR.error));
@@ -5013,7 +5013,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       });
 
     let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">';
-    html += '<input type="text" id="feesAdjustSearch" placeholder="Search by name or PINâ€¦" style="flex:1 1 220px;min-width:180px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;">';
+    html += '<input type="text" id="feesAdjustSearch" placeholder="Search by name or PIN…" style="flex:1 1 220px;min-width:180px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;">';
     html += '<select id="feesAdjustClass" style="flex:0 0 200px;padding:8px 12px;border:1px solid #ccc;border-radius:8px;">';
     html += '<option value="">All classes</option>';
     classList.forEach(function (c) {
@@ -5028,8 +5028,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<th style="text-align:left;padding:6px;">PIN</th>';
     html += '<th style="text-align:left;padding:6px;">Name</th>';
     html += '<th style="text-align:left;padding:6px;">Class</th>';
-    html += '<th style="padding:6px;">Additions â‚¦</th>';
-    html += '<th style="padding:6px;">Deductions â‚¦</th>';
+    html += '<th style="padding:6px;">Additions ₦</th>';
+    html += '<th style="padding:6px;">Deductions ₦</th>';
     html += '<th style="text-align:left;padding:6px;">Reason</th>';
     html += '<th style="padding:6px;">Add Item</th>';
      html += '<th style="padding:6px;">Save</th>';
@@ -5115,7 +5115,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
   window.feesSaveAdjustmentRow = feesSaveAdjustmentRow;
     // ================================================================
-  // ADJUSTMENTS â€” Add a class-bill line to a single learner for the
+  // ADJUSTMENTS — Add a class-bill line to a single learner for the
   // current term. Used when the class bill omits a line (because it
   // was switched off in the advance) but one learner needs it.
   // ================================================================
@@ -5144,7 +5144,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
               '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
       html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">';
       html += 'The class bill for ' + esc(className) + ' does not include these lines this term. ';
-      html += 'Adding one here raises this learner\'s bill only â€” it does not change the class bill.';
+      html += 'Adding one here raises this learner\'s bill only — it does not change the class bill.';
       html += '</p>';
 
       html += '<div class="form-group"><label>Line</label>';
@@ -5155,7 +5155,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '</select></div>';
 
       html += '<div class="form-row">';
-      html += '<div class="form-group"><label>Amount (â‚¦)</label>' +
+      html += '<div class="form-group"><label>Amount (₦)</label>' +
               '<input id="feeAddItemAmt" type="number" step="0.01" value="0" style="width:100%;"></div>';
       html += '</div>';
 
@@ -5217,7 +5217,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
   window.feeAddItemSave = feeAddItemSave;
   async function loadTerms() {
-    setHTML('termsList', pageLoaderHTML('Loading termsâ€¦'));
+    setHTML('termsList', pageLoaderHTML('Loading terms…'));
 
     const r = await window.TIS.getTerms();
     if (!r || !r.ok) {
@@ -5237,7 +5237,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const activeBadge = t.is_active
         ? '<span class="card-badge" style="background:#27ae60;color:#fff;">ACTIVE</span>' : '';
       const fmt = function (d) {
-        if (!d) return 'â€”';
+        if (!d) return '—';
         const dt = new Date(d + 'T00:00:00');
         if (isNaN(dt.getTime())) return d;
         const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -5255,12 +5255,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<div style="flex:1;min-width:220px;">';
       html += '<div><strong>' + esc(t.label) + '</strong> ' + activeBadge + '</div>';
       html += '<div style="font-size:11px;color:#666;margin-top:2px;">' +
-              fmt(t.start_date) + ' â†’ ' + fmt(t.end_date) + ' â€¢ ' + weeks + ' weeks</div>';
+              fmt(t.start_date) + ' → ' + fmt(t.end_date) + ' • ' + weeks + ' weeks</div>';
       html += '</div>';
       html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
       if (t.is_active) {
         html += '<button class="btn btn-sm btn-primary" onclick="openPromotionWizard()">Promote Learners</button>';
-        html += '<span style="color:#27ae60;font-weight:700;font-size:12px;align-self:center;">âœ“ Currently active</span>';
+        html += '<span style="color:#27ae60;font-weight:700;font-size:12px;align-self:center;">✓ Currently active</span>';
       } else {
         html += '<button class="btn btn-sm btn-success" ' +
                 'onclick="activateTerm(' + t.id + ', \'' + escAttr(t.label) + '\')">Set Active</button>';
@@ -5288,7 +5288,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   function initTermsWiring() { /* no-op */ }
 
   // ================================================================
-  // PROMOTION WIZARD â€” three screens in a single modal
+  // PROMOTION WIZARD — three screens in a single modal
   //   1. Choose mode: Term promotion | Year promotion
   //   2. If Year:  class-based bulk OR special single-learner
   //   3. Confirm and apply
@@ -5311,7 +5311,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       // for year promotion
       sourceClasses: [],              // selected source class names
       learners: [],                   // learners in those classes
-      choices: {},                    // learnerId â†’ new class name (or 'KEEP')
+      choices: {},                    // learnerId → new class name (or 'KEEP')
       specialQuery: '',
       specialLearner: null,
       specialTarget: ''
@@ -5341,16 +5341,16 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
 
       html += '<div class="card-bg" style="cursor:pointer;" onclick="pwSetMode(\'term\')">';
-      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">ðŸ“† Term promotion</h4>';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">📆 Term promotion</h4>';
       html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">';
       html += 'Move all active learners from <b>' + esc(pw.activeTerm.label) + '</b> to ';
       html += '<b>' + esc(next.term_type.toUpperCase()) + ' TERM ' + esc(next.year) + '</b>. ';
-      html += 'No class change â€” same class, same learners, new fee block.</p>';
+      html += 'No class change — same class, same learners, new fee block.</p>';
       html += '<button class="btn btn-primary" onclick="event.stopPropagation();pwSetMode(\'term\')">Choose Term Promotion</button>';
       html += '</div>';
 
       html += '<div class="card-bg" style="cursor:pointer;" onclick="pwSetMode(\'year\')">';
-      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">ðŸŽ“ Year promotion</h4>';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">🎓 Year promotion</h4>';
       html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">';
       html += 'Change learners\' class to the next (or any) class. End-of-year move.</p>';
       html += '<button class="btn btn-primary" onclick="event.stopPropagation();pwSetMode(\'year\')">Choose Year Promotion</button>';
@@ -5377,16 +5377,16 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     // ---------- STEP 2 (year): flow chooser ----------
     else if (pw.step === 2 && pw.mode === 'year') {
-      html += '<p style="font-size:13px;margin:0 0 12px;">Year promotion â€” change class assignments.</p>';
+      html += '<p style="font-size:13px;margin:0 0 12px;">Year promotion — change class assignments.</p>';
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
       html += '<div class="card-bg">';
-      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">ðŸ« Class-based (bulk)</h4>';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">🏫 Class-based (bulk)</h4>';
       html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">Pick source classes. Every learner in them appears with a per-learner destination dropdown. Apply.</p>';
       html += '<button class="btn btn-primary" onclick="pwYearGoClassBased()">Go Class-Based</button>';
       html += '</div>';
       html += '<div class="card-bg">';
-      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">ðŸ” Special (single learner)</h4>';
-      html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">Search one learner by PIN or name. Promote to any class â€” non-standard moves warn but proceed.</p>';
+      html += '<h4 style="margin:0 0 6px;color:#0d4d26;">🔍 Special (single learner)</h4>';
+      html += '<p style="font-size:12px;margin:0 0 8px;color:#555;">Search one learner by PIN or name. Promote to any class — non-standard moves warn but proceed.</p>';
       html += '<button class="btn btn-primary" onclick="pwYearGoSpecial()">Go Special</button>';
       html += '</div>';
       html += '</div>';
@@ -5402,7 +5402,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         html += '<label style="display:block;padding:4px 0;font-size:12px;">' +
                 '<input type="checkbox" class="pwSrcChk" value="' + escAttr(c.name) + '"' + checked +
                 ' onchange="pwToggleSourceClass(this.value, this.checked)"> ' +
-                esc(c.name) + ' <span style="color:#888;">â†’ ' + esc(c.next_class || 'â€”') + '</span>' +
+                esc(c.name) + ' <span style="color:#888;">→ ' + esc(c.next_class || '—') + '</span>' +
                 '</label>';
       });
       html += '</div>';
@@ -5427,11 +5427,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
               '<th style="text-align:left;padding:6px;">Current</th>' +
               '<th style="text-align:left;padding:6px;">Destination</th></tr></thead><tbody>';
 
-      const classNames = pw.classes.map(function (c) { return c.name; }).concat(['â€”KEEPâ€”']);
+      const classNames = pw.classes.map(function (c) { return c.name; }).concat(['—KEEP—']);
       pw.learners.forEach(function (l) {
         const current = l.class_name || '';
         const auto = nextMap[current] || '';
-        const chosen = pw.choices[l.id] || auto || 'â€”KEEPâ€”';
+        const chosen = pw.choices[l.id] || auto || '—KEEP—';
         html += '<tr>';
         html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.pin || '') + '</td>';
         html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.name || '') + '</td>';
@@ -5440,7 +5440,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         html += '<select onchange="pwSetChoice(' + l.id + ', this.value)" style="width:100%;">';
         classNames.forEach(function (c) {
           const sel = (chosen === c) ? ' selected' : '';
-          const label = c === 'â€”KEEPâ€”' ? 'Keep in current class' : c;
+          const label = c === '—KEEP—' ? 'Keep in current class' : c;
           html += '<option value="' + escAttr(c) + '"' + sel + '>' + esc(label) + '</option>';
         });
         html += '</select>';
@@ -5457,7 +5457,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     else if (pw.step === 3 && pw.mode === 'year' && pw.flow === 'special') {
       html += '<p style="font-size:13px;margin:0 0 8px;">Search one learner to promote specially.</p>';
       html += '<div style="display:flex;gap:8px;">';
-      html += '<input type="text" id="pwSpecialQuery" placeholder="Enter PIN or nameâ€¦" ' +
+      html += '<input type="text" id="pwSpecialQuery" placeholder="Enter PIN or name…" ' +
               'value="' + escAttr(pw.specialQuery) + '" oninput="pwSpecialQueryChanged(this.value)" style="flex:1;">';
       html += '<button class="btn btn-primary" onclick="pwSearchSpecial()">Search</button>';
       html += '<button class="btn btn-secondary" onclick="pwBack()">Back</button>';
@@ -5466,11 +5466,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       if (pw.specialLearner) {
         html += '<div style="margin-top:16px;background:#f7fbf7;padding:12px;border-radius:8px;">';
         html += '<p style="margin:0 0 8px;font-size:13px;">' +
-                '<b>' + esc(pw.specialLearner.name) + '</b> â€” ' + esc(pw.specialLearner.pin) +
-                ' (currently: ' + esc(pw.specialLearner.class_name || 'â€”') + ')</p>';
+                '<b>' + esc(pw.specialLearner.name) + '</b> — ' + esc(pw.specialLearner.pin) +
+                ' (currently: ' + esc(pw.specialLearner.class_name || '—') + ')</p>';
         html += '<div class="form-group"><label>Destination class</label>';
         html += '<select id="pwSpecialTarget" onchange="pw.specialTarget = this.value" style="width:100%;">';
-        html += '<option value="">â€” Select class â€”</option>';
+        html += '<option value="">— Select class —</option>';
         pw.classes.forEach(function (c) {
           const sel = (pw.specialTarget === c.name) ? ' selected' : '';
           html += '<option value="' + escAttr(c.name) + '"' + sel + '>' + esc(c.name) + '</option>';
@@ -5526,8 +5526,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     const promotions = [];
     pw.learners.forEach(function (l) {
-      const chosen = pw.choices[l.id] || nextMap[l.class_name] || 'â€”KEEPâ€”';
-      if (chosen === 'â€”KEEPâ€”') return;
+      const chosen = pw.choices[l.id] || nextMap[l.class_name] || '—KEEP—';
+      if (chosen === '—KEEP—') return;
       if (chosen === l.class_name) return;
       promotions.push({ learnerId: l.id, newClassName: chosen });
     });
@@ -5543,7 +5543,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let msg = 'Promote ' + promotions.length + ' learner(s)?';
     if (nonStandard.length > 0) {
-      msg += '\n\nâš  ' + nonStandard.length + ' non-standard move(s) detected.\n' +
+      msg += '\n\n⚠ ' + nonStandard.length + ' non-standard move(s) detected.\n' +
              'These do not follow the standard next-class mapping but will proceed.';
     }
     if (!confirm(msg)) return;
@@ -5578,7 +5578,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
               '<td style="padding:4px;">' + esc(l.class_name || '') + '</td></tr>';
     });
     if (pw.learners.length > 40) {
-      html += '<tr><td colspan="3" style="padding:4px;color:#888;">â€¦ and ' +
+      html += '<tr><td colspan="3" style="padding:4px;color:#888;">… and ' +
               (pw.learners.length - 40) + ' more</td></tr>';
     }
     html += '</table></div>';
@@ -5633,8 +5633,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     results.forEach(function (l) {
       h += '<div style="padding:6px 10px;border-bottom:1px solid #eee;cursor:pointer;" ' +
            'onclick="pwPickSpecial(' + l.id + ')">' +
-           '<b>' + esc(l.name) + '</b> â€” ' + esc(l.pin) +
-           ' <span style="color:#888;">(currently ' + esc(l.class_name || 'â€”') + ')</span></div>';
+           '<b>' + esc(l.name) + '</b> — ' + esc(l.pin) +
+           ' <span style="color:#888;">(currently ' + esc(l.class_name || '—') + ')</span></div>';
     });
     h += '</div>';
     box.innerHTML = h;
@@ -5660,8 +5660,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const auto = nextMap[pw.specialLearner.class_name] || null;
     if (auto !== target) {
       const w = 'Non-standard promotion:\n\n' +
-                pw.specialLearner.name + ' is in ' + (pw.specialLearner.class_name || 'â€”') + '.\n' +
-                'Standard next class: ' + (auto || 'â€”') + '.\n' +
+                pw.specialLearner.name + ' is in ' + (pw.specialLearner.class_name || '—') + '.\n' +
+                'Standard next class: ' + (auto || '—') + '.\n' +
                 'You are promoting to: ' + target + '.\n\nProceed?';
       if (!confirm(w)) return;
     } else {
@@ -5686,7 +5686,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ================================================================
-  // PROMOTION BANNER â€” persistent reminder when a term promotion is due
+  // PROMOTION BANNER — persistent reminder when a term promotion is due
   // ================================================================
   async function checkPromotionBanner() {
     let bar = document.getElementById('promotionBanner');
@@ -5697,7 +5697,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         return;
       }
       const t = r.data;
-      const msg = 'âš  You have not yet promoted some learners into ' +
+      const msg = '⚠ You have not yet promoted some learners into ' +
                   t.nextTerm.term_type.toUpperCase() + ' TERM ' + t.nextTerm.year +
                   ' (' + t.pendingLearners + ' pending).';
       if (!bar) {
@@ -5795,10 +5795,10 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     return role === 'admin' || role === 'super_admin';
   }
   function attWeekLockLabel(lock) {
-    if (lock === 'open')   return 'ðŸ”“ Open';
-    if (lock === 'grace')  return 'â³ Grace (24h)';
-    if (lock === 'locked') return 'ðŸ”’ Locked';
-    return 'â³ Future';
+    if (lock === 'open')   return '🔓 Open';
+    if (lock === 'grace')  return '⏳ Grace (24h)';
+    if (lock === 'locked') return '🔒 Locked';
+    return '⏳ Future';
   }
 
   // ----------------------------------------------------------------
@@ -5918,7 +5918,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (!cls) { showToast('Pick a class first', 'warning'); return; }
     if (!term || !year) { showToast('Pick a term and year', 'warning'); return; }
 
-    setHTML('attendanceTermView', pageLoaderHTML('Loading registerâ€¦'));
+    setHTML('attendanceTermView', pageLoaderHTML('Loading register…'));
     startLoader();
 
     const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10));
@@ -6025,9 +6025,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         return;
       }
       showToast('Holiday moved to ' + toDate, 'success');
-      if (fb) fb.textContent = 'âœ“ Holiday moved to ' + toDate + '. Reloading registerâ€¦';
+      if (fb) fb.textContent = '✓ Holiday moved to ' + toDate + '. Reloading register…';
       await loadAttendanceRegister();
-      if (fb) fb.textContent = 'âœ“ Holiday moved to ' + toDate + '.';
+      if (fb) fb.textContent = '✓ Holiday moved to ' + toDate + '.';
     } finally {
       stopLoader();
     }
@@ -6101,8 +6101,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     let html = '<div class="card-bg" style="padding:14px;overflow-x:auto;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">';
     html += '<div>';
-    html += '<div style="font-weight:800;font-size:16px;color:#0d4d26;">' + esc(st.cls) + ' â€” ' + esc(st.termLabel) + '</div>';
-    html += '<div style="font-size:11px;color:#666;">' + st.learners.length + ' learners Â· ' + st.weeks.length + ' weeks</div>';
+    html += '<div style="font-weight:800;font-size:16px;color:#0d4d26;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</div>';
+    html += '<div style="font-size:11px;color:#666;">' + st.learners.length + ' learners · ' + st.weeks.length + ' weeks</div>';
     html += '</div>';
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">';
     html += '<select id="attSessionMode2" style="padding:6px 10px;border-radius:6px;border:1px solid #ccc;font-size:12px;">';
@@ -6117,20 +6117,20 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     st.weeks.forEach(function (wk) {
       const isOpen = !!st.openWeeks[wk.weekNumber];
-      const arrow = isOpen ? 'â–¾' : 'â–¸';
+      const arrow = isOpen ? '▾' : '▸';
       const a = attWeekSummary(wk);
       const lock = attWeekLockState(wk);
 
       html += '<div style="border:1px solid #e6e9f0;border-radius:8px;overflow:hidden;margin-bottom:10px;">';
       html += '<div onclick="attToggleWeek(' + wk.weekNumber + ')" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:#0d4d26;color:#fff;padding:10px 14px;flex-wrap:wrap;gap:8px;">';
-      html += '<div style="font-weight:700;font-size:13px;">' + arrow + ' Week ' + wk.weekNumber + ' Â· Ending ' + fmtDateShort_(wk.weekEnding) + '</div>';
+      html += '<div style="font-weight:700;font-size:13px;">' + arrow + ' Week ' + wk.weekNumber + ' · Ending ' + fmtDateShort_(wk.weekEnding) + '</div>';
       html += '<div style="display:flex;gap:14px;font-size:11px;flex-wrap:wrap;">';
       html += '<span>' + attWeekLockLabel(lock) + '</span>';
       html += '<span>Open: <b>' + a.openSlots + '</b></span>';
-      html += '<span>ðŸŒ… M: <b>' + a.mPresent + '/' + a.mExpected + '</b> (' + a.mPct + '%)</span>';
-      html += '<span>ðŸŒ‡ A: <b>' + a.aPresent + '/' + a.aExpected + '</b> (' + a.aPct + '%)</span>';
-      html += '<span>Î£: <b>' + a.combinedPct + '%</b></span>';
-      html += '<span>â™‚ ' + (a.boysPresent === null ? 'â€”' : a.boysPresent) + ' Â· â™€ ' + (a.girlsPresent === null ? 'â€”' : a.girlsPresent) + '</span>';
+      html += '<span>🌅 M: <b>' + a.mPresent + '/' + a.mExpected + '</b> (' + a.mPct + '%)</span>';
+      html += '<span>🌇 A: <b>' + a.aPresent + '/' + a.aExpected + '</b> (' + a.aPct + '%)</span>';
+      html += '<span>Σ: <b>' + a.combinedPct + '%</b></span>';
+      html += '<span>♂ ' + (a.boysPresent === null ? '—' : a.boysPresent) + ' · ♀ ' + (a.girlsPresent === null ? '—' : a.girlsPresent) + '</span>';
       html += '</div></div>';
 
       if (isOpen) html += renderWeekGrid(wk, lock);
@@ -6232,8 +6232,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;' + nc + ';position:sticky;left:' + stickyOffsets.name + 'px;background:#fff;z-index:1;' +
            'width:' + COL_WIDTHS.name + 'px;min-width:' + COL_WIDTHS.name + 'px;max-width:' + COL_WIDTHS.name + 'px;' +
            'overflow-x:auto;white-space:nowrap;">' + esc(l.name || '') + '</td>';
-      if (vis.sex) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:' + COL_WIDTHS.sex + 'px;min-width:' + COL_WIDTHS.sex + 'px;">' + esc(l.gender || 'â€”') + '</td>';
-      if (vis.age) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:' + COL_WIDTHS.age + 'px;min-width:' + COL_WIDTHS.age + 'px;">' + esc(l.age || 'â€”') + '</td>';
+      if (vis.sex) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:' + COL_WIDTHS.sex + 'px;min-width:' + COL_WIDTHS.sex + 'px;">' + esc(l.gender || '—') + '</td>';
+      if (vis.age) h += '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:10px;text-align:center;width:' + COL_WIDTHS.age + 'px;min-width:' + COL_WIDTHS.age + 'px;">' + esc(l.age || '—') + '</td>';
 
       // ... (the rest of the `st.learners.forEach` loop remains the same) ...
       let weeklyPresent = 0;
@@ -6270,8 +6270,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         const cellIdA = 'attCell_' + l.id + '_' + d.date + '_A';
 
         if (dayLock === 'future') {
-          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">Â·</td>';
-          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">Â·</td>';
+          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">·</td>';
+          h += '<td style="padding:4px;text-align:center;background:#f5f5f5;color:#aaa;">·</td>';
         } else if (canMark) {
           const mBg = ma.M === '\\' ? '#d4edda' : '#f8d7da';
           const aBg = ma.A === '/'  ? '#d4edda' : '#f8d7da';
@@ -6395,7 +6395,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     const mode = attSessionMode;
     const label = mode === 'AM' ? 'Morning' : (mode === 'PM' ? 'Afternoon' : 'Full day');
-    if (!confirm('Mark every learner present â€” ' + label + ' â€” for today (' + today + ')?')) return;
+    if (!confirm('Mark every learner present — ' + label + ' — for today (' + today + ')?')) return;
 
     st.learners.forEach(function (l) {
       const current = attEffectiveMark(l.id, targetDay.date);
@@ -6482,7 +6482,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ----------------------------------------------------------------
-  // Weekly summary â€” correct "Open" count, combined %
+  // Weekly summary — correct "Open" count, combined %
   // ----------------------------------------------------------------
   function attWeekSummary(wk) {
     const st = attState;
@@ -6525,14 +6525,14 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   function renderClassAnalysisPanel() {
     if (!attState) return;
     const st = attState;
-    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' â€” ' + esc(st.termLabel) + '</h4>';
+    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</h4>';
     html += '<div style="overflow-x:auto;">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">';
     html += '<thead><tr style="background:#0d4d26;color:#fff;">';
     html += '<th style="text-align:left;padding:6px;">Week</th><th style="padding:6px;">Ending</th>';
     html += '<th style="padding:6px;">Open<br>(M+A)</th>';
-    html += '<th style="padding:6px;">ðŸŒ… M present</th><th style="padding:6px;">ðŸŒ‡ A present</th>';
-    html += '<th style="padding:6px;">â™‚ present</th><th style="padding:6px;">â™€ present</th>';
+    html += '<th style="padding:6px;">🌅 M present</th><th style="padding:6px;">🌇 A present</th>';
+    html += '<th style="padding:6px;">♂ present</th><th style="padding:6px;">♀ present</th>';
     html += '<th style="padding:6px;">Expected</th><th style="padding:6px;">Confirmed</th><th style="padding:6px;">%</th>';
     html += '</tr></thead><tbody>';
 
@@ -6555,8 +6555,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.openSlots + '</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.mPresent + '</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + a.aPresent + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (a.boysPresent === null ? 'â€”' : a.boysPresent) + '</td>' +
-              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (a.girlsPresent === null ? 'â€”' : a.girlsPresent) + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (a.boysPresent === null ? '—' : a.boysPresent) + '</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (a.girlsPresent === null ? '—' : a.girlsPresent) + '</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + expected + '</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + confirmed + '</td>' +
               '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + pct + '%</td>' +
@@ -6578,8 +6578,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             '<td style="padding:6px;text-align:center;">' + tOpen + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tM + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tA + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tBoys : 'â€”') + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tGirls : 'â€”') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tBoys : '—') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tGirls : '—') + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tExpected + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tConfirmed + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tPct + '%</td>' +
@@ -6589,8 +6589,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div class="stats-grid" style="margin-top:12px;">';
     html += '<div class="stat-card"><div class="stat-label">Sum total school-open (term)</div><div class="stat-value">' + tOpen + '</div></div>';
     html += '<div class="stat-card gold"><div class="stat-label">Sum total attendance (term)</div><div class="stat-value gold">' + tConfirmed + '</div></div>';
-    html += '<div class="stat-card red"><div class="stat-label">â™‚ Boys present (term)</div><div class="stat-value red">' + (tGenderKnown ? tBoys : 'â€”') + '</div></div>';
-    html += '<div class="stat-card blue"><div class="stat-label">â™€ Girls present (term)</div><div class="stat-value" style="color:#1a5276;">' + (tGenderKnown ? tGirls : 'â€”') + '</div></div>';
+    html += '<div class="stat-card red"><div class="stat-label">♂ Boys present (term)</div><div class="stat-value red">' + (tGenderKnown ? tBoys : '—') + '</div></div>';
+    html += '<div class="stat-card blue"><div class="stat-label">♀ Girls present (term)</div><div class="stat-value" style="color:#1a5276;">' + (tGenderKnown ? tGirls : '—') + '</div></div>';
     html += '<div class="stat-card"><div class="stat-label">Average attendance</div><div class="stat-value green">' + tPct + '%</div></div>';
     html += '<div class="stat-card"><div class="stat-label">Class B/F (prior terms this year)</div><div class="stat-value">' + tBf + '</div></div>';
     html += '<div class="stat-card gold"><div class="stat-label">Class AY Total (B/F + this term)</div><div class="stat-value gold">' + tAy + '</div></div>';
@@ -6606,7 +6606,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (!attState) return;
     const st = attState;
 
-    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' â€” ' + esc(st.termLabel) + '</h4>';
+    let html = '<h4 style="color:#0d4d26;margin:0 0 10px;">' + esc(st.cls) + ' — ' + esc(st.termLabel) + '</h4>';
     html += '<p style="font-size:11px;color:#666;margin:0 0 8px;">One row per school day. Holidays marked in red.</p>';
     html += '<div style="overflow-x:auto;">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:820px;">';
@@ -6614,10 +6614,10 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<th style="text-align:left;padding:6px;">Week</th>';
     html += '<th style="text-align:left;padding:6px;">Date</th>';
     html += '<th style="text-align:left;padding:6px;">Day</th>';
-    html += '<th style="padding:6px;">ðŸŒ… M</th>';
-    html += '<th style="padding:6px;">ðŸŒ‡ A</th>';
-    html += '<th style="padding:6px;">â™‚</th>';
-    html += '<th style="padding:6px;">â™€</th>';
+    html += '<th style="padding:6px;">🌅 M</th>';
+    html += '<th style="padding:6px;">🌇 A</th>';
+    html += '<th style="padding:6px;">♂</th>';
+    html += '<th style="padding:6px;">♀</th>';
     html += '<th style="padding:6px;">Expected</th>';
     html += '<th style="padding:6px;">Confirmed</th>';
     html += '<th style="padding:6px;">%</th>';
@@ -6632,7 +6632,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
                   '<td style="padding:4px 6px;border-bottom:1px solid #eee;">Wk ' + wk.weekNumber + '</td>' +
                   '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + fmtDateShort_(d.date) + '</td>' +
                   '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(d.dayName || '') + '</td>' +
-                  '<td colspan="7" style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;color:#721c24;font-weight:700;">HOLIDAY â€” ' + esc(d.holidayName || 'Holiday') + '</td>' +
+                  '<td colspan="7" style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;color:#721c24;font-weight:700;">HOLIDAY — ' + esc(d.holidayName || 'Holiday') + '</td>' +
                   '</tr>';
           return;
         }
@@ -6659,8 +6659,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
                 '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(d.dayName || '') + '</td>' +
                 '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + mP + '</td>' +
                 '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + aP + '</td>' +
-                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (genderKnown ? boys : 'â€”') + '</td>' +
-                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (genderKnown ? girls : 'â€”') + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (genderKnown ? boys : '—') + '</td>' +
+                '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + (genderKnown ? girls : '—') + '</td>' +
                 '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + expected + '</td>' +
                 '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + confirmed + '</td>' +
                 '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + pct + '%</td>' +
@@ -6673,8 +6673,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             '<td colspan="3" style="padding:6px;">TERM</td>' +
             '<td style="padding:6px;text-align:center;">' + tM + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tA + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tBoys : 'â€”') + '</td>' +
-            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tGirls : 'â€”') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tBoys : '—') + '</td>' +
+            '<td style="padding:6px;text-align:center;">' + (tGenderKnown ? tGirls : '—') + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tExpected + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tConfirmed + '</td>' +
             '<td style="padding:6px;text-align:center;">' + tPct + '%</td>' +
@@ -6689,7 +6689,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ----------------------------------------------------------------
   async function renderSignaturePanel() {
     if (!attState) return;
-    setHTML('signatureBody', pageLoaderHTML('Loading staffâ€¦'));
+    setHTML('signatureBody', pageLoaderHTML('Loading staff…'));
     let staffNames = [];
     try {
       const r = await window.TIS.listStaff();
@@ -6714,7 +6714,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       };
       const today = attTodayISO();
       html += '<tr>' +
-        '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;">Week ' + wk.weekNumber + ' â€” ' + fmtDateShort_(wk.weekEnding) + '</td>' +
+        '<td style="padding:4px 6px;border-bottom:1px solid #eee;font-weight:600;">Week ' + wk.weekNumber + ' — ' + fmtDateShort_(wk.weekEnding) + '</td>' +
         '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
         '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
         '<td style="padding:4px;border-bottom:1px solid #eee;"><select style="width:100%;font-size:11px;">' + opts() + '</select></td>' +
@@ -6742,7 +6742,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // Helpers
   // ----------------------------------------------------------------
   function fmtDateShort_(iso) {
-    if (!iso) return 'â€”';
+    if (!iso) return '—';
     const d = new Date(iso + 'T00:00:00');
     if (isNaN(d.getTime())) return iso;
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -6897,20 +6897,20 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     // ----------------------------------------------------------------
     // HTML build
     // ----------------------------------------------------------------
-    let html = '<html><head><title>Attendance â€” ' + esc(cls) + '</title>' + css + '</head><body>';
+    let html = '<html><head><title>Attendance — ' + esc(cls) + '</title>' + css + '</head><body>';
     html += '<div class="hdr">';
     html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:52px;">';
     html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1><div style="font-size:11px;color:#666;">' +
-            esc(cls) + ' â€” ' + esc(data.termLabel) + ' Â· Printed ' + new Date().toLocaleDateString() +
+            esc(cls) + ' — ' + esc(data.termLabel) + ' · Printed ' + new Date().toLocaleDateString() +
             '</div></div>';
     html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:52px;">';
     html += '</div>';
 
     // ----------------------------------------------------------------
-    // Part 1 â€” weekly grids (unchanged behavior)
+    // Part 1 — weekly grids (unchanged behavior)
     // ----------------------------------------------------------------
     weeksToShow.forEach(function (wk) {
-      html += '<h2>Week ' + wk.weekNumber + ' â€” Ending ' + fmtDateShort_(wk.weekEnding) + '</h2>';
+      html += '<h2>Week ' + wk.weekNumber + ' — Ending ' + fmtDateShort_(wk.weekEnding) + '</h2>';
       html += '<table><thead><tr><th>PIN</th><th>Name</th><th>Sex</th><th>Age</th>';
       wk.days.forEach(function (d, i) {
         html += '<th colspan="2">' + ['Mon','Tue','Wed','Thu','Fri'][i] + '<br>' + fmtDateShort_(d.date) +
@@ -6929,11 +6929,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         const g = (l.gender || '').toLowerCase();
         const nc = g.indexOf('female') === 0 ? 'color:#c0392b;' : (g.indexOf('male') === 0 ? 'color:#1a5276;' : '');
         html += '<td class="name" style="' + nc + '">' + esc(l.name || '') + '</td>';
-        html += '<td>' + esc(l.gender || 'â€”') + '</td>';
-        html += '<td>' + esc(l.age || 'â€”') + '</td>';
+        html += '<td>' + esc(l.gender || '—') + '</td>';
+        html += '<td>' + esc(l.age || '—') + '</td>';
         let wkPresent = 0;
         wk.days.forEach(function (d) {
-          if (d.isHoliday) { html += '<td colspan="2" class="m-hol">â€”</td>'; return; }
+          if (d.isHoliday) { html += '<td colspan="2" class="m-hol">—</td>'; return; }
           const mark = (d.marksByLearner || {})[l.id] || 'O O';
           const ma = attMA(mark);
           html += '<td class="' + (ma.M === '\\' ? 'm-ok' : '') + '">' + ma.M + '</td>';
@@ -6954,9 +6954,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     });
 
     // ----------------------------------------------------------------
-    // Part 2 â€” Class Analysis (weekly + term)
+    // Part 2 — Class Analysis (weekly + term)
     // ----------------------------------------------------------------
-    html += '<h3>Class Analysis â€” ' + esc(cls) + ' (' + esc(data.termLabel) + ')</h3>';
+    html += '<h3>Class Analysis — ' + esc(cls) + ' (' + esc(data.termLabel) + ')</h3>';
     html += '<table><thead><tr>';
     html += '<th>Week</th><th>Ending</th><th>Open (M+A)</th>';
     html += '<th>M present</th><th>A present</th>';
@@ -6979,8 +6979,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
               '<td>' + s.openSlots + '</td>' +
               '<td>' + s.mPresent + '</td>' +
               '<td>' + s.aPresent + '</td>' +
-              '<td>' + (s.boys === null ? 'â€”' : s.boys) + '</td>' +
-              '<td>' + (s.girls === null ? 'â€”' : s.girls) + '</td>' +
+              '<td>' + (s.boys === null ? '—' : s.boys) + '</td>' +
+              '<td>' + (s.girls === null ? '—' : s.girls) + '</td>' +
               '<td>' + expected + '</td>' +
               '<td>' + confirmed + '</td>' +
               '<td>' + s.pct + '%</td>' +
@@ -6992,8 +6992,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             '<td>' + tOpen + '</td>' +
             '<td>' + tM + '</td>' +
             '<td>' + tA + '</td>' +
-            '<td>' + (tGenderKnown ? tBoys : 'â€”') + '</td>' +
-            '<td>' + (tGenderKnown ? tGirls : 'â€”') + '</td>' +
+            '<td>' + (tGenderKnown ? tBoys : '—') + '</td>' +
+            '<td>' + (tGenderKnown ? tGirls : '—') + '</td>' +
             '<td>' + tExpected + '</td>' +
             '<td>' + tConfirmed + '</td>' +
             '<td>' + tPct + '%</td>' +
@@ -7001,9 +7001,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '</tbody></table>';
 
     // ----------------------------------------------------------------
-    // Part 3 â€” Per-Day Breakdown
+    // Part 3 — Per-Day Breakdown
     // ----------------------------------------------------------------
-    html += '<h3>Per-Day Breakdown â€” ' + esc(cls) + '</h3>';
+    html += '<h3>Per-Day Breakdown — ' + esc(cls) + '</h3>';
     html += '<table><thead><tr>';
     html += '<th>Week</th><th>Date</th><th>Day</th>';
     html += '<th>M</th><th>A</th><th>Boys</th><th>Girls</th>';
@@ -7018,7 +7018,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
                   '<td>Wk ' + wk.weekNumber + '</td>' +
                   '<td>' + fmtDateShort_(d.date) + '</td>' +
                   '<td>' + esc(d.dayName || '') + '</td>' +
-                  '<td colspan="7">HOLIDAY â€” ' + esc(d.holidayName || 'Holiday') + '</td>' +
+                  '<td colspan="7">HOLIDAY — ' + esc(d.holidayName || 'Holiday') + '</td>' +
                   '</tr>';
           return;
         }
@@ -7042,8 +7042,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
                 '<td>' + esc(d.dayName || '') + '</td>' +
                 '<td>' + mP + '</td>' +
                 '<td>' + aP + '</td>' +
-                '<td>' + (genderKnown ? boys : 'â€”') + '</td>' +
-                '<td>' + (genderKnown ? girls : 'â€”') + '</td>' +
+                '<td>' + (genderKnown ? boys : '—') + '</td>' +
+                '<td>' + (genderKnown ? girls : '—') + '</td>' +
                 '<td>' + expected + '</td>' +
                 '<td>' + confirmed + '</td>' +
                 '<td>' + pct + '%</td>' +
@@ -7055,8 +7055,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             '<td colspan="3">TERM</td>' +
             '<td>' + dM + '</td>' +
             '<td>' + dA + '</td>' +
-            '<td>' + (dGenderKnown ? dBoys : 'â€”') + '</td>' +
-            '<td>' + (dGenderKnown ? dGirls : 'â€”') + '</td>' +
+            '<td>' + (dGenderKnown ? dBoys : '—') + '</td>' +
+            '<td>' + (dGenderKnown ? dGirls : '—') + '</td>' +
             '<td>' + dExpected + '</td>' +
             '<td>' + dConfirmed + '</td>' +
             '<td>' + dPct + '%</td>' +
@@ -7064,7 +7064,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '</tbody></table>';
 
     // ----------------------------------------------------------------
-    // Part 4 â€” Class totals summary block
+    // Part 4 — Class totals summary block
     // ----------------------------------------------------------------
     let classBf = 0, classAy = 0;
     data.learners.forEach(function (l) {
@@ -7077,15 +7077,15 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<div class="summary-grid">';
     html += '<div class="summary-card"><div class="lbl">Sum total school-open (term)</div><div class="val">' + tOpen + '</div></div>';
     html += '<div class="summary-card"><div class="lbl">Sum total attendance (term)</div><div class="val">' + tConfirmed + '</div></div>';
-    html += '<div class="summary-card"><div class="lbl">Boys present (term)</div><div class="val">' + (tGenderKnown ? tBoys : 'â€”') + '</div></div>';
-    html += '<div class="summary-card"><div class="lbl">Girls present (term)</div><div class="val">' + (tGenderKnown ? tGirls : 'â€”') + '</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Boys present (term)</div><div class="val">' + (tGenderKnown ? tBoys : '—') + '</div></div>';
+    html += '<div class="summary-card"><div class="lbl">Girls present (term)</div><div class="val">' + (tGenderKnown ? tGirls : '—') + '</div></div>';
     html += '<div class="summary-card"><div class="lbl">Average attendance</div><div class="val">' + tPct + '%</div></div>';
     html += '<div class="summary-card"><div class="lbl">Class B/F (prior terms this year)</div><div class="val">' + classBf + '</div></div>';
     html += '<div class="summary-card"><div class="lbl">Class AY Total (B/F + this term)</div><div class="val">' + classAy + '</div></div>';
     html += '</div>';
 
     // ----------------------------------------------------------------
-    // Part 5 â€” Signature block
+    // Part 5 — Signature block
     // ----------------------------------------------------------------
     html += '<div class="sig-block">';
     html += '<div style="font-size:11px;color:#555;">Prepared and confirmed by:</div>';
@@ -7128,12 +7128,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
      // ================================================================
   // [S11] STAFF ATTENDANCE
-  //   â€¢ QR link card (image lives in the QR tab)
-  //   â€¢ Month picker â†’ one Word-grid styled table per day
-  //   â€¢ Red line after the last on-time clock-in
-  //   â€¢ Collapsible movement log (same day-per-table shape)
-  //   â€¢ Archive expandable, auto-archive on new month first load
-  //   â€¢ Keyboard: M opens movement modal, C clocks out selected row
+  //   • QR link card (image lives in the QR tab)
+  //   • Month picker → one Word-grid styled table per day
+  //   • Red line after the last on-time clock-in
+  //   • Collapsible movement log (same day-per-table shape)
+  //   • Archive expandable, auto-archive on new month first load
+  //   • Keyboard: M opens movement modal, C clocks out selected row
   // ================================================================
   let staffAttState = {
     year: null,
@@ -7261,8 +7261,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     // archived, archive the previous month silently.
     await staffAttMaybeAutoArchive(year, month);
 
-    setHTML('staffAttMonthBody', pageLoaderHTML('Loading ' + staffMonthName(month) + ' ' + year + 'â€¦'));
-    setHTML('staffMvMonthBody',  pageLoaderHTML('Loading movement logâ€¦'));
+    setHTML('staffAttMonthBody', pageLoaderHTML('Loading ' + staffMonthName(month) + ' ' + year + '…'));
+    setHTML('staffMvMonthBody',  pageLoaderHTML('Loading movement log…'));
     startLoader();
     try {
       if (typeof window.TIS.listStaffAttendanceForMonth !== 'function') {
@@ -7319,7 +7319,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ----------------------------------------------------------------
-  // Auto-archive helper â€” silently archives the previous month if
+  // Auto-archive helper — silently archives the previous month if
   // its rows are not already archived. Runs once per session.
   // ----------------------------------------------------------------
   async function staffAttMaybeAutoArchive(year, month) {
@@ -7352,7 +7352,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       await window.TIS.archiveStaffMonth(prevY, prevM);
       showToast('Previous month (' + staffMonthName(prevM) + ' ' + prevY + ') archived.', 'info');
     } catch (err) {
-      // Silent failure â€” auto-archive is a convenience, not critical.
+      // Silent failure — auto-archive is a convenience, not critical.
       console.warn('[staffAttMaybeAutoArchive]', err);
     }
   }
@@ -7390,7 +7390,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ----------------------------------------------------------------
-  // Month tables â€” one Word-grid-styled table per day
+  // Month tables — one Word-grid-styled table per day
   // ----------------------------------------------------------------
   function renderStaffMonthTables() {
     const allDays = staffAttState.days || [];
@@ -7400,7 +7400,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
 
     // Show only days that have already arrived (or today).
-    // Future days are hidden entirely â€” no scroll-through placeholders.
+    // Future days are hidden entirely — no scroll-through placeholders.
     const arrived = allDays.filter(function (d) { return d.arrived; });
     if (arrived.length === 0) {
       setHTML('staffAttMonthBody', emptyHTML(
@@ -7507,8 +7507,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         html += '<tr data-staff-row data-staff-id="' + escAttr(r.staff_id) + '" data-staff-date="' + escAttr(day.date) + '" style="background:' + rowBg + ';cursor:pointer;">';
         html += '<td style="padding:6px 8px;' + borderStyle + '">' + esc(r.staff_no || '') + '</td>';
         html += '<td style="padding:6px 8px;font-weight:600;' + borderStyle + '">' + esc(r.name || '') + '</td>';
-        html += '<td style="padding:6px 8px;text-align:center;' + borderStyle + '">' + esc(r.clock_in || 'â€”') + '</td>';
-        html += '<td style="padding:6px 8px;text-align:center;' + borderStyle + '">' + esc(r.clock_out || 'â€”') + '</td>';
+        html += '<td style="padding:6px 8px;text-align:center;' + borderStyle + '">' + esc(r.clock_in || '—') + '</td>';
+        html += '<td style="padding:6px 8px;text-align:center;' + borderStyle + '">' + esc(r.clock_out || '—') + '</td>';
         html += '<td style="padding:6px 8px;color:' + remarkColor + ';font-weight:700;' + borderStyle + '">' + remark + '</td>';
         html += '</tr>';
       });
@@ -7520,7 +7520,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   function staffFormatDay(iso) {
-    if (!iso) return 'â€”';
+    if (!iso) return '—';
     const d = new Date(iso + 'T00:00:00');
     if (isNaN(d.getTime())) return iso;
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -7529,7 +7529,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ----------------------------------------------------------------
-  // Movement log tables â€” same shape as attendance
+  // Movement log tables — same shape as attendance
   // ----------------------------------------------------------------
   function renderStaffMovementTables() {
     const days = staffAttState.movements || [];
@@ -7570,8 +7570,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<tr style="background:' + rowBg + ';">';
       html += '<td style="padding:6px 8px;border-bottom:1px solid #eee;">' + esc(m.staff_no || '') + '</td>';
       html += '<td style="padding:6px 8px;font-weight:600;border-bottom:1px solid #eee;">' + esc(m.name || '') + '</td>';
-      html += '<td style="padding:6px 8px;text-align:center;border-bottom:1px solid #eee;">' + esc(m.time_out || 'â€”') + '</td>';
-      html += '<td style="padding:6px 8px;text-align:center;border-bottom:1px solid #eee;">' + esc(m.time_in || 'â€”') + '</td>';
+      html += '<td style="padding:6px 8px;text-align:center;border-bottom:1px solid #eee;">' + esc(m.time_out || '—') + '</td>';
+      html += '<td style="padding:6px 8px;text-align:center;border-bottom:1px solid #eee;">' + esc(m.time_in || '—') + '</td>';
       html += '<td style="padding:6px 8px;border-bottom:1px solid #eee;">' + esc(m.destination || '') + '</td>';
       html += '<td style="padding:6px 8px;border-bottom:1px solid #eee;">' + esc(m.purpose || m.reason || '') + '</td>';
       html += '</tr>';
@@ -7684,7 +7684,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box" style="max-width:480px;" onclick="event.stopPropagation()">';
     html += '<div class="modal-header"><h2>Log Movement</h2><button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
-    html += '<p style="font-size:12px;color:#555;margin:0 0 10px;"><b>' + esc(staffName) + '</b> Â· ' + esc(staffFormatDay(date)) + '</p>';
+    html += '<p style="font-size:12px;color:#555;margin:0 0 10px;"><b>' + esc(staffName) + '</b> · ' + esc(staffFormatDay(date)) + '</p>';
     html += '<div class="form-row"><div class="form-group"><label>Time Out</label><input type="time" id="smv_out" value="' + new Date().toTimeString().slice(0,5) + '"></div>';
     html += '<div class="form-group"><label>Time In</label><input type="time" id="smv_in"></div></div>';
     html += '<div class="form-group"><label>Destination</label><input type="text" id="smv_dest" placeholder="e.g. Bank, Ministry"></div>';
@@ -7759,7 +7759,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // Archive list
   // ----------------------------------------------------------------
   async function renderStaffArchiveList() {
-    setHTML('staffArchiveBody', pageLoaderHTML('Loading archivesâ€¦'));
+    setHTML('staffArchiveBody', pageLoaderHTML('Loading archives…'));
     try {
       if (typeof window.TIS.listArchivedStaffMonths !== 'function') {
         setHTML('staffArchiveBody', emptyHTML('fa-history', 'Archive not available'));
@@ -7792,7 +7792,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   async function staffAttOpenArchive(year, month) {
-    setHTML('modalContainer', pageLoaderHTML('Loading archiveâ€¦'));
+    setHTML('modalContainer', pageLoaderHTML('Loading archive…'));
     startLoader();
     try {
       if (typeof window.TIS.getArchivedStaffMonth !== 'function') {
@@ -7805,7 +7805,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
       let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
       html += '<div class="modal-box wide" style="max-width:960px;max-height:88vh;overflow-y:auto;" onclick="event.stopPropagation()">';
-      html += '<div class="modal-header"><h2>Archive â€” ' + staffMonthName(month) + ' ' + year + '</h2>';
+      html += '<div class="modal-header"><h2>Archive — ' + staffMonthName(month) + ' ' + year + '</h2>';
       html += '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
 
       html += '<h4 style="color:#0d4d26;margin:0 0 6px;">Attendance (' + att.length + ' rows)</h4>';
@@ -7827,8 +7827,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(a.staff_no || '') + '</td>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(a.staff_name || '') + '</td>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(a.attendance_date || '') + '</td>';
-          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(a.clock_in || 'â€”') + '</td>';
-          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(a.clock_out || 'â€”') + '</td>';
+          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(a.clock_in || '—') + '</td>';
+          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(a.clock_out || '—') + '</td>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(a.remark || a.status || '') + '</td>';
           html += '</tr>';
         });
@@ -7855,8 +7855,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(m.staff_no || '') + '</td>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(m.staff_name || '') + '</td>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(m.movement_date || '') + '</td>';
-          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(m.time_out || 'â€”') + '</td>';
-          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(m.time_in || 'â€”') + '</td>';
+          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(m.time_out || '—') + '</td>';
+          html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:center;">' + esc(m.time_in || '—') + '</td>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(m.destination || '') + '</td>';
           html += '<td style="padding:4px 6px;border-bottom:1px solid #eee;">' + esc(m.purpose || m.reason || '') + '</td>';
           html += '</tr>';
@@ -7929,7 +7929,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const w = window.open('', '_blank');
       if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
 
-      let html = '<html><head><title>Staff Attendance â€” ' + staffMonthName(month) + ' ' + year + '</title>';
+      let html = '<html><head><title>Staff Attendance — ' + staffMonthName(month) + ' ' + year + '</title>';
       html += '<style>' +
         'body{font-family:Arial;padding:16px;color:#111;}' +
         '.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0d4d26;padding-bottom:8px;margin-bottom:12px;}' +
@@ -7950,8 +7950,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<div class="hdr">';
       html += '<img src="https://lh3.googleusercontent.com/d/1bVenQy0y4TYzOBrd-ocwR5x3wJZTPgBs=w120" style="height:52px;">';
       html += '<div class="mid"><h1>THE IDEAL SCHOOLS</h1>';
-      html += '<div style="font-size:11px;color:#666;">Staff Attendance â€” ' + staffMonthName(month) + ' ' + year +
-              ' Â· Printed ' + new Date().toLocaleDateString() + '</div></div>';
+      html += '<div style="font-size:11px;color:#666;">Staff Attendance — ' + staffMonthName(month) + ' ' + year +
+              ' · Printed ' + new Date().toLocaleDateString() + '</div></div>';
       html += '<img src="https://lh3.googleusercontent.com/d/1fHJRlqlsoJe23D79LcG1cOxcla0bAPYR=w120" style="height:52px;">';
       html += '</div>';
 
@@ -7980,8 +7980,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           html += '<tr' + lineCls + '>';
           html += '<td>' + esc(r.staff_no || '') + '</td>';
           html += '<td>' + esc(r.name || '') + '</td>';
-          html += '<td class="c">' + esc(r.clock_in || 'â€”') + '</td>';
-          html += '<td class="c">' + esc(r.clock_out || 'â€”') + '</td>';
+          html += '<td class="c">' + esc(r.clock_in || '—') + '</td>';
+          html += '<td class="c">' + esc(r.clock_out || '—') + '</td>';
           html += '<td class="' + remarkCls + '">' + remark + '</td>';
           html += '</tr>';
         });
@@ -8007,8 +8007,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             html += '<tr>';
             html += '<td>' + esc(m.staff_no || '') + '</td>';
             html += '<td>' + esc(m.name || '') + '</td>';
-            html += '<td class="c">' + esc(m.time_out || 'â€”') + '</td>';
-            html += '<td class="c">' + esc(m.time_in || 'â€”') + '</td>';
+            html += '<td class="c">' + esc(m.time_out || '—') + '</td>';
+            html += '<td class="c">' + esc(m.time_in || '—') + '</td>';
             html += '<td>' + esc(m.destination || '') + '</td>';
             html += '<td>' + esc(m.purpose || m.reason || '') + '</td>';
             html += '</tr>';
@@ -8046,7 +8046,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // [S12] CALENDAR
   // ================================================================
   async function loadCalendar() {
-    setHTML('calendarContent', pageLoaderHTML('Loading calendarâ€¦'));
+    setHTML('calendarContent', pageLoaderHTML('Loading calendar…'));
 
     const r = await window.TIS.getCalendar();
     if (!r || !r.ok) {
@@ -8080,7 +8080,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<details class="cal-year"' + openAttr + ' style="margin-bottom:12px;">';
       html += '<summary style="cursor:pointer;font-weight:700;font-size:15px;' +
               'background:#0d4d26;color:#fff;padding:10px 14px;border-radius:6px;">';
-      html += 'ðŸ“… ' + esc(y) + ' â€” ' + yearEvents.length + ' events';
+      html += '📅 ' + esc(y) + ' — ' + yearEvents.length + ' events';
       html += '</summary>';
 
       // Sort term order: 1st, 2nd, 3rd, General
@@ -8116,7 +8116,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(e.event_type || '') + '</td>';
           html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(e.description || '') + '</td>';
           html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;">' +
-                  (isHoliday ? 'âœ…' : 'â€”') + '</td>';
+                  (isHoliday ? '✅' : '—') + '</td>';
           html += '</tr>';
         });
         html += '</tbody></table></div>';
@@ -8156,21 +8156,21 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     });
   }
   // ================================================================
-  // [S14] QR â€” staff clock-in token + smart-scan handler
-  //   â€¢ QR tab: generate / show / copy token (unchanged behaviour)
-  //   â€¢ QR URL is /g/<token> â€” never exposes the portal URL
-  //   â€¢ Scan flow (every scan asks for Staff ID):
-  //       1st scan â†’ Clock IN
-  //       2nd scan â†’ prompt: "Log a movement" or "Clock OUT"
-  //          - Log movement â†’ records movement OUT
-  //       3rd scan â†’ smart-detects open movement â†’ records movement IN
-  //       4th scan â†’ Clock OUT
-  //   â€¢ Every outcome fires a toast on the scanning page
+  // [S14] QR — staff clock-in token + smart-scan handler
+  //   • QR tab: generate / show / copy token (unchanged behaviour)
+  //   • QR URL is /g/<token> — never exposes the portal URL
+  //   • Scan flow (every scan asks for Staff ID):
+  //       1st scan → Clock IN
+  //       2nd scan → prompt: "Log a movement" or "Clock OUT"
+  //          - Log movement → records movement OUT
+  //       3rd scan → smart-detects open movement → records movement IN
+  //       4th scan → Clock OUT
+  //   • Every outcome fires a toast on the scanning page
   // ================================================================
 
   // ---------- QR tab (unchanged) ----------
   async function loadActiveQR() {
-    setHTML('qrContent', pageLoaderHTML('Loading QR codeâ€¦'));
+    setHTML('qrContent', pageLoaderHTML('Loading QR code…'));
     const r = await window.TIS.getActiveQRToken();
     if (!r || !r.ok) {
       setHTML('qrContent', errorHTML('Could not load QR code', r && r.error));
@@ -8187,12 +8187,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   function renderQR(row) {
     const token = row.token || '';
     // Use /g/<token> so the portal URL is never in the QR. This works
-    // because vercel.json rewrites /g/:token â†’ /index.html.
+    // because vercel.json rewrites /g/:token → /index.html.
     const payload = window.location.origin + '/g/' + encodeURIComponent(token);
     const imgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=10&data=' +
                    encodeURIComponent(payload);
-    const generated = row.generated_at ? new Date(row.generated_at).toLocaleString() : 'â€”';
-    const expires   = row.expires_at   ? new Date(row.expires_at).toLocaleDateString()  : 'â€”';
+    const generated = row.generated_at ? new Date(row.generated_at).toLocaleString() : '—';
+    const expires   = row.expires_at   ? new Date(row.expires_at).toLocaleDateString()  : '—';
 
     let html = '<div class="card-bg qr-box" style="text-align:center;padding:24px;">';
     html += '<img src="' + esc(imgUrl) + '" alt="QR code" style="max-width:340px;width:100%;border:6px solid #d4a017;border-radius:14px;background:#fff;padding:8px;">';
@@ -8257,7 +8257,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ================================================================
-  // QR SCAN HANDLER â€” runs at boot when the URL is /g/<token>
+  // QR SCAN HANDLER — runs at boot when the URL is /g/<token>
   // (or ?qrtoken=<token> for backwards compatibility)
   // ================================================================
   async function handleQRScanIfPresent() {
@@ -8273,11 +8273,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
     if (!token) return false;
 
-    // Blank the page â€” from this moment, the portal UI is gone.
+    // Blank the page — from this moment, the portal UI is gone.
     document.body.innerHTML = qrScanSkeleton();
 
     // Verify the token.
-    qrScanSetStage('Checking the QR codeâ€¦');
+    qrScanSetStage('Checking the QR code…');
     startLoader();
     const r = await window.TIS.getQRTokenByValue(token);
     stopLoader();
@@ -8298,7 +8298,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
 
     // Look up the staff by their Staff No.
-    qrScanSetStage('Looking up staffâ€¦');
+    qrScanSetStage('Looking up staff…');
     startLoader();
     const staffR = await window.TIS.listStaff();
     stopLoader();
@@ -8325,12 +8325,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     // Decide scan type.
     if (!attRow || !attRow.clock_in) {
-      // No clock-in yet today â†’ clock IN.
+      // No clock-in yet today → clock IN.
       await qrScanRecordClockIn(token, staff);
       return true;
     }
     if (attRow.clock_out) {
-      // Already clocked out â€” the day is closed for this staff.
+      // Already clocked out — the day is closed for this staff.
       qrScanShowFatal(
         'Already clocked out',
         staff.full_name + ' has already clocked out today. See an admin if this is wrong.'
@@ -8338,11 +8338,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return true;
     }
     if (openMovement) {
-      // There's a movement still open â†’ this scan is the movement IN.
+      // There's a movement still open → this scan is the movement IN.
       await qrScanRecordMovementIn(token, staff, openMovement);
       return true;
     }
-    // Clocked in, not clocked out, no open movement â†’ ask what this scan is.
+    // Clocked in, not clocked out, no open movement → ask what this scan is.
     await qrScanAskMovementOrClockOut(token, staff);
     return true;
   }
@@ -8381,7 +8381,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       'Thanks, Dr AYOOLA G O FCIA, NIIA.<br>Appreciate.' +
       '</div>' +
       '<div style="margin-top:14px;font-size:12px;color:#999;">' +
-      'This page will close in <span id="qrScanCountdown">7</span> secondsâ€¦' +
+      'This page will close in <span id="qrScanCountdown">7</span> seconds…' +
       '</div>'
     );
 
@@ -8416,7 +8416,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             'Thanks, Dr AYOOLA G O FCIA, NIIA.<br>Appreciate.' +
             '</div>';
     html += '<div style="margin-top:14px;font-size:12px;color:#999;" id="qrScanAutoClose">' +
-            'This page will close in <span id="qrScanCountdown">7</span> secondsâ€¦' +
+            'This page will close in <span id="qrScanCountdown">7</span> seconds…' +
             '</div>';
     qrScanSetBody(html);
 
@@ -8488,7 +8488,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const dateISO = now.toISOString().slice(0, 10);
 
-    qrScanSetStage('Clocking inâ€¦');
+    qrScanSetStage('Clocking in…');
     startLoader();
     const r = await window.TIS.upsertStaffAttendance({
       staff_id:        staff.id,
@@ -8501,7 +8501,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Clocked IN', [
+      qrScanShowSuccess('✓ Clocked IN', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
         'Time: <b>' + t + '</b>',
@@ -8522,7 +8522,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const info = await qrScanPromptMovementInfo();
     if (!info) return;
 
-    qrScanSetStage('Recording movementâ€¦');
+    qrScanSetStage('Recording movement…');
     startLoader();
     const r = await window.TIS.createStaffMovement({
       staff_id:      staff.id,
@@ -8536,12 +8536,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Movement OUT recorded', [
+      qrScanShowSuccess('✓ Movement OUT recorded', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
         'Time out: <b>' + t + '</b>',
-        'Destination: ' + esc(info.destination || 'â€”'),
-        'Purpose: ' + esc(info.purpose || 'â€”'),
+        'Destination: ' + esc(info.destination || '—'),
+        'Purpose: ' + esc(info.purpose || '—'),
         '<div style="margin-top:14px;font-size:13px;color:#666;">' +
           'When you return, scan the same QR again and enter your Staff ID. ' +
           'The system will record your return.' +
@@ -8587,16 +8587,16 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const now = new Date();
     const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
 
-    qrScanSetStage('Recording returnâ€¦');
+    qrScanSetStage('Recording return…');
     startLoader();
     const r = await window.TIS.closeStaffMovement(openMovement.id, t);
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Movement IN recorded', [
+      qrScanShowSuccess('✓ Movement IN recorded', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
-        'You went out at: <b>' + esc(openMovement.time_out || 'â€”') + '</b>',
+        'You went out at: <b>' + esc(openMovement.time_out || '—') + '</b>',
         'You returned at: <b>' + t + '</b>'
       ]);
       qrShowToast('Movement-in recorded for ' + (staff.full_name || staff.staff_id));
@@ -8647,7 +8647,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const dateISO = now.toISOString().slice(0, 10);
 
-    qrScanSetStage('Clocking outâ€¦');
+    qrScanSetStage('Clocking out…');
     startLoader();
     const r = await window.TIS.upsertStaffAttendance({
       staff_id:        staff.id,
@@ -8660,7 +8660,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Clocked OUT', [
+      qrScanShowSuccess('✓ Clocked OUT', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
         'Time: <b>' + t + '</b>',
@@ -8699,13 +8699,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.handleQRScanIfPresent = handleQRScanIfPresent;
 
   // ================================================================
-  // [S14b] ID-CARD SCAN HANDLER â€” runs at boot when the URL is /s/<code>
+  // [S14b] ID-CARD SCAN HANDLER — runs at boot when the URL is /s/<code>
   //
   //   Routes by what <code> matches:
-  //     â€¢ Learner PIN  (matches learners.pin)          â†’ attendance
-  //     â€¢ Staff ID     (matches staff.staff_id)        â†’ smart clock flow
-  //     â€¢ Visitor code (VIS-01 â€¦ VIS-05)               â†’ visitor prompt
-  //     â€¢ anything else                                â†’ fatal message
+  //     • Learner PIN  (matches learners.pin)          → attendance
+  //     • Staff ID     (matches staff.staff_id)        → smart clock flow
+  //     • Visitor code (VIS-01 … VIS-05)               → visitor prompt
+  //     • anything else                                → fatal message
   //
   //   Reuses the qrScan* helpers defined in [S14].
   //   Returns true when the page was taken over by a scan; false otherwise.
@@ -8728,11 +8728,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     // ---------- 2. Blank the portal UI ----------
     document.body.innerHTML = qrScanSkeleton();
-    qrScanSetStage('Identifying cardâ€¦');
+    qrScanSetStage('Identifying card…');
 
     // ---------- 3. Route by code pattern ----------
-    //    VIS-01 â€¦ VIS-05  â†’ visitor
-    //    TIS#### (any)    â†’ could be learner OR staff; disambiguate
+    //    VIS-01 … VIS-05  → visitor
+    //    TIS#### (any)    → could be learner OR staff; disambiguate
     const isVisitorCode = /^VIS-\d{2}$/.test(code);
     const isTisCode     = /^TIS[0-9]+$/.test(code);
 
@@ -8742,7 +8742,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     if (isTisCode) {
       // Try learner first (PINs are the TIS#### pattern).
-      qrScanSetStage('Looking up cardâ€¦');
+      qrScanSetStage('Looking up card…');
       startLoader();
       const learnerR = await window.TIS.getLearnerByPin(code);
       stopLoader();
@@ -8751,7 +8751,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         return await idcScanLearnerFlow(code, learnerR.data);
       }
 
-      // Not a learner â€” try staff.
+      // Not a learner — try staff.
       startLoader();
       const staffR = await window.TIS.listStaff();
       stopLoader();
@@ -8789,13 +8789,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
   // ================================================================
   // [S14b.1] LEARNER SCAN
-  //   First scan of the day â†’ Morning present (\)
-  //   Second scan same day  â†’ Afternoon present (\ /)
+  //   First scan of the day → Morning present (\)
+  //   Second scan same day  → Afternoon present (\ /)
   //   No prompts. Just show the result.
   // ================================================================
   async function idcScanLearnerFlow(code, learner) {
     // We need the active term to record attendance against.
-    qrScanSetStage('Recording attendanceâ€¦');
+    qrScanSetStage('Recording attendance…');
     startLoader();
     const activeTermR = await window.TIS.getActiveTerm();
     stopLoader();
@@ -8834,24 +8834,24 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const action = r.data.action;
     const mark = r.data.mark;
 
-    let title = 'âœ“ Present';
+    let title = '✓ Present';
     let subtitleLine = '';
 
     if (action === 'morning') {
-      title = 'âœ“ Present â€” Morning';
+      title = '✓ Present — Morning';
       subtitleLine = 'First scan of the day.';
     } else if (action === 'afternoon') {
-      title = 'âœ“ Present â€” Afternoon';
+      title = '✓ Present — Afternoon';
       subtitleLine = 'Both morning and afternoon now recorded.';
     } else if (action === 'already-both') {
-      title = 'âœ“ Already recorded';
+      title = '✓ Already recorded';
       subtitleLine = 'Both morning and afternoon were already marked today.';
     }
 
     qrScanShowSuccess(title, [
       '<b>' + esc(learner.name || '') + '</b>',
       'PIN: ' + esc(learner.pin || ''),
-      'Class: ' + esc(learner.class_name || 'â€”'),
+      'Class: ' + esc(learner.class_name || '—'),
       'Term: ' + esc(term.label || (term.term_type.toUpperCase() + ' TERM ' + term.year)),
       'Mark: <b>' + esc(mark) + '</b>',
       subtitleLine ? '<div style="margin-top:10px;font-size:13px;color:#666;">' + esc(subtitleLine) + '</div>' : ''
@@ -8869,13 +8869,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ================================================================
   // [S14b.2] STAFF SCAN
   //   Reuses the exact smart-scan logic used by /g/<token>.
-  //   We do NOT prompt for Staff ID â€” the code on the card already
+  //   We do NOT prompt for Staff ID — the code on the card already
   //   identifies the staff. Everything else is identical.
   // ================================================================
   async function idcScanStaffFlow(code, staff) {
     const today = new Date().toISOString().slice(0, 10);
 
-    qrScanSetStage('Checking today\'s activityâ€¦');
+    qrScanSetStage('Checking today\'s activity…');
     startLoader();
     const attR = await window.TIS.listStaffAttendanceToday(today);
     const mvR  = await window.TIS.listStaffMovementsToday(today);
@@ -8885,12 +8885,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const movements = (mvR && mvR.ok ? mvR.data : []).filter(function (mm) { return mm.staff_id === staff.id; });
     const openMovement = movements.find(function (mm) { return !mm.time_in; });
 
-    // Case 1: no clock-in yet today â†’ Clock IN.
+    // Case 1: no clock-in yet today → Clock IN.
     if (!attRow || !attRow.clock_in) {
       return await idcStaffDoClockIn(code, staff);
     }
 
-    // Case 2: already clocked out â†’ nothing to do.
+    // Case 2: already clocked out → nothing to do.
     if (attRow.clock_out) {
       qrScanShowFatal(
         'Already clocked out',
@@ -8905,12 +8905,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return true;
     }
 
-    // Case 3: there is a movement with no time_in â†’ record return.
+    // Case 3: there is a movement with no time_in → record return.
     if (openMovement) {
       return await idcStaffDoMovementIn(code, staff, openMovement);
     }
 
-    // Case 4: clocked in, not yet clocked out, no open movement â†’
+    // Case 4: clocked in, not yet clocked out, no open movement →
     //         ask the operator what this scan means.
     return await idcStaffAskMovementOrClockOut(code, staff);
   }
@@ -8920,7 +8920,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const dateISO = now.toISOString().slice(0, 10);
 
-    qrScanSetStage('Clocking inâ€¦');
+    qrScanSetStage('Clocking in…');
     startLoader();
     const r = await window.TIS.upsertStaffAttendance({
       staff_id:        staff.id,
@@ -8933,7 +8933,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Clocked IN', [
+      qrScanShowSuccess('✓ Clocked IN', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
         'Time: <b>' + t + '</b>',
@@ -8963,7 +8963,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const info = await qrScanPromptMovementInfo();
     if (!info) return true;
 
-    qrScanSetStage('Recording movementâ€¦');
+    qrScanSetStage('Recording movement…');
     startLoader();
     const r = await window.TIS.createStaffMovement({
       staff_id:      staff.id,
@@ -8977,12 +8977,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Movement OUT recorded', [
+      qrScanShowSuccess('✓ Movement OUT recorded', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
         'Time out: <b>' + t + '</b>',
-        'Destination: ' + esc(info.destination || 'â€”'),
-        'Purpose: ' + esc(info.purpose || 'â€”'),
+        'Destination: ' + esc(info.destination || '—'),
+        'Purpose: ' + esc(info.purpose || '—'),
         '<div style="margin-top:14px;font-size:13px;color:#666;">' +
           'Scan the card again when you return.' +
         '</div>'
@@ -9008,16 +9008,16 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const now = new Date();
     const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
 
-    qrScanSetStage('Recording returnâ€¦');
+    qrScanSetStage('Recording return…');
     startLoader();
     const r = await window.TIS.closeStaffMovement(openMovement.id, t);
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Movement IN recorded', [
+      qrScanShowSuccess('✓ Movement IN recorded', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
-        'Went out at: <b>' + esc(openMovement.time_out || 'â€”') + '</b>',
+        'Went out at: <b>' + esc(openMovement.time_out || '—') + '</b>',
         'Returned at: <b>' + t + '</b>'
       ]);
       await window.TIS.logScanEvent({
@@ -9078,7 +9078,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const t = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const dateISO = now.toISOString().slice(0, 10);
 
-    qrScanSetStage('Clocking outâ€¦');
+    qrScanSetStage('Clocking out…');
     startLoader();
     const r = await window.TIS.upsertStaffAttendance({
       staff_id:        staff.id,
@@ -9091,7 +9091,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
 
     if (r && r.ok) {
-      qrScanShowSuccess('âœ“ Clocked OUT', [
+      qrScanShowSuccess('✓ Clocked OUT', [
         '<b>' + esc(staff.full_name || '') + '</b>',
         'Staff No: ' + esc(staff.staff_id || ''),
         'Time: <b>' + t + '</b>',
@@ -9115,14 +9115,14 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
   // ================================================================
   // [S14b.3] VISITOR SCAN
-  //   First scan of the day for a card â†’ ask name / purpose / agency
-  //   Second scan same day for the same card â†’ clock out
+  //   First scan of the day for a card → ask name / purpose / agency
+  //   Second scan same day for the same card → clock out
   // ================================================================
   async function idcScanVisitorFlow(code) {
     const today = new Date().toISOString().slice(0, 10);
 
     // Is there an open visit for this card today?
-    qrScanSetStage('Checking cardâ€¦');
+    qrScanSetStage('Checking card…');
     startLoader();
     let openVisit = null;
     try {
@@ -9131,7 +9131,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           ? null  // app.js has no direct SDK handle; use TIS instead
           : null
         : null;
-      // Fall through to a TIS-level check via recordVisitorScan â€” but
+      // Fall through to a TIS-level check via recordVisitorScan — but
       // to avoid double insert, we query TIS.listVisitsToday if available.
       if (typeof window.TIS.listVisitsToday === 'function') {
         const r = await window.TIS.listVisitsToday(today);
@@ -9145,10 +9145,10 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
 
     if (openVisit) {
-      // Second scan â†’ close out.
+      // Second scan → close out.
       return await idcVisitorCheckOut(code, openVisit);
     }
-    // First scan â†’ check in.
+    // First scan → check in.
     return await idcVisitorCheckIn(code);
   }
 
@@ -9216,7 +9216,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       }
     }
 
-    qrScanSetStage('Recording visitâ€¦');
+    qrScanSetStage('Recording visit…');
     startLoader();
     const r = await window.TIS.recordVisitorScan({
       card_code:    code,
@@ -9230,10 +9230,10 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     if (r && r.ok) {
       const timeIn = (r.data.row && r.data.row.time_in) || '';
-      qrScanShowSuccess('âœ“ Visitor checked in', [
+      qrScanShowSuccess('✓ Visitor checked in', [
         '<b>' + esc(visitorName) + '</b>',
         'Purpose: ' + esc(purpose),
-        agency ? 'Agency: ' + esc(agency) + (agencyOther ? ' â€” ' + esc(agencyOther) : '') : '',
+        agency ? 'Agency: ' + esc(agency) + (agencyOther ? ' — ' + esc(agencyOther) : '') : '',
         'Time in: <b>' + esc(timeIn) + '</b>',
         '<div style="margin-top:14px;font-size:13px;color:#666;">' +
           'Scan this same card again when the visitor leaves, to record their time out.' +
@@ -9257,7 +9257,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   async function idcVisitorCheckOut(code, openVisit) {
-    qrScanSetStage('Recording departureâ€¦');
+    qrScanSetStage('Recording departure…');
     startLoader();
     const r = await window.TIS.recordVisitorScan({
       card_code:    code,
@@ -9271,9 +9271,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     if (r && r.ok) {
       const timeOut = (r.data.row && r.data.row.time_out) || '';
-      qrScanShowSuccess('âœ“ Visitor checked out', [
+      qrScanShowSuccess('✓ Visitor checked out', [
         '<b>' + esc(openVisit.visitor_name || '') + '</b>',
-        'Time in: <b>' + esc(openVisit.time_in || 'â€”') + '</b>',
+        'Time in: <b>' + esc(openVisit.time_in || '—') + '</b>',
         'Time out: <b>' + esc(timeOut) + '</b>'
       ]);
       await window.TIS.logScanEvent({
@@ -9346,7 +9346,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     });
   }
    // ================================================================
-  // [S15] REPORTS â€” Workshop
+  // [S15] REPORTS — Workshop
   //   Edit psychomotor ratings and comments for every learner in a
   //   class. Auto-assign (from Delivery 3) already fills values when
   //   scores are uploaded; this tab lets humans override them.
@@ -9371,9 +9371,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     term: null,
     year: null,
     learners: [],
-    ratings: {},          // learnerId â†’ report_ratings row (or null)
-    averages: {},         // learnerId â†’ average from scores this term
-    dirty: {},            // learnerId â†’ true if row has unsaved changes
+    ratings: {},          // learnerId → report_ratings row (or null)
+    averages: {},         // learnerId → average from scores this term
+    dirty: {},            // learnerId → true if row has unsaved changes
     loaded: false
   };
 
@@ -9430,8 +9430,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (!cls)  { if (feed) { feed.style.color = '#c0392b'; feed.textContent = 'Pick a class.'; } return; }
     if (!term || !year) { if (feed) { feed.style.color = '#c0392b'; feed.textContent = 'Pick a term and year.'; } return; }
 
-    if (feed) { feed.style.color = '#666'; feed.textContent = 'Loading ' + cls + ' â€¦'; }
-    setHTML('wsContent', pageLoaderHTML('Loading classâ€¦'));
+    if (feed) { feed.style.color = '#666'; feed.textContent = 'Loading ' + cls + ' …'; }
+    setHTML('wsContent', pageLoaderHTML('Loading class…'));
     startLoader();
 
     try {
@@ -9463,7 +9463,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         ratingsMap[l.id] = (r && r.ok) ? r.data : null;
       });
 
-      // 3. Averages from scores â€” used to show the "band" per learner.
+      // 3. Averages from scores — used to show the "band" per learner.
       const scoresR = await window.TIS.getScoresForLearners(
         learners.map(function (l) { return l.id; }), term, year
       );
@@ -9496,7 +9496,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
       if (feed) {
         feed.style.color = '#0d4d26';
-        feed.textContent = learners.length + ' learner(s) loaded Â· ' + term.toUpperCase() + ' TERM ' + year;
+        feed.textContent = learners.length + ' learner(s) loaded · ' + term.toUpperCase() + ' TERM ' + year;
       }
     } catch (err) {
       stopLoader();
@@ -9511,7 +9511,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // Comment-bank cache.
   //   Loaded once per class-load, per field, per band. Re-used by
   //   the default preload and (Delivery 6) by the Up/Down cycler.
-  //   Key shape: "<field>|<band>" â†’ array of { text, category }
+  //   Key shape: "<field>|<band>" → array of { text, category }
   // ================================================================
   let __wsCommentBankCache = {};
 
@@ -9532,7 +9532,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.wsEnsureCommentBank = wsEnsureCommentBank;
 
   // Fill {first}, {strong1}, {weak1} placeholders. strong1/weak1 are
-  // empty here because the Workshop has no scores context â€” the report
+  // empty here because the Workshop has no scores context — the report
   // card renderer fills them separately.
   function wsFillCommentTemplate(tpl, learner) {
     const full = (learner && learner.name) || '';
@@ -9550,7 +9550,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const termLabel = wsState.term.toUpperCase() + ' TERM ' + wsState.year;
 
     // ---- Preload the comment bank for every (field, band) combo we
-    //      will need on this render. Two fields Ã— up to six bands,
+    //      will need on this render. Two fields × up to six bands,
     //      but only bands actually present. Cache is keyed so repeat
     //      loads of the same class cost nothing.
     const bandsNeeded = {};
@@ -9567,7 +9567,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<div class="card-bg" style="padding:0;overflow-x:auto;">';
     html += '<div style="padding:10px 14px;background:#0d4d26;color:#fff;font-weight:700;font-size:13px;">' +
-            esc(wsState.className) + ' â€” ' + esc(termLabel) + '</div>';
+            esc(wsState.className) + ' — ' + esc(termLabel) + '</div>';
     html += '<table class="ws-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:1600px;">';
 
     // Header
@@ -9591,7 +9591,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const rating = wsState.ratings[l.id];
       const avg = wsState.averages[l.id];
       const band = (avg != null) ? window.TIS.bandForAverage(avg) : 'average';
-      const bandLabel = (avg != null) ? band.replace('_', ' ').toUpperCase() : 'â€”';
+      const bandLabel = (avg != null) ? band.replace('_', ' ').toUpperCase() : '—';
 
       // Pre-fill ratings
       const r = (rating && rating.ratings) ? rating.ratings : {};
@@ -9601,7 +9601,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       // ---- Comment defaults ----
       // Case A: no rating row at all.
       // Case B: rating row exists but comment is empty.
-      // Cases C and D: comment already present â†’ leave untouched.
+      // Cases C and D: comment already present → leave untouched.
       const existingTeacher   = (rating && rating.teacher_comment)   || '';
       const existingPrincipal = (rating && rating.principal_comment) || '';
 
@@ -9632,7 +9632,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<td style="padding:6px;border-bottom:1px solid #eee;position:sticky;left:0;background:' + rowBg + ';z-index:1;">' + esc(l.pin || '') + '</td>';
       html += '<td style="padding:6px;border-bottom:1px solid #eee;position:sticky;left:70px;background:' + rowBg + ';z-index:1;font-weight:600;">' + esc(l.name || '') + '</td>';
       html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;font-weight:700;">' +
-              (avg != null ? avg.toFixed(1) : 'â€”') + '</td>';
+              (avg != null ? avg.toFixed(1) : '—') + '</td>';
       html += '<td style="padding:6px;border-bottom:1px solid #eee;text-align:center;font-size:10px;">' +
               esc(bandLabel) + '</td>';
 
@@ -9672,8 +9672,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
               'Pick from bank</button>';
       html += '</td>';
 
-      // State chip â€” priority: EDITED > AUTO > DEFAULT > â€”
-      let chip = '<span style="color:#999;font-size:10px;">â€”</span>';
+      // State chip — priority: EDITED > AUTO > DEFAULT > —
+      let chip = '<span style="color:#999;font-size:10px;">—</span>';
       if (teacherEdited || principalEdited) {
         chip = '<span style="background:#d4a017;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">EDITED</span>';
       } else if (rating) {
@@ -9825,7 +9825,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     let html = '<div class="modal-overlay" onclick="if(event.target===this)TIS.closeModal()">';
     html += '<div class="modal-box wide" style="max-width:720px;max-height:80vh;overflow-y:auto;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Comment bank â€” ' + esc(field === 'teacher' ? "Teacher" : "Principal") + ' Â· ' + esc(band.replace('_', ' ')) + '</h2>' +
+    html += '<div class="modal-header"><h2>Comment bank — ' + esc(field === 'teacher' ? "Teacher" : "Principal") + ' · ' + esc(band.replace('_', ' ')) + '</h2>' +
             '<button class="close-btn" onclick="TIS.closeModal()">&times;</button></div>';
     html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">Click a comment to place it in the ' +
             esc(field === 'teacher' ? "Teacher's" : "Principal's") + ' field for <b>' + esc(fullName) + '</b>.</p>';
@@ -9847,7 +9847,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const el = document.querySelector('.ws-comment[data-learner-id="' + learnerId + '"][data-field="' + targetField + '"]');
     if (el) {
       el.value = text;
-      // Field is now bank-managed again â†’ arrows will cycle it.
+      // Field is now bank-managed again → arrows will cycle it.
       el.setAttribute('data-default', '1');
       el.setAttribute('data-bank-index', '0');
       el.style.borderColor = '#d4a017';
@@ -9859,7 +9859,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.wsApplyComment = wsApplyComment;
 
   // ================================================================
-  // Delivery 6 â€” Up / Down cycler on comment textareas (Option C).
+  // Delivery 6 — Up / Down cycler on comment textareas (Option C).
   //
   // Precedence, checked in order:
   //   1. Field must be bank-managed: data-default="1".
@@ -9867,17 +9867,17 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   //      "Pick from bank" re-sets it (see wsApplyComment).
   //   2. Bank for the learner's band and field must be non-empty.
   //   3. Caret must be where the arrow naturally would not move:
-  //        Down  â†’ cycles only when caret is at the very END
-  //        Up    â†’ cycles only when caret is at the very START
+  //        Down  → cycles only when caret is at the very END
+  //        Up    → cycles only when caret is at the very START
   //      Anywhere else, the arrow moves the caret as usual.
   //
   // When it cycles:
-  //   â€¢ value is replaced by the next / previous bank entry
-  //   â€¢ data-bank-index is updated
-  //   â€¢ a small "n / m" counter is painted in the textarea's corner
-  //   â€¢ wsMarkDirty fires â†’ chip flips to UNSAVED
-  //   â€¢ caret is pushed to the end so subsequent Down keeps cycling
-  //   â€¢ nothing is written to the database â€” Save does that.
+  //   • value is replaced by the next / previous bank entry
+  //   • data-bank-index is updated
+  //   • a small "n / m" counter is painted in the textarea's corner
+  //   • wsMarkDirty fires → chip flips to UNSAVED
+  //   • caret is pushed to the end so subsequent Down keeps cycling
+  //   • nothing is written to the database — Save does that.
   //
   // Counter clears on blur, on input, on apply-from-bank.
   // ================================================================
@@ -9964,7 +9964,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
   // ----------------------------------------------------------------
   // One delegated keydown listener on document. Installs once.
-  // No dependency on #wsContent being present at install time â€”
+  // No dependency on #wsContent being present at install time —
   // document is always there, and the handler filters by class.
   // ----------------------------------------------------------------
   (function wsInstallCycleListener() {
@@ -10004,7 +10004,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     });
   })();
   // ================================================================
-  // Delivery 6 â€” Up / Down cycler on comment textareas (Option C).
+  // Delivery 6 — Up / Down cycler on comment textareas (Option C).
   //
   // Rules, in order of precedence:
   //   1. Field must be bank-managed: data-default="1" and NOT
@@ -10012,18 +10012,18 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   //      oninput handler below).
   //   2. Bank for the learner's band and field must be non-empty.
   //   3. Caret must sit where the arrow naturally would NOT move:
-  //        Down  â†’ cycle only when caret is at the very END.
-  //        Up    â†’ cycle only when caret is at the very START.
+  //        Down  → cycle only when caret is at the very END.
+  //        Up    → cycle only when caret is at the very START.
   //      Anywhere else, the arrow moves the caret as usual.
   //
   // When it cycles:
-  //   â€¢ value is replaced by the next / previous bank entry
-  //   â€¢ data-bank-index is updated
-  //   â€¢ a small "n / m" counter is shown in the textarea's corner
-  //   â€¢ wsMarkDirty fires, chip flips to UNSAVED
-  //   â€¢ the caret is pushed to the end so subsequent Down presses
+  //   • value is replaced by the next / previous bank entry
+  //   • data-bank-index is updated
+  //   • a small "n / m" counter is shown in the textarea's corner
+  //   • wsMarkDirty fires, chip flips to UNSAVED
+  //   • the caret is pushed to the end so subsequent Down presses
   //     keep cycling
-  //   â€¢ nothing is written to the database â€” Save does that.
+  //   • nothing is written to the database — Save does that.
   //
   // Counter clears on blur, on save, on re-render.
   // ================================================================
@@ -10108,7 +10108,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.wsCycleComment = wsCycleComment;
 
   // Delegated keydown: one listener on the whole content container.
-  // Safe to install multiple times â€” guarded by __wired flag.
+  // Safe to install multiple times — guarded by __wired flag.
   function wsInstallCycleListener() {
     const container = document.getElementById('wsContent');
     if (!container || container.__cycleWired) return;
@@ -10173,11 +10173,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       .sort(function (a, b) { return (a.sort_order || 9999) - (b.sort_order || 9999); })
       .forEach(function (c) {
         html += '<tr>' +
-          '<td style="color:#999;font-size:11px;">' + (c.sort_order || 'â€”') + '</td>' +
+          '<td style="color:#999;font-size:11px;">' + (c.sort_order || '—') + '</td>' +
           '<td><strong>' + esc(c.name) + '</strong></td>' +
-          '<td>' + esc(c.level || 'â€”') + '</td>' +
-          '<td>' + esc(c.stream || 'â€”') + '</td>' +
-          '<td>' + esc(c.next_class || 'â€”') + '</td>' +
+          '<td>' + esc(c.level || '—') + '</td>' +
+          '<td>' + esc(c.stream || '—') + '</td>' +
+          '<td>' + esc(c.next_class || '—') + '</td>' +
           '<td>' + (c.is_active ? '<span style="color:#27ae60;font-weight:600;">Active</span>' : '<span style="color:#c0392b;font-weight:600;">Retired</span>') + '</td>' +
           '<td style="text-align:right;">' +
             '<button type="button" class="btn btn-sm btn-primary" data-manage-class="' + escAttr(c.name) + '">' +
@@ -10243,7 +10243,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const subtitle = document.getElementById('classSubjectsSubtitle');
     if (!panel || !body) return;
 
-    title.textContent = 'Manage Subjects â€” ' + state.className;
+    title.textContent = 'Manage Subjects — ' + state.className;
     subtitle.textContent = 'Slots 1 through 18. A slot can be empty, or bound to one subject from the master list. Save requires double confirmation.';
     panel.style.display = 'block';
 
@@ -10262,7 +10262,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             '</tr></thead><tbody>';
 
     state.slots.forEach(function (s) {
-      let opts = '<option value="">â€” (unused) â€”</option>';
+      let opts = '<option value="">— (unused) —</option>';
       state.subjects.forEach(function (sub) {
         const isCurrent = (sub.code === s.subject_code);
         const isUsedElsewhere = used[sub.code] && !isCurrent;
@@ -10335,7 +10335,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const lines = changes.map(function (c) {
       const b = c.before ? labelForCode(state.subjects, c.before) : '(unused)';
       const a = c.after  ? labelForCode(state.subjects, c.after)  : '(unused)';
-      return '  sub' + c.slot + ':  ' + b + '  â†’  ' + a;
+      return '  sub' + c.slot + ':  ' + b + '  →  ' + a;
     }).join('\n');
 
     const firstMsg = 'You are changing ' + changes.length + ' slot(s) for ' + state.className + ':\n\n' +
@@ -10453,7 +10453,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   const __usrExpanded = {};
 
   async function loadUsers() {
-    setHTML('usersContent', pageLoaderHTML('Loading usersâ€¦'));
+    setHTML('usersContent', pageLoaderHTML('Loading users…'));
 
     const r = await window.TIS.getPermissionMatrix();
     if (!r || !r.ok) {
@@ -10485,13 +10485,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     users.forEach(function (u) {
       const expanded = !!__usrExpanded[u.id];
-      const arrow = expanded ? 'â–¾' : 'â–¸';
+      const arrow = expanded ? '▾' : '▸';
       html += '<tr class="usr-row" data-uid="' + esc(u.id) + '" style="cursor:pointer;">';
       html += '<td style="padding:8px;border-bottom:1px solid #eee;">' + esc(u.id) + '</td>';
       html += '<td style="padding:8px;border-bottom:1px solid #eee;">' + arrow + ' ' + esc(u.name) + '</td>';
       html += '<td style="padding:8px;border-bottom:1px solid #eee;">' + esc(u.role) + '</td>';
       html += '<td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">' +
-              (u.isActive ? 'âœ…' : 'â€”') + '</td>';
+              (u.isActive ? '✅' : '—') + '</td>';
       html += '<td style="padding:8px;border-bottom:1px solid #eee;text-align:center;" ' +
               'onclick="event.stopPropagation()">';
       html += '<button type="button" class="btn btn-sm btn-warning" ' +
@@ -10600,7 +10600,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (rf) rf.addEventListener('click', loadUsers);
   }
    // ================================================================
-  // [S18] BROAD SHEET â€” Scores console (template + harvest)
+  // [S18] BROAD SHEET — Scores console (template + harvest)
   // ================================================================
   const BS_SLOT_LIMIT = 18;
 
@@ -10675,7 +10675,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       if (!singlePin) { bsSetFeedback('Enter a PIN or name.', 'error'); return; }
     }
 
-    bsSetFeedback('Building fileâ€¦');
+    bsSetFeedback('Building file…');
     startLoader();
     try {
       const payload = await bsBuildTemplatePayload({
@@ -10687,7 +10687,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
          const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(payload.rows);
-      // No sheet protection â€” Excel's cell-locking model is too coarse
+      // No sheet protection — Excel's cell-locking model is too coarse
       // for "lock A-E, unlock F+". We rely on convention + server-side
       // verification on import instead (see Delivery 2.2c).
       XLSX.utils.book_append_sheet(wb, ws, 'Scores');
@@ -10734,7 +10734,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       if (!learners || learners.length === 0) return { ok: false, error: 'No learners matched the scope.' };
 
       // 2a. Get the canonical class order so we can sort learners
-      //     by class structure (CRECHE â†’ STARTERS â†’ ... â†’ SS 3 BUSINESS),
+      //     by class structure (CRECHE → STARTERS → ... → SS 3 BUSINESS),
       //     then by name within class.
       const classR = await window.TIS.listClasses();
       const classOrder = {};
@@ -10812,7 +10812,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           l.name || '',
           l.gender || '',
           l.class_name || '',
-          ''   // times_pre â€” filled from attendance register later
+          ''   // times_pre — filled from attendance register later
         ];
         const classLegend = legend[l.class_name] || [];
         includeSlots.forEach(function (slotNum) {
@@ -10898,7 +10898,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (scope === 'subject')     { subjectFilter = $('bsSubject') ? $('bsSubject').value : ''; if (!subjectFilter) { bsSetFeedback('Pick a subject.', 'error'); return; } }
     if (scope === 'student')     { singlePin     = ($('bsStudentQuery') ? $('bsStudentQuery').value : '').trim(); if (!singlePin) { bsSetFeedback('Enter a PIN or name.', 'error'); return; } }
 
-    bsSetFeedback('Building harvestâ€¦');
+    bsSetFeedback('Building harvest…');
     startLoader();
     try {
       const payload = await bsBuildTemplatePayload({
@@ -10924,18 +10924,18 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ================================================================
   // [S18b] SCORES IMPORTER
   //   1. Read XLSX
-  //   2. Parse header â†’ identify slot columns
+  //   2. Parse header → identify slot columns
   //   3. Verify PIN + name against learners
-  //   4. Look up class_subjects to resolve slot â†’ subject
+  //   4. Look up class_subjects to resolve slot → subject
   //   5. Compare against existing scores (upsert semantics)
-  //   6. Conflict modal â†’ commit
+  //   6. Conflict modal → commit
   // ================================================================
   let bsImportState = null;
 
   async function bsImportScoresFile(file) {
     if (typeof XLSX === 'undefined') { bsSetFeedback('Excel library not loaded.', 'error'); return; }
 
-    bsSetFeedback('Reading fileâ€¦');
+    bsSetFeedback('Reading file…');
     startLoader();
 
     try {
@@ -11059,7 +11059,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         const l = learnerByPin[fr.pin];
         if (!l) { errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'PIN not found in system' }); continue; }
 
-        // Name verification â€” reject if it does not match.
+        // Name verification — reject if it does not match.
         if (fr.name && l.name && fr.name.toUpperCase() !== l.name.toUpperCase()) {
           errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'Name mismatch (file: "' + fr.name + '", system: "' + l.name + '")' });
           continue;
@@ -11070,7 +11070,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         if (fr.classCode) {
           const mapped = aliasMap[fr.classCode.toUpperCase()];
           if (mapped && mapped !== canonicalClass) {
-            errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'Class in file ("' + fr.classCode + '"â†’' + mapped + ') does not match learner record (' + canonicalClass + ')' });
+            errors.push({ row: fr.rowNumber, pin: fr.pin, reason: 'Class in file ("' + fr.classCode + '"→' + mapped + ') does not match learner record (' + canonicalClass + ')' });
             continue;
           }
         }
@@ -11150,7 +11150,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const conflictCount = planned.filter(function (p) { return p.conflict; }).length;
 
       if (conflictCount === 0 && errors.length === 0 && skipped.length === 0) {
-        // Fully clean â€” commit immediately.
+        // Fully clean — commit immediately.
         await bsCommitImport(null);
         return;
       }
@@ -11184,7 +11184,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   async function sbLoadClassAliases() {
     try {
       const sb = window.supabase ? null : null;
-      // Use TIS method â€” added below.
+      // Use TIS method — added below.
       if (typeof window.TIS.listClassAliases === 'function') {
         const r = await window.TIS.listClassAliases();
         return (r && r.ok) ? r.data : [];
@@ -11205,7 +11205,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const esc2 = esc;
     let html = '<div class="modal-overlay" onclick="if(event.target===this)return;">';
     html += '<div class="modal-box wide" style="max-width:900px;max-height:88vh;overflow-y:auto;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>Import review â€” ' + esc2(st.file) + '</h2>' +
+    html += '<div class="modal-header"><h2>Import review — ' + esc2(st.file) + '</h2>' +
             '<button class="close-btn" onclick="bsCancelImport()">&times;</button></div>';
 
     html += '<div style="padding:14px 18px;">';
@@ -11224,13 +11224,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     // Conflicts section
     if (conflicts.length > 0) {
-      html += '<h4 style="color:#b8860b;margin:16px 0 8px;">Conflicts â€” tick each to allow overwrite</h4>';
+      html += '<h4 style="color:#b8860b;margin:16px 0 8px;">Conflicts — tick each to allow overwrite</h4>';
       html += '<p style="font-size:12px;color:#666;margin:0 0 8px;">Rows with non-zero existing scores. Unticked rows will be skipped.</p>';
       html += '<div style="max-height:340px;overflow-y:auto;border:1px solid #e6e9f0;border-radius:8px;">';
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
       html += '<thead style="position:sticky;top:0;background:#fff8e1;">';
       html += '<tr>' +
-              '<th style="padding:6px;text-align:center;width:40px;">âœ“</th>' +
+              '<th style="padding:6px;text-align:center;width:40px;">✓</th>' +
               '<th style="padding:6px;text-align:left;">PIN</th>' +
               '<th style="padding:6px;text-align:left;">Learner</th>' +
               '<th style="padding:6px;text-align:left;">Class</th>' +
@@ -11248,12 +11248,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           '<td style="padding:4px;border-bottom:1px solid #eee;">' + esc2(c.class_name) + '</td>' +
           '<td style="padding:4px;border-bottom:1px solid #eee;">' + esc2(c.subject_code) + '</td>' +
           '<td style="padding:4px;border-bottom:1px solid #eee;text-align:center;color:#666;">' +
-            (c.existing ? (c.existing.test1||0) + ' / ' + (c.existing.test2||0) + ' / ' + (c.existing.exam||0) : 'â€”') +
+            (c.existing ? (c.existing.test1||0) + ' / ' + (c.existing.test2||0) + ' / ' + (c.existing.exam||0) : '—') +
           '</td>' +
           '<td style="padding:4px;border-bottom:1px solid #eee;text-align:center;font-weight:700;">' +
-            (c.test1 != null ? c.test1 : 'â€”') + ' / ' +
-            (c.test2 != null ? c.test2 : 'â€”') + ' / ' +
-            (c.exam  != null ? c.exam  : 'â€”') +
+            (c.test1 != null ? c.test1 : '—') + ' / ' +
+            (c.test2 != null ? c.test2 : '—') + ' / ' +
+            (c.exam  != null ? c.exam  : '—') +
           '</td>' +
         '</tr>';
       });
@@ -11262,22 +11262,22 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     // Errors
     if (errs.length > 0) {
-      html += '<h4 style="color:#c0392b;margin:16px 0 8px;">Errors â€” will be skipped</h4>';
+      html += '<h4 style="color:#c0392b;margin:16px 0 8px;">Errors — will be skipped</h4>';
       html += '<div style="max-height:200px;overflow-y:auto;background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:10px;font-size:12px;">';
       errs.forEach(function (e) {
-        html += '<div style="padding:3px 0;">Row ' + e.row + ' â€” PIN ' + esc2(e.pin) + ' â€” ' + esc2(e.reason) + '</div>';
+        html += '<div style="padding:3px 0;">Row ' + e.row + ' — PIN ' + esc2(e.pin) + ' — ' + esc2(e.reason) + '</div>';
       });
       html += '</div>';
     }
 
     // Skipped (informational)
     if (skips.length > 0) {
-      html += '<h4 style="color:#666;margin:16px 0 8px;">Skipped â€” slot not assigned for the class</h4>';
+      html += '<h4 style="color:#666;margin:16px 0 8px;">Skipped — slot not assigned for the class</h4>';
       html += '<div style="max-height:120px;overflow-y:auto;background:#f0f0f0;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:11px;color:#555;">';
       skips.slice(0, 50).forEach(function (s) {
-        html += '<div>Row ' + s.row + ' â€” ' + esc2(s.pin) + ' â€” sub' + s.slot + ' â€” ' + esc2(s.reason) + '</div>';
+        html += '<div>Row ' + s.row + ' — ' + esc2(s.pin) + ' — sub' + s.slot + ' — ' + esc2(s.reason) + '</div>';
       });
-      if (skips.length > 50) html += '<div>â€¦and ' + (skips.length - 50) + ' more.</div>';
+      if (skips.length > 50) html += '<div>…and ' + (skips.length - 50) + ' more.</div>';
       html += '</div>';
     }
 
@@ -11336,7 +11336,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
 
     startLoader();
-    bsSetFeedback('Writing ' + rowsToWrite.length + ' row(s)â€¦');
+    bsSetFeedback('Writing ' + rowsToWrite.length + ' row(s)…');
 
     const written = [];
     const failed  = [];
@@ -11368,7 +11368,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         stopLoader();
 
     const msg = 'Imported ' + written.length + ' row(s)';
-    if (failed.length) bsSetFeedback(msg + ' â€” ' + failed.length + ' failed. See console.', 'error');
+    if (failed.length) bsSetFeedback(msg + ' — ' + failed.length + ' failed. See console.', 'error');
     else bsSetFeedback(msg + ' successfully.', 'ok');
 
     showToast(msg + (failed.length ? ' (' + failed.length + ' failed)' : '.'), failed.length ? 'warning' : 'success');
@@ -11381,18 +11381,18 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     // we just wrote scores for.
     if (written.length > 0) {
       startLoader();
-      bsSetFeedback('Auto-assigning ratings and commentsâ€¦', 'info');
+      bsSetFeedback('Auto-assigning ratings and comments…', 'info');
       try {
         await autoAssignRatings(written);
       } catch (e) {
         console.warn('[autoAssign after import]', e);
       }
       stopLoader();
-      bsSetFeedback(msg + ' Â· ratings & comments assigned.', 'ok');
+      bsSetFeedback(msg + ' · ratings & comments assigned.', 'ok');
     }
  }
   // ================================================================
-  // [S18c] AUTO-ASSIGN â€” psychomotor ratings and comments
+  // [S18c] AUTO-ASSIGN — psychomotor ratings and comments
   //   Runs after a scores upload completes. Fills in the non-
   //   academic side of the report card using weighted random
   //   picks based on the learner's average this term.
@@ -11433,7 +11433,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const parts = String(fullName).trim().split(/\s+/);
     if (parts.length === 0) return '';
     if (parts.length === 1) {
-      // Only one word â€” use as-is, capitalised.
+      // Only one word — use as-is, capitalised.
       return parts[0].charAt(0).toUpperCase() + parts[0].slice(1).toLowerCase();
     }
     const second = parts[1];
@@ -11683,8 +11683,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       safetySweep();
 
       // Scan routes fire BEFORE any portal UI is shown.
-      // /g/<token> â†’ staff-gate QR (all staff use one code).
-      // /s/<code>  â†’ personal ID-card QR (learner / staff / visitor).
+      // /g/<token> → staff-gate QR (all staff use one code).
+      // /s/<code>  → personal ID-card QR (learner / staff / visitor).
       const handledByScan =
         (typeof handleQRScanIfPresent    === 'function' ? await handleQRScanIfPresent()    : false) ||
         (typeof handleIDCardScanIfPresent === 'function' ? await handleIDCardScanIfPresent() : false);
@@ -11720,15 +11720,15 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
    // ================================================================
   // [S21] ID CARDS
-  //   Portrait CR80 cards, 3 Ã— 3 on A4 preview (9 cards per sheet),
+  //   Portrait CR80 cards, 3 × 3 on A4 preview (9 cards per sheet),
   //   or ZIP export of Front + Back PNG per card.
   //
-  //   Delivered PNG: 662 Ã— 1036 px (CR80 638 Ã— 1012 + 2 mm bleed)
-  //   Trim to:        638 Ã— 1012 px @ 300 DPI (54 Ã— 85.6 mm)
+  //   Delivered PNG: 662 × 1036 px (CR80 638 × 1012 + 2 mm bleed)
+  //   Trim to:        638 × 1012 px @ 300 DPI (54 × 85.6 mm)
   //
-  //   Front: header text block (name + motto + schools) â†’ logo row
-  //          (school left, ministry right) â†’ photo â†’ name (blue) â†’
-  //          identity block (full width) â†’ QR â†’ role badge.
+  //   Front: header text block (name + motto + schools) → logo row
+  //          (school left, ministry right) → photo → name (blue) →
+  //          identity block (full width) → QR → role badge.
   //   Back:  ownership + return text at the top, address + email at
   //          the bottom.
   //
@@ -11757,8 +11757,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   ];
 
   // Portrait CR80 at 300 DPI:
-  //   content = 54 Ã— 85.6 mm â†’ 638 Ã— 1012 px
-  //   with 2 mm bleed on each edge â†’ 58 Ã— 89.6 mm â†’ 662 Ã— 1036 px
+  //   content = 54 × 85.6 mm → 638 × 1012 px
+  //   with 2 mm bleed on each edge → 58 × 89.6 mm → 662 × 1036 px
   const IDC_PNG = {
     contentW: 638,
     contentH: 1012,
@@ -11910,7 +11910,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     let html = '';
     html += '<h3 style="margin:0 0 8px;color:#0d4d26;">Staff ID Cards</h3>';
     html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">';
-    html += total + ' active staff Â· <b>' + selected + '</b> selected.</p>';
+    html += total + ' active staff · <b>' + selected + '</b> selected.</p>';
 
     html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
     html += '<button class="btn btn-sm btn-secondary" onclick="idcSelectAllStaff(true)">Select all</button>';
@@ -11923,7 +11923,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
     html += '<thead style="position:sticky;top:0;background:#e8f5e9;z-index:1;">';
     html += '<tr>' +
-            '<th style="text-align:center;padding:6px;width:40px;">âœ“</th>' +
+            '<th style="text-align:center;padding:6px;width:40px;">✓</th>' +
             '<th style="text-align:left;padding:6px;width:110px;">Staff ID</th>' +
             '<th style="text-align:left;padding:6px;">Name</th>' +
             '<th style="text-align:left;padding:6px;width:120px;">Department</th>' +
@@ -11990,7 +11990,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     let html = '';
     html += '<h3 style="margin:0 0 8px;color:#0d4d26;">Learner ID Cards</h3>';
     html += '<p style="font-size:12px;color:#666;margin:0 0 10px;">';
-    html += allLearners.length + ' active learners Â· <b>' + selected + '</b> selected.</p>';
+    html += allLearners.length + ' active learners · <b>' + selected + '</b> selected.</p>';
 
     html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
     html += '<button class="btn btn-sm btn-secondary" onclick="idcSelectAllLearners(true)">Select all</button>';
@@ -12021,7 +12021,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         html += '<label style="display:block;font-size:12px;padding:3px 0;">';
         html += '<input type="checkbox"' + checked +
                 ' onchange="idcToggleLearner(' + l.id + ', this.checked)"> ';
-        html += esc(l.pin || '') + ' â€” ' + esc(l.name || '');
+        html += esc(l.pin || '') + ' — ' + esc(l.name || '');
         html += '</label>';
       });
       html += '</div></details>';
@@ -12082,14 +12082,14 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
     html += '<thead style="background:#e8f5e9;"><tr>' +
             '<th style="text-align:left;padding:6px;width:110px;">Card Code</th>' +
-            '<th style="text-align:left;padding:6px;">When scannedâ€¦</th></tr></thead><tbody>';
+            '<th style="text-align:left;padding:6px;">When scanned…</th></tr></thead><tbody>';
     IDC_VISITOR_CARDS.forEach(function (code) {
       html += '<tr>' +
               '<td style="padding:5px;border-bottom:1px solid #eee;"><b>' + esc(code) + '</b></td>' +
               '<td style="padding:5px;border-bottom:1px solid #eee;">' +
               'Asks name, purpose (Official / Personal); if Official, agency ' +
               '(Ministry of Education, Ministry of Health, Internal Revenue, NAPPS, ' +
-              'Community, Police/Security, Other â†’ please specify).</td>' +
+              'Community, Police/Security, Other → please specify).</td>' +
               '</tr>';
     });
     html += '</tbody></table></div>';
@@ -12157,7 +12157,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     ctx.fillStyle = '#333333';
     ctx.font      = Math.round(h * 0.018) + 'px Inter, Arial, sans-serif';
-    ctx.fillText('The Ideal Secondary Sch.  Â·  The Ideal Kiddies Sch.', centreCX, cursorY);
+    ctx.fillText('The Ideal Secondary Sch.  ·  The Ideal Kiddies Sch.', centreCX, cursorY);
 
     cursorY += h * 0.030;
 
@@ -12370,8 +12370,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   function idcFitText(ctx, text, maxWidth) {
     let t = String(text || '');
     if (ctx.measureText(t).width <= maxWidth) return t;
-    while (t.length > 1 && ctx.measureText(t + 'â€¦').width > maxWidth) t = t.slice(0, -1);
-    return t + 'â€¦';
+    while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
+    return t + '…';
   }
 
   // ----------------------------------------------------------------
@@ -12497,10 +12497,10 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   }
 
   // ----------------------------------------------------------------
-  // A4 preview â€” 3 Ã— 3 portrait grid (9 cards per sheet)
+  // A4 preview — 3 × 3 portrait grid (9 cards per sheet)
   // ----------------------------------------------------------------
   async function idcOpenA4Preview(cards, title) {
-    if (idcState.busy) { showToast('Already generating, please waitâ€¦', 'info'); return; }
+    if (idcState.busy) { showToast('Already generating, please wait…', 'info'); return; }
     idcState.busy = true;
     startLoader();
     try {
@@ -12532,11 +12532,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
       let html = '<html><head><title>' + esc(title) + '</title><style>' + css + '</style></head><body>';
 
-      html += idcChunkSheetsHtml(frontUrls, title + ' â€” FRONT', 9,
-        'Delivered PNG is 662 Ã— 1036 px @ 300 DPI with 2 mm bleed. ' +
-        'Trim on the solid green border to 638 Ã— 1012 px (54 Ã— 85.6 mm).');
+      html += idcChunkSheetsHtml(frontUrls, title + ' — FRONT', 9,
+        'Delivered PNG is 662 × 1036 px @ 300 DPI with 2 mm bleed. ' +
+        'Trim on the solid green border to 638 × 1012 px (54 × 85.6 mm).');
 
-      html += idcChunkSheetsHtml(backUrls, title + ' â€” BACK', 9,
+      html += idcChunkSheetsHtml(backUrls, title + ' — BACK', 9,
         'Centre-aligned ownership and return text.');
 
       html += '<script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script>';
@@ -12544,7 +12544,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
       w.document.write(html);
       w.document.close();
-      showToast('Preview opened. ' + cards.length + ' card(s) â€” ' +
+      showToast('Preview opened. ' + cards.length + ' card(s) — ' +
                 Math.ceil(cards.length / 9) + ' sheet(s) per side.', 'success');
     } finally {
       idcState.busy = false;
@@ -12558,7 +12558,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const slice = urls.slice(i, i + perSheet);
       html += '<div class="sheet">';
       html += '<div class="caption">' + esc(captionPrefix) +
-              ' â€” sheet ' + (Math.floor(i / perSheet) + 1) + '</div>';
+              ' — sheet ' + (Math.floor(i / perSheet) + 1) + '</div>';
       html += '<div class="grid">';
       slice.forEach(function (u) {
         html += '<div class="cell"><img src="' + u + '"></div>';
@@ -12580,7 +12580,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       showToast('JSZip not loaded. Add the JSZip CDN script to index.html.', 'error');
       return;
     }
-    if (idcState.busy) { showToast('Already generating, please waitâ€¦', 'info'); return; }
+    if (idcState.busy) { showToast('Already generating, please wait…', 'info'); return; }
     idcState.busy = true;
     startLoader();
     try {
@@ -12602,16 +12602,16 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       }
 
       const readme = ''
-        + 'THE IDEAL SCHOOLS â€” ID CARD PRINTING INSTRUCTIONS\r\n'
+        + 'THE IDEAL SCHOOLS — ID CARD PRINTING INSTRUCTIONS\r\n'
         + '=================================================\r\n\r\n'
         + 'Files in this ZIP\r\n'
         + '-----------------\r\n'
-        + '  Front/  â€” one PNG per card, printed side A\r\n'
-        + '  Back/   â€” one PNG per card, printed side B\r\n\r\n'
+        + '  Front/  — one PNG per card, printed side A\r\n'
+        + '  Back/   — one PNG per card, printed side B\r\n\r\n'
         + 'PNG specifications (for the commercial card printer)\r\n'
         + '---------------------------------------------------\r\n'
-        + '  Resolution:  662 Ã— 1036 px (delivered, includes 2 mm bleed on all sides)\r\n'
-        + '  Trim to:     638 Ã— 1012 px @ 300 DPI  =  54 Ã— 85.6 mm (CR80 portrait)\r\n'
+        + '  Resolution:  662 × 1036 px (delivered, includes 2 mm bleed on all sides)\r\n'
+        + '  Trim to:     638 × 1012 px @ 300 DPI  =  54 × 85.6 mm (CR80 portrait)\r\n'
         + '  Colour:      RGB (printer converts to CMYK)\r\n'
         + '  Cut line:    the solid green border visible on each PNG. ' +
                           'Trim exactly on the inside edge of that border.\r\n\r\n'
@@ -12619,7 +12619,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         + '-------------------\r\n'
         + '  <Kind>_<Code>_Front.png   (e.g. Learner_TIS0001_Front.png)\r\n'
         + '  <Kind>_<Code>_Back.png    (e.g. Learner_TIS0001_Back.png)\r\n\r\n'
-        + 'Keep matching Front/Back pairs together â€” they are printed as a set.\r\n\r\n'
+        + 'Keep matching Front/Back pairs together — they are printed as a set.\r\n\r\n'
         + 'Generated by the TIS Operational Portal\r\n';
 
       zip.file('README.txt', readme);
@@ -12675,7 +12675,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     window.idcGenerateVisitorCards = idcGenerateVisitorCards;
 
   // ================================================================
-  // [S22] RESULTS â€” internal report card viewer + print
+  // [S22] RESULTS — internal report card viewer + print
   //   View first, print on demand. Uses the same data as the
   //   public results page will.
   // ================================================================
@@ -12753,9 +12753,9 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
       if (banner) {
         banner.style.display = 'block';
-        setText('resultsLearnerName', learner.name || 'â€”');
-        setText('resultsLearnerClass', learner.class_name || 'â€”');
-        setText('resultsLearnerPin', learner.pin || 'â€”');
+        setText('resultsLearnerName', learner.name || '—');
+        setText('resultsLearnerClass', learner.class_name || '—');
+        setText('resultsLearnerPin', learner.pin || '—');
       }
 
       let payload;
@@ -12790,7 +12790,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (!w) { showToast('Allow pop-ups to print.', 'warning'); return; }
     const html = __resultsCurrent.html
       .replace(/<div class="results-preview">/, '<div>');
-    w.document.write('<html><head><title>Report â€” ' + esc(__resultsCurrent.learner.name || '') + '</title>' +
+    w.document.write('<html><head><title>Report — ' + esc(__resultsCurrent.learner.name || '') + '</title>' +
       window.TISReport.resultsPrintCss() +
       '</head><body>' + html + '</body></html>');
     w.document.close();
@@ -12801,14 +12801,14 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   // ----------------------------------------------------------------
     // ----------------------------------------------------------------
   // Term promotion label helper.
-  //   1st term  â†’ next label is  "2ND TERM <year>"
-  //   2nd term  â†’ next label is  "3RD TERM <year>"
-  //   3rd term  â†’ next label is the next class (from classes.next_class)
+  //   1st term  → next label is  "2ND TERM <year>"
+  //   2nd term  → next label is  "3RD TERM <year>"
+  //   3rd term  → next label is the next class (from classes.next_class)
   // ----------------------------------------------------------------
   function nextTermLabel(termType, year) {
     if (termType === '1st') return { term: '2nd', year: year };
     if (termType === '2nd') return { term: '3rd', year: year };
-    return null;   // 3rd term â†’ use next class instead
+    return null;   // 3rd term → use next class instead
   }
 
   // ----------------------------------------------------------------
@@ -12904,13 +12904,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const ratings = (ratingsR && ratingsR.ok) ? ratingsR.data : null;
       const nextClass = (nextClassR && nextClassR.ok) ? nextClassR.data : null;
 
-      // PROMOTED TO: 1st/2nd â†’ next term; 3rd â†’ next class
+      // PROMOTED TO: 1st/2nd → next term; 3rd → next class
       let promotedTo;
       const nextT = nextTermLabel(term, year);
       if (nextT) {
         promotedTo = { term: nextT.term, year: nextT.year };
       } else {
-        promotedTo = nextClass || 'â€”';
+        promotedTo = nextClass || '—';
       }
 
       const subjectMap = {};
@@ -12946,8 +12946,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         if (highestPct === null || p > highestPct) highestPct = p;
         if (lowestPct  === null || p < lowestPct)  lowestPct  = p;
       });
-      const highestPctStr = (highestPct === null) ? 'â€”' : highestPct.toFixed(2);
-      const lowestPctStr  = (lowestPct  === null) ? 'â€”' : lowestPct.toFixed(2);
+      const highestPctStr = (highestPct === null) ? '—' : highestPct.toFixed(2);
+      const lowestPctStr  = (lowestPct  === null) ? '—' : lowestPct.toFixed(2);
 
       let totalCA = 0, totalExam = 0, rowCount = 0;
       let bodyRows = '';
@@ -12991,8 +12991,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const coverScores = !cleared;
 
       if (coverScores) {
-        bodyRows = bodyRows.replace(/<td class="rc-num">[^<]*<\/td>/g, '<td class="rc-num rc-covered">â€”</td>')
-                           .replace(/<td class="rc-num rc-total">[^<]*<\/td>/g, '<td class="rc-num rc-covered">â€”</td>');
+        bodyRows = bodyRows.replace(/<td class="rc-num">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>')
+                           .replace(/<td class="rc-num rc-total">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>');
       }
 
       const feeBreakdown = await buildFeeBreakdown(learner, term, year);
@@ -13089,7 +13089,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const nextClass = (nextClassR && nextClassR.ok) ? nextClassR.data : null;
 
       // Sessional reports are end-of-year. PROMOTED TO = next class.
-      const promotedTo = nextClass || 'â€”';
+      const promotedTo = nextClass || '—';
 
       const subjectMap = {};
       subjects.forEach(function (s) { subjectMap[s.code] = s.display_name; });
@@ -13192,8 +13192,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         highestPct = Math.max.apply(null, cumulatives);
         lowestPct  = Math.min.apply(null, cumulatives);
       }
-      const highestPctStr = (highestPct === null) ? 'â€”' : String(highestPct);
-      const lowestPctStr  = (lowestPct  === null) ? 'â€”' : String(lowestPct);
+      const highestPctStr = (highestPct === null) ? '—' : String(highestPct);
+      const lowestPctStr  = (lowestPct  === null) ? '—' : String(lowestPct);
 
        const feeBreakdown = await buildFeeBreakdown(learner, '3rd', year);
 
@@ -13248,7 +13248,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           '</div>' +
           window.TISReport.resultsStatsBlock({
             totalCA:      sumTerm[0] + sumTerm[1] + sumTerm[2],
-            totalExam:    'â€”',
+            totalExam:    '—',
             aggregate:    sessionalTotal,
             maxAggregate: maxSessional,
             pct:          sessionalPct,
