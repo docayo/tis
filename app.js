@@ -1234,21 +1234,44 @@
   // A row in fee_learner_item_overrides means the line is removed
   // for that learner in that term. Deleting the row restores it.
   // ================================================================
-    async function learnerFeeToggleOff(pin, itemKey, skipRefresh) {
+  async function learnerFeeToggleOff(pin, itemKey, skipRefresh) {
     const r = await window.TIS.getLearnerByPin(pin);
     if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); return; }
     const at = await window.TIS.getActiveTerm();
     if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); return; }
     const term = at.data;
 
+    const OPTIONAL_KEYS = ['registration_fee','sportswear','waist_coat','tie','extra_lesson','special_lesson','additions'];
+    if (OPTIONAL_KEYS.indexOf(itemKey) !== -1) {
+      if (!skipRefresh) startLoader();
+      const tr = await window.TIS.getLearnerTermFor(r.data.id, term.term_type, term.year);
+      const row = (tr && tr.ok) ? tr.data : null;
+      const csv = (row && row.optional_items_enabled) || '';
+      const list = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      const newList = list.filter(function (k) { return k !== itemKey; });
+      const patch = {};
+      patch[itemKey] = '0';
+      patch.optional_items_enabled = newList.join(',');
+      const w = await window.TIS.updateLearnerTermSnapshot(r.data.id, term.term_type, term.year, patch);
+      if (!skipRefresh) stopLoader();
+      if (!w || !w.ok) { showToast('Could not remove: ' + ((w && w.error) || 'unknown'), 'error'); return; }
+      await feeRecomputeSnapshot(r.data.id, term.term_type, term.year);
+      if (!skipRefresh) {
+        showToast('Optional item removed.', 'success');
+        __renderLearnerViewModal(pin);
+      }
+      return;
+    }
+
     if (!skipRefresh) startLoader();
     const w = await window.TIS.setLearnerItemOff(r.data.id, term.term_type, term.year, itemKey, null);
     if (!skipRefresh) stopLoader();
     if (!w || !w.ok) { showToast('Could not remove: ' + ((w && w.error) || 'unknown'), 'error'); return; }
-
     await feeRecomputeSnapshot(r.data.id, term.term_type, term.year);
-    if (!skipRefresh) showToast('Line removed for this learner.', 'success');
-    if (!skipRefresh) __renderLearnerViewModal(pin);
+    if (!skipRefresh) {
+      showToast('Line removed for this learner.', 'success');
+      __renderLearnerViewModal(pin);
+    }
   }
   window.learnerFeeToggleOff = learnerFeeToggleOff;
 
