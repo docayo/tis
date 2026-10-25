@@ -865,6 +865,9 @@
     // ------------------------------------------------------------------
     const pick = function (key, fallback) {
       if (offSet[key]) return 0;
+      if (optionalActive(key)) {
+        return num(termRow && termRow[key]);
+      }
       if (schedRow && schedRow[key] !== undefined && schedRow[key] !== null && schedRow[key] !== '') {
         return num(schedRow[key]);
       }
@@ -886,9 +889,11 @@
     const additions   = adjRow ? num(adjRow.additions)  : num(termRow && termRow.additions);
     const deductions  = adjRow ? num(adjRow.deductions) : num(termRow && termRow.scholarship);
 
+    const registrationFee = optionalActive('registration_fee') ? num(termRow && termRow.registration_fee) : 0;
     const netBills =
       tuition + otherMajor + otherMinor + books +
       uniform + sportswear + waistCoat + tie + extraLesson + special +
+      registrationFee +
       additions - deductions;
 
     const balanceCf = netBills + balanceBf;
@@ -1688,9 +1693,23 @@
 
       const num = function (v) { return Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; };
 
+      const optionalEnabledSet = {};
+      const enabledStr = (row && row.optional_items_enabled) || '';
+      enabledStr.split(',').forEach(function (k) {
+        const kk = String(k || '').trim();
+        if (kk) optionalEnabledSet[kk] = true;
+      });
+      function optionalActive(key) { return optionalEnabledSet[key] === true; }
+
       const pick = function (key) {
         if (offSet[key]) return 0;
-        return sched ? num(sched[key]) : num(row[key]);
+        if (optionalActive(key)) {
+          return num(row && row[key]);
+        }
+        if (sched && sched[key] !== undefined && sched[key] !== null && sched[key] !== '') {
+          return num(sched[key]);
+        }
+        return num(row && row[key]);
       };
 
       const tuition       = pick('tuition');
@@ -1709,9 +1728,11 @@
       const balanceBf   = num(row.balance_bf);
       const paid        = num(row.total_part_payment);
 
+      const registrationFee = optionalActive('registration_fee') ? num(row && row.registration_fee) : 0;
       const netBills =
         tuition + otherMajor + otherMinor + books +
         uniform + sportswear + waistCoat + tie + extraLesson + specialLesson +
+        registrationFee +
         additions - deductions;
 
       const balanceCf = netBills + balanceBf - paid;
@@ -1729,6 +1750,7 @@
         tie:               String(tie),
         extra_lesson:      String(extraLesson),
         special_lesson:    String(specialLesson),
+        registration_fee:  String(registrationFee),
         additions:         String(additions),
         scholarship:       String(deductions),
         balance_cf:        String(balanceCf),
