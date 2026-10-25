@@ -786,8 +786,10 @@
     } catch (e) {}
 
     // Balance B/F — locked row wins; else previous term's C/F
-    let balanceBf = num(termRow && termRow.balance_bf);
-    if (!balanceBf && term) {
+    let balanceBfRaw = termRow && termRow.balance_bf;
+    let balanceBf = num(balanceBfRaw);
+    const bfIsMissing = (balanceBfRaw === null || balanceBfRaw === undefined || String(balanceBfRaw).trim() === '');
+    if (bfIsMissing && term) {
       const prev = previousTermOf(term.term_type, term.year);
       if (prev) {
         try {
