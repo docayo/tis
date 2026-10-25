@@ -12791,13 +12791,19 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
   async function idcDrawQRImage(ctx, card, cx, cy, cw, ch) {
     const url   = window.location.origin + '/s/' + encodeURIComponent(card.code);
-    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=0&data=' +
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=8&data=' +
                   encodeURIComponent(url);
     const img = await idcLoadImage(qrUrl);
     if (!img) return;
     const L = card.__layout || {};
     if (L.qrX === undefined) return;
-    ctx.drawImage(img, L.qrX, L.qrY, L.qrSize, L.qrSize);
+    const maxH = (cy + ch) - L.qrY;
+    const maxW = (cx + cw) - L.qrX;
+    const clampedSize = Math.max(120, Math.min(L.qrSize, maxH, maxW));
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, L.qrX, L.qrY, clampedSize, clampedSize);
+    ctx.restore();
   }
 
   async function idcDrawPhotoImage(ctx, card, cx, cy, cw, ch) {
