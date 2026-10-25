@@ -41,6 +41,8 @@
   let __feePendingRemovals = new Set();
   let __feeAddFormOpen = false;
   let __feeAddFormPreselect = null;
+  let __feeBFEditMode = false;
+  let __feeBFEditValue = null;
 
   // ================================================================
   // [S01] STATE
@@ -932,6 +934,8 @@
     __feePendingRemovals.clear();
     __feeAddFormOpen = false;
     __feeAddFormPreselect = null;
+    __feeBFEditMode = false;
+    __feeBFEditValue = null;
     return __renderLearnerViewModal(pin);
  }
 
@@ -1087,8 +1091,20 @@
                   ' Batch mode' +
                 '</label>' +
               '</div>';
-      html += infoRow('Previous Term Balance B/F',
-        prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
+      if (!__feeBFEditMode) {
+        html += '<div class="info-row"><span class="info-label">Previous Term Balance B/F</span>' +
+                '<span class="info-value">' + moneyOrDash(prevTermRow ? prevTermRow.balance_cf : fee.balance_bf) +
+                (canB ? ' <button type="button" class="btn btn-sm btn-secondary" style="font-size:9px;padding:1px 6px;margin-left:6px;" onclick="feeEditBF(\'' + escAttr(pin) + '\')">Edit</button>' : '') +
+                '</span></div>';
+      } else {
+        html += '<div class="info-row"><span class="info-label">Previous Term Balance B/F</span>' +
+                '<span class="info-value"><input id="feeBFInput" type="number" step="0.01" min="0" ' +
+                'value="' + (__feeBFEditValue != null ? __feeBFEditValue : (prevTermRow ? Number(prevTermRow.balance_cf || 0) : Number(fee.balance_bf || 0))) + '" ' +
+                'style="font-size:11px;padding:2px;width:100px;"> ' +
+                '<button type="button" class="btn btn-sm btn-success" style="font-size:9px;padding:1px 6px;" onclick="feeSaveBF(\'' + escAttr(pin) + '\')">Save</button> ' +
+                '<button type="button" class="btn btn-sm btn-secondary" style="font-size:9px;padding:1px 6px;" onclick="feeCancelBF(\'' + escAttr(pin) + '\')">Cancel</button>' +
+                '</span></div>';
+      }
       // ---- Itemized fee lines (X to remove for this learner) ----
       html += feeLine('tuition',           'Tuition',            fee.tuition,            term.term_type);
       html += feeLine('other_bills_major', 'Text Books',         fee.other_bills_major,  term.term_type);
@@ -1529,6 +1545,60 @@
     }
   }
   window.feeRevokePayment = feeRevokePayment;
+  function feeEditBF(pin) {
+    __feeBFEditMode = true;
+    __feeBFEditValue = null;
+    __renderLearnerViewModal(pin);
+  }
+  window.feeEditBF = feeEditBF;
+
+  function feeCancelBF(pin) {
+    __feeBFEditMode = false;
+    __feeBFEditValue = null;
+    __renderLearnerViewModal(pin);
+  }
+  window.feeCancelBF = feeCancelBF;
+
+  async function feeSaveBF(pin) {
+    const el = document.getElementById('feeBFInput');
+    if (!el) return;
+    const newVal = parseFloat(String(el.value || '').replace(/[^0-9.\-]/g, '')) || 0;
+    if (newVal < 0) { showToast('B/F cannot be negative.', 'warning'); return; }
+
+    startLoader();
+    try {
+      const r = await window.TIS.getLearnerByPin(pin);
+      if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); stopLoader(); return; }
+      const at = await window.TIS.getActiveTerm();
+      if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); stopLoader(); return; }
+      const term = at.data;
+
+      const tr = await window.TIS.getLearnerTermFor(r.data.id, term.term_type, term.year);
+      const row = (tr && tr.ok) ? tr.data : null;
+      const paid = Number((row && row.total_part_payment) || 0);
+      if (paid > 0) {
+        const ok2 = window.confirm('This learner has paid N' + paid.toLocaleString() + '.\n\nChanging B/F will change what they owe. Continue?');
+        if (!ok2) { stopLoader(); return; }
+      }
+
+      const w = await window.TIS.updateLearnerTermSnapshot(r.data.id, term.term_type, term.year, {
+        balance_bf: String(newVal)
+      });
+      if (!w || !w.ok) { showToast('Save failed: ' + ((w && w.error) || 'unknown'), 'error'); stopLoader(); return; }
+
+      await feeRecomputeSnapshot(r.data.id, term.term_type, term.year);
+      stopLoader();
+      showToast('B/F updated.', 'success');
+      __feeBFEditMode = false;
+      __feeBFEditValue = null;
+      __renderLearnerViewModal(pin);
+    } catch (e) {
+      stopLoader();
+      console.error('B/F save failed', e);
+      showToast('Save failed: ' + (e.message || e), 'error');
+    }
+  }
+  window.feeSaveBF = feeSaveBF;
 
   // ================================================================
   // Recompute the learner_terms snapshot from the live sources:
