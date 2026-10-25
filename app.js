@@ -756,6 +756,15 @@
     const offSet = {};
     overrides.forEach(function (o) { offSet[o.item_key] = true; });
 
+    // Optional items enabled for this learner (from learner_terms.optional_items_enabled)
+    const optionalEnabledStr = (termRow && termRow.optional_items_enabled) || '';
+    const optionalEnabledSet = {};
+    optionalEnabledStr.split(',').forEach(function (k) {
+      const kk = String(k || '').trim();
+      if (kk) optionalEnabledSet[kk] = true;
+    });
+    function optionalActive(key) { return optionalEnabledSet[key] === true; }
+
     // Live class schedule (used for the UNLOCKED branch only)
     let schedRow = null;
     try {
@@ -794,12 +803,12 @@
       const on  = num(termRow.other_bills_minor);
       const bk  = num(termRow.books);
       const uni = num(termRow.uniform);
-      const sw  = num(termRow.sportswear);
-      const wc  = num(termRow.waist_coat);
-      const ti  = num(termRow.tie);
-      const el  = num(termRow.extra_lesson);
-      const sl  = num(termRow.special_lesson);
-      const add = num(termRow.additions);
+      const sw  = optionalActive('sportswear')     && !offSet['sportswear']     ? num(termRow.sportswear)     : 0;
+      const wc  = optionalActive('waist_coat')     && !offSet['waist_coat']     ? num(termRow.waist_coat)     : 0;
+      const ti  = optionalActive('tie')            && !offSet['tie']            ? num(termRow.tie)            : 0;
+      const el  = optionalActive('extra_lesson')   && !offSet['extra_lesson']   ? num(termRow.extra_lesson)   : 0;
+      const sl  = optionalActive('special_lesson') && !offSet['special_lesson'] ? num(termRow.special_lesson) : 0;
+      const add = optionalActive('additions')      && !offSet['additions']      ? num(termRow.additions)      : 0;
       const ded = num(termRow.scholarship);
       const paid = num(termRow.total_part_payment);
 
@@ -821,7 +830,7 @@
         other_bills_major: om,
         other_bills_minor: on,
         books: bk,
-        registration_fee: 0,
+        registration_fee: optionalActive('registration_fee') && !offSet['registration_fee'] ? num(termRow.registration_fee) : 0,
         uniform: uni,
         sportswear: sw,
         waist_coat: wc,
@@ -858,11 +867,11 @@
     const otherMinor  = pick('other_bills_minor', num(termRow && termRow.other_bills_minor));
     const books       = pick('books',             num(termRow && termRow.books));
     const uniform     = pick('uniform',           num(termRow && termRow.uniform));
-    const sportswear  = pick('sportswear',        num(termRow && termRow.sportswear));
-    const waistCoat   = pick('waist_coat',        num(termRow && termRow.waist_coat));
-    const tie         = pick('tie',               num(termRow && termRow.tie));
-    const extraLesson = pick('extra_lesson',      num(termRow && termRow.extra_lesson));
-    const special     = pick('special_lesson',    num(termRow && termRow.special_lesson));
+    const sportswear  = optionalActive('sportswear')     ? pick('sportswear',        num(termRow && termRow.sportswear))     : 0;
+    const waistCoat   = optionalActive('waist_coat')     ? pick('waist_coat',        num(termRow && termRow.waist_coat))     : 0;
+    const tie         = optionalActive('tie')            ? pick('tie',               num(termRow && termRow.tie))            : 0;
+    const extraLesson = optionalActive('extra_lesson')   ? pick('extra_lesson',      num(termRow && termRow.extra_lesson))   : 0;
+    const special     = optionalActive('special_lesson') ? pick('special_lesson',    num(termRow && termRow.special_lesson)) : 0;
 
     const additions   = adjRow ? num(adjRow.additions)  : num(termRow && termRow.additions);
     const deductions  = adjRow ? num(adjRow.deductions) : num(termRow && termRow.scholarship);
@@ -882,7 +891,7 @@
       other_bills_major: otherMajor,
       other_bills_minor: otherMinor,
       books: books,
-      registration_fee: 0,
+      registration_fee: optionalActive('registration_fee') ? pick('registration_fee', num(termRow && termRow.registration_fee)) : 0,
       uniform: uniform,
       sportswear: sportswear,
       waist_coat: waistCoat,
