@@ -1180,6 +1180,7 @@
         (fee.tuition || 0) + (fee.other_bills_major || 0) + (fee.other_bills_minor || 0) +
         (fee.books || 0) + (fee.uniform || 0) + (fee.sportswear || 0) + (fee.waist_coat || 0) +
         (fee.tie || 0) + (fee.extra_lesson || 0) + (fee.special_lesson || 0) +
+        (fee.registration_fee || 0) +
         (fee.additions || 0) - (fee.scholarship || 0);
 
       html += '<div class="info-row" style="border-top:2px solid #c8e6c9;font-weight:800;background:#f1f8e9;">' +
@@ -3461,6 +3462,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const visibleLines =
         (fee.tuition || 0) + (fee.other_bills_major || 0) + (fee.other_bills_minor || 0) +
         (fee.books || 0) + (fee.uniform || 0) + (fee.sportswear || 0) + (fee.waist_coat || 0) +
+        (fee.registration_fee || 0) +
         (fee.tie || 0) + (fee.extra_lesson || 0) + (fee.special_lesson || 0) +
         (fee.additions || 0) - (fee.scholarship || 0);
 
