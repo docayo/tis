@@ -1105,13 +1105,14 @@
       // ---- Optional items: add button / add form ----
       if (canB) {
         const OPTIONAL_KEYS = [
-          { key: 'registration_fee', label: 'Registration Fee' },
-          { key: 'sportswear',       label: 'Sportswear' },
-          { key: 'waist_coat',       label: 'Waist Coat' },
-          { key: 'tie',              label: 'Tie' },
-          { key: 'extra_lesson',     label: 'Extra Lesson' },
-          { key: 'special_lesson',   label: 'Special Lesson' },
-          { key: 'additions',        label: 'Additions' }
+          { key: 'registration_fee',   label: 'Registration Fee' },
+          { key: 'other_bills_minor',  label: 'Dept Text Book' },
+          { key: 'sportswear',         label: 'Sportswear' },
+          { key: 'waist_coat',         label: 'Waist Coat' },
+          { key: 'tie',                label: 'Tie' },
+          { key: 'extra_lesson',       label: 'Extra Lesson' },
+          { key: 'special_lesson',     label: 'Special Lesson' },
+          { key: 'additions',          label: 'Additions' }
         ];
         const enabledCsv = (termRow && termRow.optional_items_enabled) || '';
         const enabledSet = {};
@@ -1133,7 +1134,7 @@
           html += '<div style="margin-top:10px;padding:8px;background:#f5f5f5;border-radius:6px;">' +
                     '<div style="font-size:11px;font-weight:700;margin-bottom:6px;">Add optional item</div>' +
                     '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
-                      '<select id="feeAddItemKey" style="font-size:11px;padding:3px;">';
+                      '<select id="feeAddItemKey" style="font-size:11px;padding:3px;" onchange="feeAddItemSelectChanged()">';
           available.forEach(function (o) {
             const sel = (__feeAddFormPreselect === o.key) ? ' selected' : '';
             html += '<option value="' + escAttr(o.key) + '"' + sel + '>' + esc(o.label) + '</option>';
@@ -1291,7 +1292,7 @@
     if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); return; }
     const term = at.data;
 
-    const OPTIONAL_KEYS = ['registration_fee','sportswear','waist_coat','tie','extra_lesson','special_lesson','additions'];
+    const OPTIONAL_KEYS = ['registration_fee','other_bills_minor','sportswear','waist_coat','tie','extra_lesson','special_lesson','additions'];
     if (OPTIONAL_KEYS.indexOf(itemKey) !== -1) {
       if (!skipRefresh) startLoader();
       const tr = await window.TIS.getLearnerTermFor(r.data.id, term.term_type, term.year);
@@ -1345,7 +1346,9 @@
   function feeOpenAddForm(pin, preSelect) {
     __feeAddFormOpen = true;
     __feeAddFormPreselect = preSelect || null;
-    __renderLearnerViewModal(pin);
+    __renderLearnerViewModal(pin).then(function () {
+      setTimeout(feeAddItemSelectChanged, 100);
+    });
   }
   window.feeOpenAddForm = feeOpenAddForm;
 
@@ -1355,6 +1358,28 @@
     __renderLearnerViewModal(pin);
   }
   window.feeCloseAddForm = feeCloseAddForm;
+  window.feeAddItemSelectChanged = async function () {
+    const keyEl = document.getElementById('feeAddItemKey');
+    const amtEl = document.getElementById('feeAddItemAmount');
+    if (!keyEl || !amtEl) return;
+    const itemKey = String(keyEl.value || '').trim();
+    if (!itemKey) return;
+    const pin = __currentModalPin;
+    if (!pin) return;
+    try {
+      const r = await window.TIS.getLearnerByPin(pin);
+      if (!r || !r.ok || !r.data) return;
+      const at = await window.TIS.getActiveTerm();
+      if (!at || !at.ok || !at.data) return;
+      const schR = await window.TIS.getFeeScheduleRow(r.data.class_name, at.data.term_type, at.data.year);
+      const sch = (schR && schR.ok) ? schR.data : null;
+      if (sch && sch[itemKey] && Number(sch[itemKey]) > 0) {
+        amtEl.value = Number(sch[itemKey]);
+      }
+    } catch (e) {
+      console.error('feeAddItemSelectChanged failed', e);
+    }
+  };
 
   async function feeSaveAddItem(pin) {
     const keyEl = document.getElementById('feeAddItemKey');
