@@ -1093,13 +1093,13 @@
               '</div>';
       if (!__feeBFEditMode) {
         html += '<div class="info-row"><span class="info-label">Previous Term Balance B/F</span>' +
-                '<span class="info-value">' + moneyOrDash(prevTermRow ? prevTermRow.balance_cf : fee.balance_bf) +
+                '<span class="info-value">' + moneyOrDash(fee.balance_bf || 0) +
                 (canB ? ' <button type="button" class="btn btn-sm btn-secondary" style="font-size:9px;padding:1px 6px;margin-left:6px;" onclick="feeEditBF(\'' + escAttr(pin) + '\')">Edit</button>' : '') +
                 '</span></div>';
       } else {
         html += '<div class="info-row"><span class="info-label">Previous Term Balance B/F</span>' +
                 '<span class="info-value"><input id="feeBFInput" type="number" step="0.01" min="0" ' +
-                'value="' + (__feeBFEditValue != null ? __feeBFEditValue : (prevTermRow ? Number(prevTermRow.balance_cf || 0) : Number(fee.balance_bf || 0))) + '" ' +
+                'value="' + (__feeBFEditValue != null ? __feeBFEditValue : Number(fee.balance_bf || 0)) + '" ' +
                 'style="font-size:11px;padding:2px;width:100px;"> ' +
                 '<button type="button" class="btn btn-sm btn-success" style="font-size:9px;padding:1px 6px;" onclick="feeSaveBF(\'' + escAttr(pin) + '\')">Save</button> ' +
                 '<button type="button" class="btn btn-sm btn-secondary" style="font-size:9px;padding:1px 6px;" onclick="feeCancelBF(\'' + escAttr(pin) + '\')">Cancel</button>' +
@@ -5395,11 +5395,59 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   async function activateTerm(id, label) {
     if (!confirm('Set "' + label + '" as the active term?\n\nOnly one term can be active at a time.')) return;
     startLoader();
+    const prevR = await window.TIS.getActiveTerm();
+    const prevTerm = (prevR && prevR.ok) ? prevR.data : null;
     const r = await window.TIS.setActiveTerm(id);
+    if (!r || !r.ok) { stopLoader(); showToast('Could not set active: ' + ((r && r.error) || 'unknown'), 'error'); return; }
+    const newR = await window.TIS.getActiveTerm(true);
+    const newTerm = (newR && newR.ok) ? newR.data : null;
+    if (prevTerm && newTerm && (prevTerm.term_type !== newTerm.term_type || prevTerm.year !== newTerm.year)) {
+      try {
+        await prepareTermData(prevTerm, newTerm);
+      } catch (e) {
+        console.error('prepareTermData failed', e);
+        showToast('Warning: term set, but data prep failed. Check console.', 'warning');
+      }
+    }
     stopLoader();
-    if (r && r.ok) { showToast('Active term set: ' + label, 'success'); loadTerms(); }
-    else showToast('Could not set active: ' + ((r && r.error) || 'unknown'), 'error');
+    showToast('Active term set: ' + label, 'success');
+    loadTerms();
   }
+  async function prepareTermData(prevTerm, newTerm) {
+    const ORDER = { '1st': 1, '2nd': 2, '3rd': 3 };
+    const prevOrd = ORDER[prevTerm.term_type] || 0;
+    const newOrd = ORDER[newTerm.term_type] || 0;
+    const forward = (newTerm.year > prevTerm.year) || (newTerm.year === prevTerm.year && newOrd > prevOrd);
+    if (!forward) return;
+    const isYearAdvance = (newTerm.year > prevTerm.year);
+    if (!isYearAdvance) {
+      try {
+        await window.TIS.advanceTermFees({
+          fromTerm: prevTerm.term_type, fromYear: prevTerm.year,
+          toTerm: newTerm.term_type, toYear: newTerm.year,
+          actor: 'System (auto)'
+        });
+      } catch (e) { console.error('advanceTermFees failed', e); }
+    }
+    const lr = await window.TIS.listLearners();
+    if (!lr || !lr.ok || !lr.data) return;
+    for (const L of lr.data) {
+      try {
+        const prevR = await window.TIS.getLearnerTermFor(L.id, prevTerm.term_type, prevTerm.year);
+        const prevRow = (prevR && prevR.ok) ? prevR.data : null;
+        const balanceBf = prevRow ? Number(prevRow.balance_cf || 0) : 0;
+        if (balanceBf === 0) continue;
+        const existingR = await window.TIS.getLearnerTermFor(L.id, newTerm.term_type, newTerm.year);
+        const existing = (existingR && existingR.ok) ? existingR.data : null;
+        if (existing && Number(existing.balance_bf || 0) === 0) {
+          await window.TIS.updateLearnerTermSnapshot(L.id, newTerm.term_type, newTerm.year, {
+            balance_bf: String(balanceBf)
+          });
+        }
+      } catch (e) { console.error('B/F backfill failed for learner', L.id, e); }
+    }
+  }
+  window.prepareTermData = prepareTermData;
 
   async function loadArchives() {
     setHTML('archivesList', emptyHTML('fa-box-archive', 'Archives',
