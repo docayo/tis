@@ -35,6 +35,14 @@
 (function () {
   'use strict';
 
+  // ================================================================
+  // [PERF] In-memory caches. Invalidate on writes.
+  // ================================================================
+  let __activeTermCache = null;
+  let __activeTermCacheTime = 0;
+  const __ACTIVE_TERM_TTL = 30000;  // 30 seconds
+  const __schedCache = {};
+
   const SUPABASE_URL      = 'https://ndsroviwrfjbgaucajri.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_vEa5YAU8ac7pyhCiejkMtw_PMiLDuhI';
   const SDK_URL           = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
@@ -512,6 +520,10 @@
   };
 
   TIS.getFeeScheduleRow = async function (className, termType, year) {
+    const key = String(className || '') + '|' + String(termType || '') + '|' + String(year || '');
+    if (__schedCache[key] !== undefined) {
+      return ok(__schedCache[key]);
+    }
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
@@ -522,7 +534,9 @@
         .eq('year', year)
         .maybeSingle();
       if (error) return fail(error.message);
-      return ok(data || null);
+      const row = data || null;
+      __schedCache[key] = row;
+      return ok(row);
     } catch (err) { return fail(err); }
   };
 
@@ -556,6 +570,7 @@
         .select()
         .single();
       if (error) return fail(error.message);
+      delete __schedCache[String(payload.class_name) + '|' + String(payload.term_type) + '|' + String(payload.year)];
       return ok(data);
     } catch (err) { return fail(err); }
   };
@@ -1026,6 +1041,7 @@
         });
       } catch (e) { /* audit failure must not block */ }
 
+      for (const k in __schedCache) delete __schedCache[k];
       return ok({
         classesCopied:      classesCopied,
         classesSkipped:     skipped,
@@ -2269,7 +2285,11 @@
   };
   TIS.getTerms = TIS.listTerms;
 
-  TIS.getActiveTerm = async function () {
+  TIS.getActiveTerm = async function (forceRefresh) {
+    const now = Date.now();
+    if (!forceRefresh && __activeTermCache && (now - __activeTermCacheTime) < __ACTIVE_TERM_TTL) {
+      return ok(__activeTermCache);
+    }
     try {
       const sb = await loadSdk();
       const { data, error } = await sb
@@ -2278,11 +2298,14 @@
         .eq('is_active', true)
         .limit(1);
       if (error) return fail(error.message);
-      return ok((data && data[0]) || null);
+      __activeTermCache = (data && data[0]) || null;
+      __activeTermCacheTime = now;
+      return ok(__activeTermCache);
     } catch (err) { return fail(err); }
   };
 
   TIS.setActiveTerm = async function (termId) {
+    __activeTermCache = null; __activeTermCacheTime = 0;
     try {
       const sb = await loadSdk();
       const { error: clrErr } = await sb.from('terms').update({ is_active: false }).neq('id', -1);
