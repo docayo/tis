@@ -1611,58 +1611,180 @@
   window.feeSaveBF = feeSaveBF;
   async function openStatusPage() {
     closeModal();
-    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
-    html += '<div class="modal-box" style="max-width:520px;" onclick="event.stopPropagation()">';
-    html += '<div class="modal-header"><h2>System Status</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+    let html = '<div class="modal-overlay" onclick="if(event.target===this){closeModal();return false;}">';
+    html += '<div class="modal-box" style="max-width:720px;max-height:88vh;overflow-y:auto;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>System Status</h2><button class="close-btn" onclick="closeModal();return false;">&times;</button></div>';
     html += '<div style="padding:16px 18px;">';
-    html += '<div style="font-size:11px;color:#666;margin-bottom:12px;">Live check of Supabase connectivity. Each row times a query from this browser.</div>';
-    html += '<div id="statusChecks"><div style="text-align:center;padding:20px;color:#999;">Running checks...</div></div>';
-    html += '<div style="margin-top:14px;text-align:right;">';
-    html += '<button class="btn btn-sm btn-secondary" onclick="openStatusPage()">Re-run</button> ';
-    html += '<button class="btn btn-sm btn-primary" onclick="closeModal()">Close</button>';
+    html += '<div style="font-size:11px;color:#666;margin-bottom:12px;">Comprehensive health check — database, data integrity, connectivity, and application. Runs live in your browser.</div>';
+    html += '<div id="statusChecks"><div style="text-align:center;padding:30px;color:#999;">Running all checks…</div></div>';
+    html += '<div style="margin-top:16px;text-align:right;">';
+    html += '<button class="btn btn-sm btn-secondary" onclick="openStatusPage();return false;">Re-run</button> ';
+    html += '<button class="btn btn-sm btn-primary" onclick="closeModal();return false;">Close</button>';
     html += '</div></div></div></div>';
     setHTML('modalContainer', html);
 
-    const checks = [
-      { name: 'Terms (active)',    run: () => window.TIS.getActiveTerm(true) },
-      { name: 'Terms (full list)', run: () => window.TIS.listTerms() },
-      { name: 'Learners',          run: () => window.TIS.listLearners() },
-      { name: 'Classes',           run: () => window.TIS.listClasses() }
-    ];
+    let htmlOut = '';
+    let passCount = 0, slowCount = 0, failCount = 0;
 
-    const results = [];
-    for (const check of checks) {
-      const t0 = performance.now();
-      let ok = false, errMsg = '';
-      try {
-        const r = await check.run();
-        ok = r && r.ok;
-        if (!ok) errMsg = (r && r.error) || 'Unknown';
-      } catch (e) { errMsg = e.message || String(e); }
-      const ms = Math.round(performance.now() - t0);
-      results.push({ name: check.name, ok: ok, ms: ms, error: errMsg });
-    }
-
-    let out = '';
-    for (const r of results) {
+    function row(name, ok, detail, slow) {
       let icon = 'X', color = '#c0392b';
-      if (r.ok) {
-        if (r.ms < 200) { icon = 'OK'; color = '#27ae60'; }
-        else { icon = 'SLOW'; color = '#e67e22'; }
-      }
-      out += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:12px;">';
-      out += '<span style="color:' + color + ';">[' + icon + '] ' + esc(r.name) + '</span>';
-      out += '<span style="color:' + color + ';font-weight:700;">' + (r.ok ? r.ms + 'ms' : 'FAILED') + '</span>';
-      out += '</div>';
-      if (!r.ok && r.error) {
-        out += '<div style="font-size:10px;color:#c0392b;padding:2px 0 6px 24px;">' + esc(r.error) + '</div>';
+      if (ok === 'skip') { icon = 'SKIP'; color = '#999'; }
+      else if (!ok) { icon = 'FAIL'; color = '#c0392b'; failCount++; }
+      else if (slow) { icon = 'SLOW'; color = '#e67e22'; slowCount++; }
+      else { icon = 'OK'; color = '#27ae60'; passCount++; }
+      return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">' +
+        '<span style="color:' + color + ';font-weight:600;">[' + icon + '] ' + esc(name) + '</span>' +
+        '<span style="color:' + color + ';font-weight:700;text-align:right;margin-left:12px;">' + esc(String(detail)) + '</span>' +
+        '</div>';
+    }
+
+    function header(title) {
+      return '<div style="font-size:12px;font-weight:900;color:#1a3f8f;margin:18px 0 8px;border-bottom:2px solid #1a3f8f;padding-bottom:3px;text-transform:uppercase;letter-spacing:.5px;">' + esc(title) + '</div>';
+    }
+
+    async function timed(name, fn) {
+      const t0 = performance.now();
+      try {
+        const r = await fn();
+        const ms = Math.round(performance.now() - t0);
+        if (!r || !r.ok) {
+          return row(name, false, 'FAILED: ' + ((r && r.error) || 'Unknown'), false);
+        }
+        return row(name, true, ms + 'ms', ms > 1000);
+      } catch (e) {
+        return row(name, false, 'FAILED: ' + (e.message || e), false);
       }
     }
-    const allOk = results.every(x => x.ok);
-    out += '<div style="margin-top:14px;padding:10px;background:' + (allOk ? '#f1f8e9' : '#ffebee') + ';border-radius:6px;text-align:center;font-weight:700;color:' + (allOk ? '#0d4d26' : '#c0392b') + ';font-size:12px;">';
-    out += allOk ? 'All systems operational' : 'Some checks failed';
-    out += '</div>';
-    setHTML('statusChecks', out);
+
+    async function check(name, fn, formatFn, expectFn) {
+      const t0 = performance.now();
+      try {
+        const r = await fn();
+        const ms = Math.round(performance.now() - t0);
+        if (!r || !r.ok) return row(name, false, 'FAILED: ' + ((r && r.error) || 'Unknown'), false);
+        const data = r.data || {};
+        const detail = formatFn ? formatFn(data) : (ms + 'ms');
+        const ok = expectFn ? expectFn(data) : true;
+        return row(name, ok, detail, ms > 1000);
+      } catch (e) {
+        return row(name, false, 'FAILED: ' + (e.message || e), false);
+      }
+    }
+
+    // ===== STAGE 1: DATABASE =====
+    htmlOut += header('1. Database');
+    htmlOut += await timed('Terms — active term',      () => window.TIS.getActiveTerm(true));
+    htmlOut += await timed('Terms — full list',        () => window.TIS.listTerms());
+    htmlOut += await timed('Learners — all',           () => window.TIS.listLearners());
+    htmlOut += await timed('Classes — all',            () => window.TIS.listClasses());
+    htmlOut += await timed('Fee Schedule — sample',    () => window.TIS.getFeeScheduleRow('JSS1', '1st', new Date().getFullYear()));
+    htmlOut += await check('Row count: learner_terms', () => window.TIS.getRowCount('learner_terms'), d => d.count + ' rows', () => true);
+    htmlOut += await check('Row count: fee overrides', () => window.TIS.getRowCount('fee_learner_item_overrides'), d => d.count + ' rows', () => true);
+    htmlOut += await check('Row count: fee adjustments', () => window.TIS.getRowCount('fee_adjustments'), d => d.count + ' rows', () => true);
+    htmlOut += await check('Row count: users',         () => window.TIS.getRowCount('users'), d => d.count + ' rows', () => true);
+
+    // ===== STAGE 2: DATA INTEGRITY =====
+    htmlOut += header('2. Data Integrity');
+
+    htmlOut += await check('Learner count', () => window.TIS.getRowCount('learners'),
+      d => d.count + ' rows', d => d.count >= 50 && d.count <= 500);
+
+    htmlOut += await check('Class count', () => window.TIS.getRowCount('classes'),
+      d => d.count + ' rows', d => d.count >= 10 && d.count <= 100);
+
+    htmlOut += await check('Term count', () => window.TIS.getRowCount('terms'),
+      d => d.count + ' rows', d => d.count >= 3);
+
+    htmlOut += await check('Missing fee schedules (current year)',
+      async () => {
+        const at = await window.TIS.getActiveTerm();
+        if (!at || !at.ok || !at.data) return { ok: false, error: 'No active term' };
+        return window.TIS.getMissingFeeSchedules(at.data.term_type, at.data.year);
+      },
+      d => d.count + ' classes missing',
+      d => d.count === 0);
+
+    htmlOut += await check('Negative balances', () => window.TIS.getNegativeBalances(),
+      d => d.count + ' found', d => d.count === 0);
+
+    htmlOut += await check('Duplicate PINs', () => window.TIS.getDuplicatePins(),
+      d => d.count + ' found', d => d.count === 0);
+
+    htmlOut += await check('Orphan learner_terms', () => window.TIS.getOrphanLearnerTerms(),
+      d => d.count + ' found', d => d.count === 0);
+
+    // ===== STAGE 3: CONNECTIVITY =====
+    htmlOut += header('3. Connectivity');
+
+    // Supabase HTTPS
+    try {
+      const t0 = performance.now();
+      const r = await fetch('https://ndsroviwrfjbgaucajri.supabase.co/rest/v1/', { method: 'HEAD' });
+      const ms = Math.round(performance.now() - t0);
+      const ok = r.status >= 200 && r.status < 500;
+      htmlOut += row('Supabase HTTPS', ok, 'HTTP ' + r.status + ' (' + ms + 'ms)', ms > 1000);
+    } catch (e) {
+      htmlOut += row('Supabase HTTPS', false, 'FAILED: ' + (e.message || e), false);
+    }
+
+    // Portal origin
+    try {
+      const t0 = performance.now();
+      const r = await fetch(window.location.origin + '/favicon.ico', { method: 'HEAD' });
+      const ms = Math.round(performance.now() - t0);
+      const ok = r.status >= 200 && r.status < 500;
+      htmlOut += row('Portal origin', ok, 'HTTP ' + r.status + ' (' + ms + 'ms)', ms > 1000);
+    } catch (e) {
+      htmlOut += row('Portal origin', false, 'FAILED: ' + (e.message || e), false);
+    }
+
+    // ===== STAGE 4: APPLICATION =====
+    htmlOut += header('4. Application');
+
+    // LocalStorage
+    try {
+      localStorage.setItem('_tis_status_test', '1');
+      const v = localStorage.getItem('_tis_status_test');
+      localStorage.removeItem('_tis_status_test');
+      const ok = v === '1';
+      let size = 0;
+      for (let k in localStorage) {
+        if (localStorage.hasOwnProperty(k)) size += (localStorage[k] || '').length;
+      }
+      htmlOut += row('LocalStorage', ok, ok ? 'works, ~' + Math.round(size/1024) + ' KB used' : 'FAILED', false);
+    } catch (e) {
+      htmlOut += row('LocalStorage', false, 'FAILED: ' + (e.message || e), false);
+    }
+
+    // Session
+    const hasProfile = !!(State.profile && State.profile.id);
+    htmlOut += row('Session', hasProfile, hasProfile ? 'logged in as ' + (State.profile.role || 'user') : 'no profile loaded', false);
+
+    // JS bundles
+    const hasTIS = typeof window.TIS === 'object' && typeof window.openLearnerViewModal === 'function';
+    htmlOut += row('JS bundles', hasTIS, hasTIS ? 'loaded' : 'missing', false);
+
+    // Active term cache state
+    try {
+      const cached = window.__tisTermCache;
+      const cacheOk = typeof cached === 'object';
+      htmlOut += row('Active term cache', cacheOk ? true : 'skip', cacheOk ? 'present' : 'n/a', false);
+    } catch (e) {
+      htmlOut += row('Active term cache', 'skip', 'n/a', false);
+    }
+
+    // ===== SUMMARY =====
+    const total = passCount + slowCount + failCount;
+    const allOk = failCount === 0 && slowCount === 0;
+    const bg = allOk ? '#f1f8e9' : (failCount > 0 ? '#ffebee' : '#fff8e1');
+    const fg = allOk ? '#0d4d26' : (failCount > 0 ? '#c0392b' : '#7a5e00');
+    htmlOut += '<div style="margin-top:18px;padding:14px;background:' + bg + ';border-radius:6px;text-align:center;font-weight:900;color:' + fg + ';font-size:14px;">';
+    htmlOut += passCount + ' passed · ' + slowCount + ' slow · ' + failCount + ' failed · ' + total + ' total';
+    htmlOut += '<br><span style="font-size:11px;font-weight:400;">Checked at ' + new Date().toLocaleTimeString() + '</span>';
+    htmlOut += '</div>';
+
+    const target = document.getElementById('statusChecks');
+    if (target) target.innerHTML = htmlOut;
   }
   window.openStatusPage = openStatusPage;
 

@@ -836,6 +836,68 @@
       return ok({ updated: true });
     } catch (err) { return fail(err); }
   };
+  // ---- SYSTEM STATUS METHODS (added 2026-10-25) ----
+  TIS.getRowCount = async function (tableName) {
+    try {
+      const sb = await loadSdk();
+      const { count, error } = await sb.from(tableName).select('*', { count: 'exact', head: true });
+      if (error) return fail(error.message);
+      return ok({ count: count || 0 });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getNegativeBalances = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('learner_terms').select('learner_id, term_type, year, balance_cf');
+      if (error) return fail(error.message);
+      const neg = (data || []).filter(r => Number(String(r.balance_cf || '').replace(/[^0-9.\-]/g,'')) < 0);
+      return ok({ count: neg.length, sample: neg.slice(0, 3) });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getMissingFeeSchedules = async function (termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data: classes, error: ce } = await sb.from('classes').select('name');
+      if (ce) return fail(ce.message);
+      const { data: schedules, error: se } = await sb.from('fee_schedule').select('class_name').eq('term_type', termType).eq('year', year);
+      if (se) return fail(se.message);
+      const schedSet = {};
+      (schedules || []).forEach(s => { schedSet[s.class_name] = true; });
+      const missing = (classes || []).filter(c => !schedSet[c.name]).map(c => c.name);
+      return ok({ count: missing.length, sample: missing.slice(0, 5) });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getDuplicatePins = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('learners').select('pin, id, full_name');
+      if (error) return fail(error.message);
+      const pinMap = {};
+      (data || []).forEach(l => {
+        if (!l.pin) return;
+        if (!pinMap[l.pin]) pinMap[l.pin] = [];
+        pinMap[l.pin].push(l);
+      });
+      const dupes = Object.keys(pinMap).filter(p => pinMap[p].length > 1).map(p => ({ pin: p, count: pinMap[p].length }));
+      return ok({ count: dupes.length, sample: dupes.slice(0, 3) });
+    } catch (err) { return fail(err); }
+  };
+
+  TIS.getOrphanLearnerTerms = async function () {
+    try {
+      const sb = await loadSdk();
+      const { data: learners } = await sb.from('learners').select('id');
+      const { data: terms, error } = await sb.from('learner_terms').select('learner_id');
+      if (error) return fail(error.message);
+      const idSet = {};
+      (learners || []).forEach(l => { idSet[l.id] = true; });
+      const orphans = (terms || []).filter(t => !idSet[t.learner_id]);
+      return ok({ count: orphans.length, sample: orphans.slice(0, 3) });
+    } catch (err) { return fail(err); }
+  };
   TIS.revokeLearnerPaymentSlot = async function (learnerId, termType, year, slotNumber) {
     try {
       const sb = await loadSdk();
