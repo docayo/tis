@@ -39,6 +39,8 @@
   // Declared at IIFE top so it is initialized before any modal-open call.
   let __feeSelectMode = false;
   let __feePendingRemovals = new Set();
+  let __feeAddFormOpen = false;
+  let __currentModalPin = null;
 
   // ================================================================
   // [S01] STATE
@@ -930,6 +932,8 @@
     // Batch mode is transient - reset on every modal open.
     __feeSelectMode = false;
     __feePendingRemovals.clear();
+    __currentModalPin = pin;
+    __feeAddFormOpen = false;
     startLoader();
     const learnerR = await window.TIS.getLearnerByPin(pin);
     const termsR   = learnerR && learnerR.ok && learnerR.data
@@ -1095,6 +1099,51 @@
       if (fee.special_lesson > 0)    html += feeLine('special_lesson',    'Special Lesson',    fee.special_lesson,     term.term_type);
       if (fee.registration_fee > 0)  html += feeLine('registration_fee',  'Registration Fee',  fee.registration_fee,   term.term_type);
 
+      // ---- Optional items: add button / add form ----
+      if (canB) {
+        const OPTIONAL_KEYS = [
+          { key: 'registration_fee', label: 'Registration Fee' },
+          { key: 'sportswear',       label: 'Sportswear' },
+          { key: 'waist_coat',       label: 'Waist Coat' },
+          { key: 'tie',              label: 'Tie' },
+          { key: 'extra_lesson',     label: 'Extra Lesson' },
+          { key: 'special_lesson',   label: 'Special Lesson' },
+          { key: 'additions',        label: 'Additions' }
+        ];
+        const enabledCsv = (termRow && termRow.optional_items_enabled) || '';
+        const enabledSet = {};
+        enabledCsv.split(',').forEach(function (k) {
+          const kk = String(k || '').trim();
+          if (kk) enabledSet[kk] = true;
+        });
+        const available = OPTIONAL_KEYS.filter(function (o) {
+          return !enabledSet[o.key];
+        });
+        if (!__feeAddFormOpen) {
+          if (available.length > 0) {
+            html += '<div style="margin-top:10px;text-align:right;">' +
+                      '<button type="button" class="btn btn-sm btn-secondary" ' +
+                      'onclick="feeOpenAddForm(\'' + escAttr(pin) + '\')">' +
+                      '+ Add optional item</button></div>';
+          }
+        } else {
+          html += '<div style="margin-top:10px;padding:8px;background:#f5f5f5;border-radius:6px;">' +
+                    '<div style="font-size:11px;font-weight:700;margin-bottom:6px;">Add optional item</div>' +
+                    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+                      '<select id="feeAddItemKey" style="font-size:11px;padding:3px;">';
+          available.forEach(function (o) {
+            html += '<option value="' + escAttr(o.key) + '">' + esc(o.label) + '</option>';
+          });
+          html += '</select>' +
+                  '<input id="feeAddItemAmount" type="number" step="0.01" min="0" placeholder="Amount" ' +
+                  'style="font-size:11px;padding:3px;width:110px;">' +
+                  '<button type="button" class="btn btn-sm btn-success" ' +
+                  'onclick="feeSaveAddItem(\'' + escAttr(pin) + '\')">Save</button>' +
+                  '<button type="button" class="btn btn-sm btn-secondary" ' +
+                  'onclick="feeCloseAddForm(\'' + escAttr(pin) + '\')">Cancel</button>' +
+                  '</div></div>';
+        }
+      }
       if (fee.additions)   html += infoRow('Additions', moneyOrDash(fee.additions));
       if (fee.scholarship) html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
       const visibleLines =
@@ -1321,6 +1370,59 @@
     openLearnerViewModal(pin);
   }
   window.feeCancelBatch = feeCancelBatch;
+  function feeOpenAddForm(pin) {
+    __feeAddFormOpen = true;
+    openLearnerViewModal(pin);
+  }
+  window.feeOpenAddForm = feeOpenAddForm;
+
+  function feeCloseAddForm(pin) {
+    __feeAddFormOpen = false;
+    openLearnerViewModal(pin);
+  }
+  window.feeCloseAddForm = feeCloseAddForm;
+
+  async function feeSaveAddItem(pin) {
+    const keyEl = document.getElementById('feeAddItemKey');
+    const amtEl = document.getElementById('feeAddItemAmount');
+    if (!keyEl || !amtEl) { showToast('Form not ready.', 'error'); return; }
+    const itemKey = String(keyEl.value || '').trim();
+    const amount = parseFloat(String(amtEl.value || '').replace(/[^0-9.\-]/g, '')) || 0;
+    if (!itemKey) { showToast('Select an item.', 'warning'); return; }
+    if (amount <= 0) { showToast('Amount must be greater than zero.', 'warning'); return; }
+
+    startLoader();
+    try {
+      const r = await window.TIS.getLearnerByPin(pin);
+      if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); stopLoader(); return; }
+      const at = await window.TIS.getActiveTerm();
+      if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); stopLoader(); return; }
+      const term = at.data;
+      const tr = await window.TIS.getLearnerTermFor(r.data.id, term.term_type, term.year);
+      const row = (tr && tr.ok) ? tr.data : null;
+      const currentCsv = (row && row.optional_items_enabled) || '';
+      const currentList = currentCsv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (currentList.indexOf(itemKey) === -1) currentList.push(itemKey);
+      const newCsv = currentList.join(',');
+
+      const patch = {};
+      patch[itemKey] = String(amount);
+      patch.optional_items_enabled = newCsv;
+      const w = await window.TIS.updateLearnerTermSnapshot(r.data.id, term.term_type, term.year, patch);
+      if (!w || !w.ok) { showToast('Save failed: ' + ((w && w.error) || 'unknown'), 'error'); stopLoader(); return; }
+
+      await feeRecomputeSnapshot(r.data.id, term.term_type, term.year);
+      stopLoader();
+      showToast('Optional item added.', 'success');
+      __feeAddFormOpen = false;
+      openLearnerViewModal(pin);
+    } catch (e) {
+      stopLoader();
+      console.error(e);
+      showToast('Save failed: ' + (e.message || e), 'error');
+    }
+  }
+  window.feeSaveAddItem = feeSaveAddItem;
 
   // ================================================================
   // Recompute the learner_terms snapshot from the live sources:
