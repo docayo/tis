@@ -149,6 +149,8 @@
     const mc = document.getElementById('modalContainer');
     if (mc) mc.innerHTML = '';
   }
+  window.closeModal = closeModal;
+  window.setHTML = setHTML;
   // Learner-modal alias. The view/print/part-payment modals all call
   // this name. It clears the shared modal container AND releases the
   // in-memory learner handle so a re-open always reloads fresh data.
