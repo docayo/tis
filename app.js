@@ -985,9 +985,22 @@
     // Default: renders one line with an X button that removes immediately.
     // Batch mode: renders one line with a mark toggle; marks queue
     //             the item for batch removal via the bottom bar.
-    const feeLine = function (itemKey, label, value) {
+    function isItemStatutory(itemKey, termType) {
+      const always = ['tuition', 'other_bills_major', 'other_bills_minor', 'books'];
+      if (always.indexOf(itemKey) !== -1) return true;
+      if (itemKey === 'uniform' && String(termType || '').toLowerCase().indexOf('1st') !== -1) return true;
+      return false;
+    }
+    const feeLine = function (itemKey, label, value, termType) {
       const on = value && value !== 0;
       if (!on) return '';
+      const stat = isItemStatutory(itemKey, termType);
+      if (stat) {
+        return '<div class="info-row">' +
+                 '<span class="info-label">' + esc(label) +
+                 ' <span style="font-size:9px;color:#999;">(statutory)</span></span>' +
+                 '<span class="info-value">' + moneyOrDash(value) + '</span></div>';
+      }
       if (__feeSelectMode) {
         const marked = __feePendingRemovals.has(itemKey);
         const rowStyle = marked ? 'text-decoration:line-through;opacity:.6;' : '';
@@ -1065,17 +1078,17 @@
       html += infoRow('Previous Term Balance B/F',
         prevTermRow ? moneyOrDash(prevTermRow.balance_cf) : moneyOrDash(fee.balance_bf));
       // ---- Itemized fee lines (X to remove for this learner) ----
-      html += feeLine('tuition',           'Tuition',            fee.tuition);
-      html += feeLine('other_bills_major', 'Text Books',         fee.other_bills_major);
-      html += feeLine('books',             'NoteBooks',          fee.books);
-      html += feeLine('uniform',           'Uniform',            fee.uniform);
-      if (fee.other_bills_minor > 0) html += feeLine('other_bills_minor', 'Dept Text Book',   fee.other_bills_minor);
-      if (fee.sportswear > 0)        html += feeLine('sportswear',        'Sportswear',        fee.sportswear);
-      if (fee.waist_coat > 0)        html += feeLine('waist_coat',        'Waist Coat',        fee.waist_coat);
-      if (fee.tie > 0)               html += feeLine('tie',               'Tie',               fee.tie);
-      if (fee.extra_lesson > 0)      html += feeLine('extra_lesson',      'Extra Lesson',      fee.extra_lesson);
-      if (fee.special_lesson > 0)    html += feeLine('special_lesson',    'Special Lesson',    fee.special_lesson);
-      if (fee.registration_fee > 0)  html += feeLine('registration_fee',  'Registration Fee',  fee.registration_fee);
+      html += feeLine('tuition',           'Tuition',            fee.tuition,            term.term_type);
+      html += feeLine('other_bills_major', 'Text Books',         fee.other_bills_major,  term.term_type);
+      html += feeLine('books',             'NoteBooks',          fee.books,              term.term_type);
+      html += feeLine('uniform',           'Uniform',            fee.uniform,            term.term_type);
+      if (fee.other_bills_minor > 0) html += feeLine('other_bills_minor', 'Dept Text Book',   fee.other_bills_minor,  term.term_type);
+      if (fee.sportswear > 0)        html += feeLine('sportswear',        'Sportswear',        fee.sportswear,         term.term_type);
+      if (fee.waist_coat > 0)        html += feeLine('waist_coat',        'Waist Coat',        fee.waist_coat,         term.term_type);
+      if (fee.tie > 0)               html += feeLine('tie',               'Tie',               fee.tie,                term.term_type);
+      if (fee.extra_lesson > 0)      html += feeLine('extra_lesson',      'Extra Lesson',      fee.extra_lesson,       term.term_type);
+      if (fee.special_lesson > 0)    html += feeLine('special_lesson',    'Special Lesson',    fee.special_lesson,     term.term_type);
+      if (fee.registration_fee > 0)  html += feeLine('registration_fee',  'Registration Fee',  fee.registration_fee,   term.term_type);
 
       if (fee.additions)   html += infoRow('Additions', moneyOrDash(fee.additions));
       if (fee.scholarship) html += infoRow('Scholarship / Deductions', moneyOrDash(fee.scholarship));
