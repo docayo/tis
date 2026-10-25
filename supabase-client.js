@@ -873,7 +873,7 @@
   TIS.getDuplicatePins = async function () {
     try {
       const sb = await loadSdk();
-      const { data, error } = await sb.from('learners').select('pin, id, full_name');
+      const { data, error } = await sb.from('learners').select('pin, id, name');
       if (error) return fail(error.message);
       const pinMap = {};
       (data || []).forEach(l => {

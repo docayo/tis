@@ -819,12 +819,13 @@
       const sl  = optionalActive('special_lesson') && !offSet['special_lesson'] ? num(termRow.special_lesson) : 0;
       const add = optionalActive('additions')      && !offSet['additions']      ? num(termRow.additions)      : 0;
       const ded = num(termRow.scholarship);
+      const reg = optionalActive('registration_fee') && !offSet['registration_fee'] ? num(termRow.registration_fee) : 0;
       const paid = num(termRow.total_part_payment);
 
       // If the four main columns are zero but bill is not, the row
       // was written by an older version of recordPartPayment. Fall
       // back to bill as the net bills figure.
-      let netBills = t + om + on + bk + uni + sw + wc + ti + el + sl + add - ded;
+      let netBills = t + om + on + bk + uni + sw + wc + ti + el + sl + reg + add - ded;
       if (netBills === 0 && num(termRow.bill) > 0) {
         netBills = num(termRow.bill);
       }
