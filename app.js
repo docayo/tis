@@ -1599,6 +1599,62 @@
     }
   }
   window.feeSaveBF = feeSaveBF;
+  async function openStatusPage() {
+    closeModal();
+    let html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">';
+    html += '<div class="modal-box" style="max-width:520px;" onclick="event.stopPropagation()">';
+    html += '<div class="modal-header"><h2>System Status</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>';
+    html += '<div style="padding:16px 18px;">';
+    html += '<div style="font-size:11px;color:#666;margin-bottom:12px;">Live check of Supabase connectivity. Each row times a query from this browser.</div>';
+    html += '<div id="statusChecks"><div style="text-align:center;padding:20px;color:#999;">Running checks...</div></div>';
+    html += '<div style="margin-top:14px;text-align:right;">';
+    html += '<button class="btn btn-sm btn-secondary" onclick="openStatusPage()">Re-run</button> ';
+    html += '<button class="btn btn-sm btn-primary" onclick="closeModal()">Close</button>';
+    html += '</div></div></div></div>';
+    setHTML('modalContainer', html);
+
+    const checks = [
+      { name: 'Terms (active)',    run: () => window.TIS.getActiveTerm(true) },
+      { name: 'Terms (full list)', run: () => window.TIS.listTerms() },
+      { name: 'Learners',          run: () => window.TIS.listLearners() },
+      { name: 'Classes',           run: () => window.TIS.listClasses() }
+    ];
+
+    const results = [];
+    for (const check of checks) {
+      const t0 = performance.now();
+      let ok = false, errMsg = '';
+      try {
+        const r = await check.run();
+        ok = r && r.ok;
+        if (!ok) errMsg = (r && r.error) || 'Unknown';
+      } catch (e) { errMsg = e.message || String(e); }
+      const ms = Math.round(performance.now() - t0);
+      results.push({ name: check.name, ok: ok, ms: ms, error: errMsg });
+    }
+
+    let out = '';
+    for (const r of results) {
+      let icon = 'X', color = '#c0392b';
+      if (r.ok) {
+        if (r.ms < 200) { icon = 'OK'; color = '#27ae60'; }
+        else { icon = 'SLOW'; color = '#e67e22'; }
+      }
+      out += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:12px;">';
+      out += '<span style="color:' + color + ';">[' + icon + '] ' + esc(r.name) + '</span>';
+      out += '<span style="color:' + color + ';font-weight:700;">' + (r.ok ? r.ms + 'ms' : 'FAILED') + '</span>';
+      out += '</div>';
+      if (!r.ok && r.error) {
+        out += '<div style="font-size:10px;color:#c0392b;padding:2px 0 6px 24px;">' + esc(r.error) + '</div>';
+      }
+    }
+    const allOk = results.every(x => x.ok);
+    out += '<div style="margin-top:14px;padding:10px;background:' + (allOk ? '#f1f8e9' : '#ffebee') + ';border-radius:6px;text-align:center;font-weight:700;color:' + (allOk ? '#0d4d26' : '#c0392b') + ';font-size:12px;">';
+    out += allOk ? 'All systems operational' : 'Some checks failed';
+    out += '</div>';
+    setHTML('statusChecks', out);
+  }
+  window.openStatusPage = openStatusPage;
 
   // ================================================================
   // Recompute the learner_terms snapshot from the live sources:
