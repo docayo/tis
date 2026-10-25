@@ -821,6 +821,74 @@
       return ok({ updated: true });
     } catch (err) { return fail(err); }
   };
+  TIS.revokeLearnerPaymentSlot = async function (learnerId, termType, year, slotNumber) {
+    try {
+      const sb = await loadSdk();
+      const { data: row, error: rowErr } = await sb
+        .from('learner_terms')
+        .select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (rowErr) return fail(rowErr.message);
+      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
+      const n = parseInt(slotNumber, 10);
+      if (!n || n < 1 || n > 5) return fail('Slot number must be 1-5');
+      const patch = {};
+      patch['part_payment_' + n + '_amount'] = null;
+      patch['part_payment_' + n + '_date']   = null;
+      let newTotal = 0;
+      for (let i = 1; i <= 5; i++) {
+        if (i === n) continue;
+        const v = Number(String(row['part_payment_' + i + '_amount'] || '').replace(/[^0-9.\-]/g, '')) || 0;
+        newTotal += v;
+      }
+      patch.total_part_payment = String(newTotal);
+      const { error: updErr } = await sb
+        .from('learner_terms')
+        .update(patch)
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (updErr) return fail(updErr.message);
+      return ok({ revoked: true, newTotal: newTotal });
+    } catch (err) { return fail(err); }
+  };
+  TIS.revokeLearnerPaymentSlot = async function (learnerId, termType, year, slotNumber) {
+    try {
+      const sb = await loadSdk();
+      const { data: row, error: rowErr } = await sb
+        .from('learner_terms')
+        .select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (rowErr) return fail(rowErr.message);
+      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
+      const n = parseInt(slotNumber, 10);
+      if (!n || n < 1 || n > 5) return fail('Slot number must be 1-5');
+      const patch = {};
+      patch['part_payment_' + n + '_amount'] = null;
+      patch['part_payment_' + n + '_date']   = null;
+      let newTotal = 0;
+      for (let i = 1; i <= 5; i++) {
+        if (i === n) continue;
+        const v = Number(String(row['part_payment_' + i + '_amount'] || '').replace(/[^0-9.\-]/g, '')) || 0;
+        newTotal += v;
+      }
+      patch.total_part_payment = String(newTotal);
+      const { error: updErr } = await sb
+        .from('learner_terms')
+        .update(patch)
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year);
+      if (updErr) return fail(updErr.message);
+      return ok({ revoked: true, newTotal: newTotal });
+    } catch (err) { return fail(err); }
+  };
     // ================================================================
   // [FEE_ADVANCE] — copy one term's class bills and per-learner
   // adjustments into another term. Used when a new term becomes

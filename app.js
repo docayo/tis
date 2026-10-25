@@ -1182,7 +1182,11 @@
                     ' · Less Payment ' + p.n + ' (' + fmtDateOrDash(p.date) + '): ' +
                     moneyOrDash(p.amount) +
                     ' · Balance C/F</span>' +
-                  '<span class="info-value">' + moneyOrDash(running) + '</span></div>';
+                  '<span class="info-value">' + moneyOrDash(running) +
+                    ' <button type="button" class="btn btn-sm btn-danger" ' +
+                    'style="font-size:9px;padding:1px 6px;margin-left:6px;" ' +
+                    'onclick="feeRevokePayment(' + p.n + ',\'' + escAttr(pin) + '\')">Delete</button>' +
+                  '</span></div>';
         });
       } else {
         const running = visibleLines + (fee.balance_bf || 0);
@@ -1478,6 +1482,28 @@
     __renderLearnerViewModal(pin);
   }
   window.feeCancelBatch = feeCancelBatch;
+  async function feeRevokePayment(slotNumber, pin) {
+    const confirmMsg = 'Delete Payment ' + slotNumber + '?\n\nThis will remove the payment from the learner record and increase their balance. Cannot be undone.';
+    if (!window.confirm(confirmMsg)) return;
+    startLoader();
+    try {
+      const r = await window.TIS.getLearnerByPin(pin);
+      if (!r || !r.ok || !r.data) { showToast('Learner not found.', 'error'); stopLoader(); return; }
+      const at = await window.TIS.getActiveTerm();
+      if (!at || !at.ok || !at.data) { showToast('No active term.', 'error'); stopLoader(); return; }
+      const w = await window.TIS.revokeLearnerPaymentSlot(r.data.id, at.data.term_type, at.data.year, slotNumber);
+      if (!w || !w.ok) { showToast('Revoke failed: ' + ((w && w.error) || 'unknown'), 'error'); stopLoader(); return; }
+      await feeRecomputeSnapshot(r.data.id, at.data.term_type, at.data.year);
+      stopLoader();
+      showToast('Payment ' + slotNumber + ' deleted. Balance updated.', 'success');
+      __renderLearnerViewModal(pin);
+    } catch (e) {
+      stopLoader();
+      console.error('Revoke payment failed', e);
+      showToast('Revoke failed: ' + (e.message || e), 'error');
+    }
+  }
+  window.feeRevokePayment = feeRevokePayment;
 
   // ================================================================
   // Recompute the learner_terms snapshot from the live sources:
