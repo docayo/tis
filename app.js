@@ -798,11 +798,12 @@
     // written with the same total, so either source agrees.
     // ------------------------------------------------------------------
     if (locked) {
+      const is1st = String((term && term.term_type) || '').toLowerCase().indexOf('1st') !== -1;
       const t   = num(termRow.tuition);
-      const om  = num(termRow.other_bills_major);
-      const on  = num(termRow.other_bills_minor);
-      const bk  = num(termRow.books);
-      const uni = num(termRow.uniform);
+      const om  = is1st ? num(termRow.other_bills_major) : (optionalActive('other_bills_major') && !offSet['other_bills_major'] ? num(termRow.other_bills_major) : 0);
+      const on  = optionalActive('other_bills_minor') && !offSet['other_bills_minor'] ? num(termRow.other_bills_minor) : 0;
+      const bk  = is1st ? num(termRow.books) : (optionalActive('books') && !offSet['books'] ? num(termRow.books) : 0);
+      const uni = is1st ? num(termRow.uniform) : (optionalActive('uniform') && !offSet['uniform'] ? num(termRow.uniform) : 0);
       const sw  = optionalActive('sportswear')     && !offSet['sportswear']     ? num(termRow.sportswear)     : 0;
       const wc  = optionalActive('waist_coat')     && !offSet['waist_coat']     ? num(termRow.waist_coat)     : 0;
       const ti  = optionalActive('tie')            && !offSet['tie']            ? num(termRow.tie)            : 0;
@@ -862,11 +863,12 @@
       return fallback;
     };
 
+    const is1st = String((term && term.term_type) || '').toLowerCase().indexOf('1st') !== -1;
     const tuition     = pick('tuition',           num(termRow && termRow.tuition));
-    const otherMajor  = pick('other_bills_major', num(termRow && termRow.other_bills_major));
-    const otherMinor  = pick('other_bills_minor', num(termRow && termRow.other_bills_minor));
-    const books       = pick('books',             num(termRow && termRow.books));
-    const uniform     = pick('uniform',           num(termRow && termRow.uniform));
+    const otherMajor  = is1st ? pick('other_bills_major', num(termRow && termRow.other_bills_major)) : (optionalActive('other_bills_major') ? pick('other_bills_major', num(termRow && termRow.other_bills_major)) : 0);
+    const otherMinor  = optionalActive('other_bills_minor') ? pick('other_bills_minor', num(termRow && termRow.other_bills_minor)) : 0;
+    const books       = is1st ? pick('books',             num(termRow && termRow.books))             : (optionalActive('books')             ? pick('books',             num(termRow && termRow.books))             : 0);
+    const uniform     = is1st ? pick('uniform',           num(termRow && termRow.uniform))           : (optionalActive('uniform')           ? pick('uniform',           num(termRow && termRow.uniform))           : 0);
     const sportswear  = optionalActive('sportswear')     ? pick('sportswear',        num(termRow && termRow.sportswear))     : 0;
     const waistCoat   = optionalActive('waist_coat')     ? pick('waist_coat',        num(termRow && termRow.waist_coat))     : 0;
     const tie         = optionalActive('tie')            ? pick('tie',               num(termRow && termRow.tie))            : 0;
@@ -986,9 +988,12 @@
     // Batch mode: renders one line with a mark toggle; marks queue
     //             the item for batch removal via the bottom bar.
     function isItemStatutory(itemKey, termType) {
-      const always = ['tuition', 'other_bills_major', 'other_bills_minor', 'books'];
-      if (always.indexOf(itemKey) !== -1) return true;
-      if (itemKey === 'uniform' && String(termType || '').toLowerCase().indexOf('1st') !== -1) return true;
+      const tt = String(termType || '').toLowerCase();
+      const is1st = tt.indexOf('1st') !== -1;
+      if (itemKey === 'tuition') return true;
+      if (is1st && itemKey === 'other_bills_major') return true;
+      if (is1st && itemKey === 'books') return true;
+      if (is1st && itemKey === 'uniform') return true;
       return false;
     }
     const feeLine = function (itemKey, label, value, termType) {
