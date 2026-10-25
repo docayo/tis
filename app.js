@@ -1115,9 +1115,6 @@
       // Progression is shown as a series of "Net Bill · Less Payment n · Balance"
       // lines, one per recorded payment, so the reader can trace the deduction
       // on paper without arithmetic.
-      html += '<div class="info-row" style="background:#f1f8e9;font-weight:700;">' +
-              '<span class="info-label">Net Bill (this term)</span>' +
-              '<span class="info-value">' + moneyOrDash(visibleLines) + '</span></div>';
       html += '<div class="info-row" style="background:#f7fbf7;">' +
               '<span class="info-label">Carried forward B/F</span>' +
               '<span class="info-value">' + moneyOrDash(fee.balance_bf || 0) + '</span></div>';
