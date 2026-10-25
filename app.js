@@ -39,6 +39,8 @@
   // Declared at IIFE top so it is initialized before any modal-open call.
   let __feeSelectMode = false;
   let __feePendingRemovals = new Set();
+  let __feeAddFormOpen = false;
+  let __feeAddFormPreselect = null;
 
   // ================================================================
   // [S01] STATE
@@ -926,10 +928,15 @@
   //   then frozen from learner_terms.
   // ================================================================
  async function openLearnerViewModal(pin) {
-    closeModal();
-    // Batch mode is transient - reset on every modal open.
     __feeSelectMode = false;
     __feePendingRemovals.clear();
+    __feeAddFormOpen = false;
+    __feeAddFormPreselect = null;
+    return __renderLearnerViewModal(pin);
+ }
+
+ async function __renderLearnerViewModal(pin) {
+    closeModal();
     startLoader();
     const learnerR = await window.TIS.getLearnerByPin(pin);
     const termsR   = learnerR && learnerR.ok && learnerR.data
@@ -1241,7 +1248,7 @@
 
     await feeRecomputeSnapshot(r.data.id, term.term_type, term.year);
     if (!skipRefresh) showToast('Line removed for this learner.', 'success');
-    if (!skipRefresh) openLearnerViewModal(pin);
+    if (!skipRefresh) __renderLearnerViewModal(pin);
   }
   window.learnerFeeToggleOff = learnerFeeToggleOff;
 
@@ -1259,13 +1266,13 @@
 
     await feeRecomputeSnapshot(r.data.id, term.term_type, term.year);
     showToast('Line restored for this learner.', 'success');
-    openLearnerViewModal(pin);
+    __renderLearnerViewModal(pin);
   }
   window.learnerFeeRestore = learnerFeeRestore;
   function feeToggleSelectMode(on, pin) {
     __feeSelectMode = !!on;
     __feePendingRemovals.clear();
-    openLearnerViewModal(pin);
+    __renderLearnerViewModal(pin);
   }
   window.feeToggleSelectMode = feeToggleSelectMode;
 
@@ -1311,14 +1318,14 @@
     }
     showToast(items.length + ' line' + (items.length === 1 ? '' : 's') + ' removed.', 'success');
     __feeSelectMode = false;
-    openLearnerViewModal(pin);
+    __renderLearnerViewModal(pin);
   }
   window.feeApplyBatch = feeApplyBatch;
 
   function feeCancelBatch(pin) {
     __feePendingRemovals.clear();
     __feeSelectMode = false;
-    openLearnerViewModal(pin);
+    __renderLearnerViewModal(pin);
   }
   window.feeCancelBatch = feeCancelBatch;
 
@@ -3683,6 +3690,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   window.loadLearners            = loadLearners;
   window.initLearnersTab         = initLearnersTab;
   window.openLearnerViewModal    = openLearnerViewModal;
+  window.__renderLearnerViewModal = __renderLearnerViewModal;
   window.openLearnerEditModal    = openLearnerEditModal;
   window.saveLearnerEdits        = saveLearnerEdits;
   window.openAddLearnerModal     = openAddLearnerModal;
