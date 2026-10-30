@@ -740,7 +740,6 @@
 
     const locked = snapshotHasMoney(termRow);
 
-    // Part-payment list (present in both branches)
     const ppList = [];
     if (termRow) {
       for (let n = 1; n <= 5; n++) {
@@ -751,9 +750,6 @@
       }
     }
 
-    // Overrides — always from the live table. The X and Restore
-    // actions write to fee_learner_item_overrides, so it is the
-    // canonical list, locked or not.
     let overrides = [];
     try {
       const oR = await window.TIS.listLearnerOverrides(learner.id, term.term_type, year);
@@ -762,7 +758,6 @@
     const offSet = {};
     overrides.forEach(function (o) { offSet[o.item_key] = true; });
 
-    // Optional items enabled for this learner (from learner_terms.optional_items_enabled)
     const optionalEnabledStr = (termRow && termRow.optional_items_enabled) || '';
     const optionalEnabledSet = {};
     optionalEnabledStr.split(',').forEach(function (k) {
@@ -771,21 +766,18 @@
     });
     function optionalActive(key) { return optionalEnabledSet[key] === true; }
 
-    // Live class schedule (used for the UNLOCKED branch only)
     let schedRow = null;
     try {
       const sr = await window.TIS.getFeeScheduleRow(learner.class_name, term.term_type, year);
       if (sr && sr.ok && sr.data) schedRow = sr.data;
     } catch (e) {}
 
-    // Live adjustment (used for the UNLOCKED branch only)
     let adjRow = null;
     try {
       const ar = await window.TIS.getFeeAdjustment(learner.id, term.term_type, year);
       if (ar && ar.ok && ar.data) adjRow = ar.data;
     } catch (e) {}
 
-    // Balance B/F — locked row wins; else previous term's C/F
     let balanceBfRaw = termRow && termRow.balance_bf;
     let balanceBf = num(balanceBfRaw);
     const bfIsMissing = (balanceBfRaw === null || balanceBfRaw === undefined || String(balanceBfRaw).trim() === '');
@@ -799,37 +791,45 @@
       }
     }
 
-    // ------------------------------------------------------------------
-    // LOCKED branch — the snapshot is frozen. Read every number from
-    // the learner_terms row. The four columns tuition / other_major /
-    // other_minor / books were written at first payment, and bill was
-    // written with the same total, so either source agrees.
-    // ------------------------------------------------------------------
-    if (locked) {
-      const is1st = String((term && term.term_type) || '').toLowerCase().indexOf('1st') !== -1;
-      const t   = num(termRow.tuition);
-      const om  = is1st ? num(termRow.other_bills_major) : (optionalActive('other_bills_major') && !offSet['other_bills_major'] ? num(termRow.other_bills_major) : 0);
-      const on  = optionalActive('other_bills_minor') && !offSet['other_bills_minor'] ? num(termRow.other_bills_minor) : 0;
-      const bk  = is1st ? num(termRow.books) : (optionalActive('books') && !offSet['books'] ? num(termRow.books) : 0);
-      const uni = is1st ? num(termRow.uniform) : (optionalActive('uniform') && !offSet['uniform'] ? num(termRow.uniform) : 0);
-      const sw  = optionalActive('sportswear')     && !offSet['sportswear']     ? num(termRow.sportswear)     : 0;
-      const wc  = optionalActive('waist_coat')     && !offSet['waist_coat']     ? num(termRow.waist_coat)     : 0;
-      const ti  = optionalActive('tie')            && !offSet['tie']            ? num(termRow.tie)            : 0;
-      const el  = optionalActive('extra_lesson')   && !offSet['extra_lesson']   ? num(termRow.extra_lesson)   : 0;
-      const sl  = optionalActive('special_lesson') && !offSet['special_lesson'] ? num(termRow.special_lesson) : 0;
-      const add = optionalActive('additions')      && !offSet['additions']      ? num(termRow.additions)      : 0;
-      const ded = num(termRow.scholarship);
-      const reg = optionalActive('registration_fee') && !offSet['registration_fee'] ? num(termRow.registration_fee) : 0;
-      const paid = num(termRow.total_part_payment);
-
-      // If the four main columns are zero but bill is not, the row
-      // was written by an older version of recordPartPayment. Fall
-      // back to bill as the net bills figure.
-      let netBills = t + om + on + bk + uni + sw + wc + ti + el + sl + reg + add - ded;
-      if (netBills === 0 && num(termRow.bill) > 0) {
-        netBills = num(termRow.bill);
+    const pick = function (key, fallback) {
+      if (offSet[key]) return 0;
+      if (optionalActive(key)) {
+        return num(termRow && termRow[key]);
       }
+      if (schedRow && schedRow[key] !== undefined && schedRow[key] !== null && schedRow[key] !== '') {
+        return num(schedRow[key]);
+      }
+      return fallback;
+    };
 
+    const is1st = String((term && term.term_type) || '').toLowerCase().indexOf('1st') !== -1;
+
+    const t   = pick('tuition', num(termRow && termRow.tuition));
+    const om  = is1st ? pick('other_bills_major', num(termRow && termRow.other_bills_major))
+                      : (optionalActive('other_bills_major') ? pick('other_bills_major', num(termRow && termRow.other_bills_major)) : 0);
+    const on  = optionalActive('other_bills_minor') ? pick('other_bills_minor', num(termRow && termRow.other_bills_minor)) : 0;
+    const bk  = is1st ? pick('books', num(termRow && termRow.books))
+                      : (optionalActive('books') ? pick('books', num(termRow && termRow.books)) : 0);
+    const uni = is1st ? pick('uniform', num(termRow && termRow.uniform))
+                      : (optionalActive('uniform') ? pick('uniform', num(termRow && termRow.uniform)) : 0);
+    const sw  = optionalActive('sportswear')       ? pick('sportswear', num(termRow && termRow.sportswear))           : 0;
+    const wc  = optionalActive('waist_coat')       ? pick('waist_coat', num(termRow && termRow.waist_coat))           : 0;
+    const ti  = optionalActive('tie')              ? pick('tie', num(termRow && termRow.tie))                         : 0;
+    const el  = optionalActive('extra_lesson')     ? pick('extra_lesson', num(termRow && termRow.extra_lesson))       : 0;
+    const sl  = optionalActive('special_lesson')   ? pick('special_lesson', num(termRow && termRow.special_lesson))   : 0;
+    const reg = optionalActive('registration_fee') ? pick('registration_fee', num(termRow && termRow.registration_fee)) : 0;
+
+    const add = adjRow ? num(adjRow.additions)  : (optionalActive('additions') && !offSet['additions'] ? num(termRow && termRow.additions) : 0);
+    const ded = adjRow ? num(adjRow.deductions) : num(termRow && termRow.scholarship);
+
+    let netBills = t + om + on + bk + uni + sw + wc + ti + el + sl + reg + add - ded;
+
+    if (netBills === 0 && termRow && num(termRow.bill) > 0) {
+      netBills = num(termRow.bill);
+    }
+
+    if (locked) {
+      const paid = num(termRow.total_part_payment);
       const balanceCf = netBills + balanceBf - paid;
 
       return {
@@ -840,7 +840,7 @@
         other_bills_major: om,
         other_bills_minor: on,
         books: bk,
-        registration_fee: optionalActive('registration_fee') && !offSet['registration_fee'] ? num(termRow.registration_fee) : 0,
+        registration_fee: reg,
         uniform: uni,
         sportswear: sw,
         waist_coat: wc,
@@ -861,60 +861,24 @@
       };
     }
 
-    // ------------------------------------------------------------------
-    // UNLOCKED branch — nothing has been paid. Everything live.
-    // ------------------------------------------------------------------
-    const pick = function (key, fallback) {
-      if (offSet[key]) return 0;
-      if (optionalActive(key)) {
-        return num(termRow && termRow[key]);
-      }
-      if (schedRow && schedRow[key] !== undefined && schedRow[key] !== null && schedRow[key] !== '') {
-        return num(schedRow[key]);
-      }
-      return fallback;
-    };
-
-    const is1st = String((term && term.term_type) || '').toLowerCase().indexOf('1st') !== -1;
-    const tuition     = pick('tuition',           num(termRow && termRow.tuition));
-    const otherMajor  = is1st ? pick('other_bills_major', num(termRow && termRow.other_bills_major)) : (optionalActive('other_bills_major') ? pick('other_bills_major', num(termRow && termRow.other_bills_major)) : 0);
-    const otherMinor  = optionalActive('other_bills_minor') ? pick('other_bills_minor', num(termRow && termRow.other_bills_minor)) : 0;
-    const books       = is1st ? pick('books',             num(termRow && termRow.books))             : (optionalActive('books')             ? pick('books',             num(termRow && termRow.books))             : 0);
-    const uniform     = is1st ? pick('uniform',           num(termRow && termRow.uniform))           : (optionalActive('uniform')           ? pick('uniform',           num(termRow && termRow.uniform))           : 0);
-    const sportswear  = optionalActive('sportswear')     ? pick('sportswear',        num(termRow && termRow.sportswear))     : 0;
-    const waistCoat   = optionalActive('waist_coat')     ? pick('waist_coat',        num(termRow && termRow.waist_coat))     : 0;
-    const tie         = optionalActive('tie')            ? pick('tie',               num(termRow && termRow.tie))            : 0;
-    const extraLesson = optionalActive('extra_lesson')   ? pick('extra_lesson',      num(termRow && termRow.extra_lesson))   : 0;
-    const special     = optionalActive('special_lesson') ? pick('special_lesson',    num(termRow && termRow.special_lesson)) : 0;
-
-    const additions   = adjRow ? num(adjRow.additions)  : num(termRow && termRow.additions);
-    const deductions  = adjRow ? num(adjRow.deductions) : num(termRow && termRow.scholarship);
-
-    const registrationFee = optionalActive('registration_fee') ? num(termRow && termRow.registration_fee) : 0;
-    const netBills =
-      tuition + otherMajor + otherMinor + books +
-      uniform + sportswear + waistCoat + tie + extraLesson + special +
-      registrationFee +
-      additions - deductions;
-
     const balanceCf = netBills + balanceBf;
 
     return {
       source: 'live',
-      tuition: tuition,
-      scholarship: deductions,
-      additions: additions,
-      other_bills_major: otherMajor,
-      other_bills_minor: otherMinor,
-      books: books,
-      registration_fee: optionalActive('registration_fee') ? pick('registration_fee', num(termRow && termRow.registration_fee)) : 0,
-      uniform: uniform,
-      sportswear: sportswear,
-      waist_coat: waistCoat,
-      tie: tie,
-      extra_lesson: extraLesson,
-      special_lesson: special,
-      adjusted_tuition: tuition - deductions,
+      tuition: t,
+      scholarship: ded,
+      additions: add,
+      other_bills_major: om,
+      other_bills_minor: on,
+      books: bk,
+      registration_fee: reg,
+      uniform: uni,
+      sportswear: sw,
+      waist_coat: wc,
+      tie: ti,
+      extra_lesson: el,
+      special_lesson: sl,
+      adjusted_tuition: t - ded,
       balance_bf: balanceBf,
       net_bills: netBills,
       total_part_payment: 0,
@@ -3431,6 +3395,11 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     if (r && r.ok) {
       showToast('Payment recorded (slot ' + r.data.slot + ')', 'success');
+      try {
+        await feeRecomputeSnapshot(learnerId, termType, year);
+      } catch (e) {
+        console.warn('[submitPartPayment] recompute failed', e);
+      }
       closeModal();
       const l = State.cachedLearners.find(function (x) { return x.id === learnerId; });
       if (l) openLearnerViewModal(l.pin);
@@ -5293,6 +5262,21 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       totalEl.textContent = total.toLocaleString();
     }
     showToast('Saved: ' + className, 'success');
+
+    (async function () {
+      try {
+        const learnersR = await window.TIS.getLearnersForClasses([className]);
+        if (!learnersR || !learnersR.ok) return;
+        const list = learnersR.data || [];
+        for (const L of list) {
+          try { await feeRecomputeSnapshot(L.id, term, year); }
+          catch (e) { /* non-fatal per learner */ }
+        }
+        console.log('[feesSaveScheduleRow] recomputed', list.length, 'snapshot(s) for', className);
+      } catch (e) {
+        console.warn('[feesSaveScheduleRow] bulk recompute failed', e);
+      }
+    })();
   }
   window.feesSaveScheduleRow = feesSaveScheduleRow;
   // ----------------------------------------------------------------
@@ -5440,6 +5424,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
     if (!r || !r.ok) { showToast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
     showToast('Saved.', 'success');
+
+    try {
+      await feeRecomputeSnapshot(learnerId, term, year);
+    } catch (e) {
+      console.warn('[feesSaveAdjustmentRow] recompute failed', e);
+    }
   }
   window.feesSaveAdjustmentRow = feesSaveAdjustmentRow;
     // ================================================================
