@@ -5670,12 +5670,21 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const isYearAdvance = (newTerm.year > prevTerm.year);
     if (!isYearAdvance) {
       try {
-        await window.TIS.advanceTermFees({
+        const advR = await window.TIS.advanceTermFees({
           fromTerm: prevTerm.term_type, fromYear: prevTerm.year,
           toTerm: newTerm.term_type, toYear: newTerm.year,
           actor: 'System (auto)'
         });
-      } catch (e) { console.error('advanceTermFees failed', e); }
+        if (!advR || !advR.ok) {
+          console.error('[prepareTermData] advanceTermFees returned failure:', advR && advR.error);
+          if (typeof showToast === 'function') showToast('Warning: fee advance failed - ' + ((advR && advR.error) || 'unknown'), 'warning');
+        } else {
+          console.log('[prepareTermData] advanceTermFees OK - classes=' + advR.data.classesCopied + ' adj=' + advR.data.adjustmentsCopied);
+        }
+      } catch (e) {
+        console.error('[prepareTermData] advanceTermFees threw:', e);
+        if (typeof showToast === 'function') showToast('Warning: fee advance error - ' + (e.message || e), 'warning');
+      }
     }
     const lr = await window.TIS.listLearners();
     if (!lr || !lr.ok || !lr.data) return;
