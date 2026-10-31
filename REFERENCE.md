@@ -368,6 +368,24 @@ before, after	jsonb	Full row snapshots
 notes	text	
 term_type, year	text / int	For termly grouping
 undone_at, undone_by	timestamptz / text	Reserved
+## learner_terms (columns added 2026-10-31)
+
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `founders_scholarship` | numeric | 0 | Per-learner Founders Scholarship rate. Populated from fee_schedule at term seed; editable. Applies only when `is1st` term OR an override row exists with `item_key='founders_scholarship'` |
+
+**Note:** `term_label` is NOT NULL — format `"<ORD> TERM <YYYY>/<YYYY+1>"` (e.g. `"2ND TERM 2026/2027"`). `class_name` is also NOT NULL. Both must be supplied on insert. `TIS.upsertLearnerTerm` handles this automatically.
+
+## fee_adjustments (invariants)
+
+- `notes` is NOT NULL DEFAULT '' — passing explicit `null` violates the constraint
+- `advanceTermFees` copies these rows on term advance; per-learner personal scholarships live here
+- Same-year advance: `copySchedule: true` — copies fee_schedule + fee_adjustments
+- Year advance: `copySchedule: false` — copies fee_adjustments only (fee_schedule set up by admin for new year)
+
+## advanceTermFees return contract
+
+Returns `{ok: true, data: {classesCopied, classesSkipped, adjustmentsCopied, adjustmentsSkipped}}` on success, `{ok: false, error: '...'}` on failure. **Does NOT throw.** Callers must check `.ok` — try/catch alone misses failures. `prepareTermData` (patched 2026-10-31) logs and shows a toast on `!ok`.
 <!-- end of part 1 -->
 PART 2 — app.js SECTION MAP
 IIFE-wrapped. Sections [S01]–[S22]. Line numbers drift; use the

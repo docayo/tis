@@ -414,5 +414,31 @@ Every time a session ends:
 That is the whole maintenance procedure.
 
 ---
+### 2026-10-31 — Fee display fix + term-advance pipeline
 
+**Session 1 (fee display):**
+- FIX1–4: `resolveLearnerFeePicture` LOCKED branch reads live + `feeRecomputeSnapshot` fires after `feesSaveAdjustmentRow`, `feesSaveScheduleRow`, `submitPartPayment`
+- FIX5A/5B: `other_bills_minor` gated on `is1st`; `feeRecomputeSnapshot` item gating matches `resolveLearnerFeePicture` exactly (prevents snapshot/display drift)
+- Founders Scholarship: `learner_terms.founders_scholarship` column added; resolved in both `resolve` and `recompute` with 1st-term-only gating; Term view shows Founders ₦ + Total Schol. ₦ columns (read-only)
+- `fee_schedule.tuition` increased across 26 classes; same amount populated as founders for 179 learners in 1st term
+- Bulk recompute: 179/179 learners synced
+
+**Session 2 (term-advance):**
+- `upsertLearnerTerm` added to `TIS` — select-then-update-or-insert; fixes `feeSaveBF` silent failure on learners without rows
+- Insert path fixed to supply `term_label` + `class_name` (both NOT NULL)
+- `prepareTermData` loop rewritten: creates rows for every learner, backfills B/F when stored differs from prev C/F
+- `advanceTermFees` fixes: removed `notes: null` violation; added `copySchedule` option; fixed `adjInsertRow` undeclared (strict-mode ReferenceError) that had been silently failing since day one
+- `prepareTermData` now logs and toasts on `advanceTermFees` failure (was silent)
+- Year advance: `copySchedule: false` — fee_adjustments copied, fee_schedule left for admin
+
+**Bugs found:**
+- `adjInsertRow` undeclared — cost ~3 hours across discovery + repair
+- `notes: null` — schema NOT NULL violation
+- `prepareTermData` skipped non-year advances entirely (year-advance path never copied anything)
+- `fee_adjustments` 1st→2nd advance was silently failing (discovered after manual repair of ₦446,000.01)
+
+**Bugs fixed and verified end-to-end:**
+- All three advance paths (1st→2nd, 2nd→3rd, 3rd→1st year) confirmed working with correct personal scholarship carry, B/F chain, and founders scoping
+
+**Rules earned the hard way:** see HANDOVER.md §Verification rules (9 rules, all documented there).
 **End of `HISTORY.md`.**
