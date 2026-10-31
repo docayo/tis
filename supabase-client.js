@@ -1154,7 +1154,7 @@
         const adjIns = [];
         srcAdj.forEach(function (a) {
           if (tgtHas[a.learner_id]) { adjustmentsSkipped.push(a.learner_id); return; }
-          adjInsertRow = {
+          const adjInsertRow = {
             learner_id: a.learner_id,
             term_type:  toTerm,
             year:       toYear,
