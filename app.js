@@ -5322,6 +5322,30 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       adjMap[r.learner_id] = r;
     });
 
+    // Fetch learner_terms for founders_scholarship and fallback scholarship.
+    // Uses bulk method if available, else chunked parallel fallback.
+    const ltMap = {};
+    try {
+      if (typeof window.TIS.listLearnerTermsForLearners === 'function') {
+        const ltR = await window.TIS.listLearnerTermsForLearners(ids, term, year);
+        if (ltR && ltR.ok) {
+          (ltR.data || []).forEach(function (r) { ltMap[r.learner_id] = r; });
+        }
+      } else {
+        for (let _i = 0; _i < ids.length; _i += 10) {
+          const _chunk = ids.slice(_i, _i + 10);
+          await Promise.all(_chunk.map(async function (id) {
+            try {
+              const r = await window.TIS.getLearnerTermFor(id, term, year);
+              if (r && r.ok && r.data) ltMap[id] = r.data;
+            } catch (e) {}
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('[feesLoadAdjustments] learner_terms fetch failed', e);
+    }
+
     // Class order comes from classes.sort_order, so classes read in the
     // school's academic order rather than alphabetically.
     const classR = await window.TIS.listClasses();
@@ -5359,6 +5383,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     html += '<th style="text-align:left;padding:6px;">Class</th>';
     html += '<th style="padding:6px;">Additions ₦</th>';
     html += '<th style="padding:6px;">Deductions ₦</th>';
+    html += '<th style="padding:6px;">Founders ₦</th>';
+    html += '<th style="padding:6px;">Total Schol. ₦</th>';
     html += '<th style="text-align:left;padding:6px;">Reason</th>';
     html += '<th style="padding:6px;">Add Item</th>';
      html += '<th style="padding:6px;">Save</th>';
@@ -5374,6 +5400,12 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     sorted.forEach(function (l) {
       const a = adjMap[l.id] || {};
+      const ltRow = ltMap[l.id] || {};
+      const foundersVal = Number(ltRow.founders_scholarship || 0);
+      const indivEff = (a.deductions !== undefined && a.deductions !== null && a.deductions !== '')
+        ? Number(a.deductions)
+        : Number(ltRow.scholarship || 0);
+      const totalScholEff = indivEff + foundersVal;
       html += '<tr data-fee-learner="' + l.id +
               '" data-fee-name="' + escAttr((l.name || '').toLowerCase() + ' ' + (l.pin || '').toLowerCase()) +
               '" data-fee-class="' + escAttr(l.class_name || '') + '">';
@@ -5382,6 +5414,8 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;">' + esc(l.class_name || '') + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="fee-adj" data-field="additions" value="' + (a.additions || '') + '" style="width:100px;"></td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><input type="number" step="0.01" class="fee-adj" data-field="deductions" value="' + (a.deductions || '') + '" style="width:100px;"></td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;color:#666;" title="Founders Scholarship (auto from learner_terms)">' + foundersVal.toLocaleString() + '</td>';
+      html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;font-weight:700;color:#1a3f8f;" title="Total = Deductions (or term default) + Founders">' + totalScholEff.toLocaleString() + '</td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;"><input type="text" class="fee-adj" data-field="reason" value="' + escAttr(a.reason || '') + '" style="width:100%;"></td>';
            html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;"><button type="button" class="btn btn-sm btn-success" onclick="feesSaveAdjustmentRow(' + l.id + ')">Save</button></td>';
       html += '<td style="padding:5px;border-bottom:1px solid #eee;text-align:center;white-space:nowrap;">' +
@@ -5393,7 +5427,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     });
 
     html += '</tbody></table></div>';
-    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Additions raise the learner\'s bill. Deductions lower it. A blank field is treated as 0.</p>';
+    html += '<p style="font-size:11px;color:#666;margin-top:8px;">Additions raise the learner\'s bill. Deductions lower it. A blank field is treated as 0. <strong>Founders ₦</strong> and <strong>Total Schol. ₦</strong> are read-only; Total = Deductions (or term default from learner_terms) + Founders.</p>';
     setHTML('feesContent', html);
 
     function applyFilters() {
