@@ -399,6 +399,32 @@
   }
   loadDoc(currentDoc);
 })();
+
+ **Live URL:** https://tis-tan.vercel.app/ (Vercel production)
+**Deployed HEAD as of 2026-10-31:** 5e46cba
+
+**Session 2026-10-31 completed:**
+- a89295d — FIX5A (other_bills_minor is1st gate) + FIX5B (snapshot gating matches resolve)
+- 9fbae0b — Founders Scholarship support in resolveLearnerFeePicture + feeRecomputeSnapshot
+- 5e46cba — Term view Founders + Total Schol read-only columns
+- Bulk recompute 179/179 learners — stored bill = card display
+
+**Verification rules (learned the hard way this session):**
+1. Any test that calls resolveLearnerFeePicture must use select=* on learner_terms —
+   partial selects flip the LOCKED/live branch and produce false MISMATCH.
+2. Never use new RegExp with backslash patterns through PowerShell — use .includes().
+3. Every saved .ps1 needs byte-count verification BEFORE running (truncated pastes
+   are silent — powershell -File produces no output when it succeeds with a stub).
+4. .ps1 files with UTF-8 no BOM trigger codepage trap on PS 5.1 if they contain
+   any byte >127 — sanitize to ASCII before running.
+5. [System.IO.File]::* requires absolute paths — Set-Location doesn't affect the
+   process working directory.
+6. Internal functions (feesLoadAdjustments, feeRecomputeSnapshot internals) are NOT
+   on window — verify by fetching /app.js and grepping content instead.
+
+**Order rule for DB+code changes:**
+   Patch → verify → commit → push → confirm deploy live (fetch /app.js marker)
+   → THEN apply DB change. Never DB first.
 </script>
 
 </body>
