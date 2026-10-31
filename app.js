@@ -713,7 +713,7 @@
    async function resolveLearnerFeePicture(learner, termRow, term, year) {
     const empty = {
       source: 'none',
-      tuition: 0, scholarship: 0, additions: 0,
+      tuition: 0, scholarship: 0, individual_scholarship: 0, founders_scholarship: 0, additions: 0,
       other_bills_major: 0, other_bills_minor: 0, books: 0,
       registration_fee: 0, uniform: 0, sportswear: 0, waist_coat: 0,
       tie: 0, extra_lesson: 0, special_lesson: 0,
@@ -821,7 +821,11 @@
     const reg = optionalActive('registration_fee') ? pick('registration_fee', num(termRow && termRow.registration_fee)) : 0;
 
     const add = adjRow ? num(adjRow.additions)  : (optionalActive('additions') && !offSet['additions'] ? num(termRow && termRow.additions) : 0);
-    const ded = adjRow ? num(adjRow.deductions) : num(termRow && termRow.scholarship);
+    const individualScholarship = adjRow ? num(adjRow.deductions) : num(termRow && termRow.scholarship);
+    const foundersRate = num(termRow && termRow.founders_scholarship);
+    const foundersOverrideOn = overrides.some(function (o) { return o.item_key === 'founders_scholarship'; });
+    const foundersAmt = is1st ? foundersRate : (foundersOverrideOn ? foundersRate : 0);
+    const ded = individualScholarship + foundersAmt;
 
     let netBills = t + om + on + bk + uni + sw + wc + ti + el + sl + reg + add - ded;
 
@@ -837,6 +841,8 @@
         source: 'snapshot',
         tuition: t,
         scholarship: ded,
+        individual_scholarship: individualScholarship,
+        founders_scholarship: foundersAmt,
         additions: add,
         other_bills_major: om,
         other_bills_minor: on,
@@ -868,6 +874,8 @@
       source: 'live',
       tuition: t,
       scholarship: ded,
+      individual_scholarship: individualScholarship,
+      founders_scholarship: foundersAmt,
       additions: add,
       other_bills_major: om,
       other_bills_minor: on,
@@ -1816,7 +1824,12 @@
       const specialLesson = optionalActive('special_lesson')  ? pick('special_lesson')  : 0;
 
       const additions   = adj ? num(adj.additions)  : num(row.additions);
-      const deductions  = adj ? num(adj.deductions) : num(row.scholarship);
+      const individualDeductions = adj ? num(adj.deductions) : num(row.scholarship);
+      const foundersRate = num(row.founders_scholarship);
+      const foundersOverrideOn = overrides.some(function (o) { return o.item_key === 'founders_scholarship'; });
+      const is1stForFounders = String(termType || '').toLowerCase().indexOf('1st') !== -1;
+      const foundersAmt = is1stForFounders ? foundersRate : (foundersOverrideOn ? foundersRate : 0);
+      const deductions  = individualDeductions + foundersAmt;
       const balanceBf   = num(row.balance_bf);
       const paid        = num(row.total_part_payment);
 
@@ -1844,7 +1857,7 @@
         special_lesson:    String(specialLesson),
         registration_fee:  String(registrationFee),
         additions:         String(additions),
-        scholarship:       String(deductions),
+        scholarship:       String(individualDeductions),
         balance_cf:        String(balanceCf),
         cleared:           balanceCf <= 0 ? 'Yes' : '',
         clearance:         balanceCf <= 0 ? new Date().toISOString().slice(0, 10) : '',
