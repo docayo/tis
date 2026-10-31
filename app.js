@@ -807,7 +807,8 @@
     const t   = pick('tuition', num(termRow && termRow.tuition));
     const om  = is1st ? pick('other_bills_major', num(termRow && termRow.other_bills_major))
                       : (optionalActive('other_bills_major') ? pick('other_bills_major', num(termRow && termRow.other_bills_major)) : 0);
-    const on  = optionalActive('other_bills_minor') ? pick('other_bills_minor', num(termRow && termRow.other_bills_minor)) : 0;
+    const on  = is1st ? pick('other_bills_minor', num(termRow && termRow.other_bills_minor))
+                      : (optionalActive('other_bills_minor') ? pick('other_bills_minor', num(termRow && termRow.other_bills_minor)) : 0);
     const bk  = is1st ? pick('books', num(termRow && termRow.books))
                       : (optionalActive('books') ? pick('books', num(termRow && termRow.books)) : 0);
     const uni = is1st ? pick('uniform', num(termRow && termRow.uniform))
@@ -1800,23 +1801,26 @@
         return num(row && row[key]);
       };
 
+      const is1st = String(termType || '').toLowerCase().indexOf('1st') !== -1;
+      const is1stOrOpt = function (key) { return is1st || optionalActive(key); };
+
       const tuition       = pick('tuition');
-      const otherMajor    = pick('other_bills_major');
-      const otherMinor    = pick('other_bills_minor');
-      const books         = pick('books');
-      const uniform       = pick('uniform');
-      const sportswear    = pick('sportswear');
-      const waistCoat     = pick('waist_coat');
-      const tie           = pick('tie');
-      const extraLesson   = pick('extra_lesson');
-      const specialLesson = pick('special_lesson');
+      const otherMajor    = is1stOrOpt('other_bills_major') ? pick('other_bills_major') : 0;
+      const otherMinor    = is1stOrOpt('other_bills_minor') ? pick('other_bills_minor') : 0;
+      const books         = is1stOrOpt('books')             ? pick('books')             : 0;
+      const uniform       = is1stOrOpt('uniform')           ? pick('uniform')           : 0;
+      const sportswear    = optionalActive('sportswear')      ? pick('sportswear')      : 0;
+      const waistCoat     = optionalActive('waist_coat')      ? pick('waist_coat')      : 0;
+      const tie           = optionalActive('tie')             ? pick('tie')             : 0;
+      const extraLesson   = optionalActive('extra_lesson')    ? pick('extra_lesson')    : 0;
+      const specialLesson = optionalActive('special_lesson')  ? pick('special_lesson')  : 0;
 
       const additions   = adj ? num(adj.additions)  : num(row.additions);
       const deductions  = adj ? num(adj.deductions) : num(row.scholarship);
       const balanceBf   = num(row.balance_bf);
       const paid        = num(row.total_part_payment);
 
-      const registrationFee = optionalActive('registration_fee') ? num(row && row.registration_fee) : 0;
+      const registrationFee = optionalActive('registration_fee') ? pick('registration_fee') : 0;
       const netBills =
         tuition + otherMajor + otherMinor + books +
         uniform + sportswear + waistCoat + tie + extraLesson + specialLesson +
