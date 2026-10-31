@@ -5668,23 +5668,22 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const forward = (newTerm.year > prevTerm.year) || (newTerm.year === prevTerm.year && newOrd > prevOrd);
     if (!forward) return;
     const isYearAdvance = (newTerm.year > prevTerm.year);
-    if (!isYearAdvance) {
-      try {
-        const advR = await window.TIS.advanceTermFees({
-          fromTerm: prevTerm.term_type, fromYear: prevTerm.year,
-          toTerm: newTerm.term_type, toYear: newTerm.year,
-          actor: 'System (auto)'
-        });
-        if (!advR || !advR.ok) {
-          console.error('[prepareTermData] advanceTermFees returned failure:', advR && advR.error);
-          if (typeof showToast === 'function') showToast('Warning: fee advance failed - ' + ((advR && advR.error) || 'unknown'), 'warning');
-        } else {
-          console.log('[prepareTermData] advanceTermFees OK - classes=' + advR.data.classesCopied + ' adj=' + advR.data.adjustmentsCopied);
-        }
-      } catch (e) {
-        console.error('[prepareTermData] advanceTermFees threw:', e);
-        if (typeof showToast === 'function') showToast('Warning: fee advance error - ' + (e.message || e), 'warning');
+    try {
+      const advR = await window.TIS.advanceTermFees({
+        fromTerm: prevTerm.term_type, fromYear: prevTerm.year,
+        toTerm: newTerm.term_type, toYear: newTerm.year,
+        actor: 'System (auto)',
+        copySchedule: !isYearAdvance
+      });
+      if (!advR || !advR.ok) {
+        console.error('[prepareTermData] advanceTermFees returned failure:', advR && advR.error);
+        if (typeof showToast === 'function') showToast('Warning: fee advance failed - ' + ((advR && advR.error) || 'unknown'), 'warning');
+      } else {
+        console.log('[prepareTermData] advanceTermFees OK - mode=' + (isYearAdvance ? 'year(adj-only)' : 'same-year(all)') + ' classes=' + (advR.data.classesCopied || 0) + ' adj=' + (advR.data.adjustmentsCopied || 0));
       }
+    } catch (e) {
+      console.error('[prepareTermData] advanceTermFees threw:', e);
+      if (typeof showToast === 'function') showToast('Warning: fee advance error - ' + (e.message || e), 'warning');
     }
     const lr = await window.TIS.listLearners();
     if (!lr || !lr.ok || !lr.data) return;

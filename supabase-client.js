@@ -1079,49 +1079,61 @@
       const sb = await loadSdk();
 
       // The eleven columns that can be copied.
-           const ALL_FIELDS = [
+      const ALL_FIELDS = [
         'tuition','other_bills_major','other_bills_minor','books',
         'uniform','sportswear','waist_coat','tie',
         'extra_lesson','special_lesson'
       ];
 
-      // ---- 1. Read source class bills ----
-      const srcR = await sb.from('fee_schedule').select('*')
-        .eq('term_type', fromTerm).eq('year', fromYear);
-      if (srcR.error) return fail(srcR.error.message);
-      const srcRows = srcR.data || [];
-
-      // ---- 2. Read existing target rows (skip list) ----
-      const tgtR = await sb.from('fee_schedule').select('class_name')
-        .eq('term_type', toTerm).eq('year', toYear);
-      if (tgtR.error) return fail(tgtR.error.message);
-      const targetHas = {};
-      (tgtR.data || []).forEach(function (r) { targetHas[r.class_name] = true; });
-
-      // ---- 3. Build insert list ----
-      const toInsert = [];
-      const skipped  = [];
-      srcRows.forEach(function (r) {
-        if (targetHas[r.class_name]) { skipped.push(r.class_name); return; }
-        const row = {
-          class_name: r.class_name,
-          term_type:  toTerm,
-          year:       toYear
-        };
-        ALL_FIELDS.forEach(function (f) {
-          if (include[f] === false) return;         // omitted intentionally
-          const v = r[f];
-          if (v === null || v === undefined) return;
-          row[f] = Number(v);
-        });
-        toInsert.push(row);
-      });
-
+      const copySchedule = opt.copySchedule !== false;
       let classesCopied = 0;
-      if (toInsert.length > 0) {
-        const insR = await sb.from('fee_schedule').insert(toInsert).select();
-        if (insR.error) return fail(insR.error.message);
-        classesCopied = (insR.data || []).length;
+      const skipped = [];
+      let srcRows = [];
+
+      if (copySchedule) {
+        // ---- 1. Read source class bills ----
+        const srcR = await sb.from('fee_schedule').select('*')
+          .eq('term_type', fromTerm).eq('year', fromYear);
+        if (srcR.error) return fail(srcR.error.message);
+        srcRows = srcR.data || [];
+
+        // ---- 2. Read existing target rows (skip list) ----
+        const tgtR = await sb.from('fee_schedule').select('class_name')
+          .eq('term_type', toTerm).eq('year', toYear);
+        if (tgtR.error) return fail(tgtR.error.message);
+        const targetHas = {};
+        (tgtR.data || []).forEach(function (r) { targetHas[r.class_name] = true; });
+
+        // ---- 3. Build insert list ----
+        const toInsert = [];
+        srcRows.forEach(function (r) {
+          if (targetHas[r.class_name]) { skipped.push(r.class_name); return; }
+          const row = {
+            class_name: r.class_name,
+            term_type:  toTerm,
+            year:       toYear
+          };
+          ALL_FIELDS.forEach(function (f) {
+            if (include[f] === false) return;
+            const v = r[f];
+            if (v === null || v === undefined) return;
+            row[f] = Number(v);
+          });
+          toInsert.push(row);
+        });
+
+        if (toInsert.length > 0) {
+          const insR = await sb.from('fee_schedule').insert(toInsert).select();
+          if (insR.error) return fail(insR.error.message);
+          classesCopied = (insR.data || []).length;
+        }
+      } else {
+        // Year-advance path: admin prepares new year's fee_schedule separately.
+        const tgtCheck = await sb.from('fee_schedule').select('class_name')
+          .eq('term_type', toTerm).eq('year', toYear);
+        if (!tgtCheck.error && (tgtCheck.data || []).length === 0) {
+          console.warn('[advanceTermFees] copySchedule=false, target ' + toTerm + ' ' + toYear + ' has 0 fee_schedule rows. Learners will show 0 tuition until admin sets up fees.');
+        }
       }
 
       // ---- 4. Adjustments (optional) ----
@@ -1148,8 +1160,7 @@
             year:       toYear,
             additions:  Number(a.additions  || 0),
             deductions: Number(a.deductions || 0),
-            reason:     a.reason  || null,
-            notes:      a.notes   || null
+            reason:     a.reason  || null
           };
           adjIns.push(adjInsertRow);
         });
