@@ -5696,14 +5696,23 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           });
           if (w && w.ok) created++;
           else { failed++; console.error('prepareTermData: upsert failed', L.id, w && w.error); }
-        } else if (Number(existing.balance_bf || 0) === 0 && balanceBf !== 0) {
-          const w = await window.TIS.updateLearnerTermSnapshot(L.id, newTerm.term_type, newTerm.year, {
-            balance_bf: String(balanceBf)
-          });
-          if (w && w.ok) backfilled++;
-          else { failed++; console.error('prepareTermData: B/F update failed', L.id, w && w.error); }
         } else {
-          skipped++;
+          // Row exists. Sync B/F from current prev-term C/F when:
+          //   (a) no payments recorded on this new term yet (safe to overwrite), AND
+          //   (b) stored B/F differs from current prev C/F (otherwise nothing to do).
+          // This repairs stale rows (e.g. created 2026-09-27 with old B/F values)
+          // after subsequent 1st-term activity (payments, adjustments, founders).
+          const paidNew = Number(existing.total_part_payment || 0);
+          const storedBf = Number(existing.balance_bf || 0);
+          if (paidNew === 0 && storedBf !== balanceBf) {
+            const w = await window.TIS.updateLearnerTermSnapshot(L.id, newTerm.term_type, newTerm.year, {
+              balance_bf: String(balanceBf)
+            });
+            if (w && w.ok) backfilled++;
+            else { failed++; console.error('prepareTermData: B/F update failed', L.id, w && w.error); }
+          } else {
+            skipped++;
+          }
         }
       } catch (e) {
         failed++;

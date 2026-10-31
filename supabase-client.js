@@ -859,13 +859,55 @@
         if (error) return fail(error.message);
         return ok({ data: { updated: true }, mode: 'update' });
       }
-      const row = Object.assign({
+
+      // INSERT path - supply all NOT NULL columns:
+      // term_label (e.g. "2ND TERM 2026/2027"), class_name.
+      let className = (patch && patch.class_name) || null;
+      if (!className) {
+        const lr = await sb.from('learners').select('class_name').eq('id', learnerId).maybeSingle();
+        if (lr.error) return fail(lr.error.message);
+        className = lr.data && lr.data.class_name;
+        if (!className) return fail('learner has no class_name - cannot create term row');
+      }
+
+      const ordMap = { '1st': '1ST', '2nd': '2ND', '3rd': '3RD' };
+      const ord = ordMap[String(termType).toLowerCase()] || (String(termType).toUpperCase() + '');
+      const termLabel = (patch && patch.term_label) || (ord + ' TERM ' + year + '/' + (year + 1));
+
+      const defaults = {
         learner_id: learnerId,
         term_type: termType,
-        year: year
-      }, patch || {}, {
+        year: year,
+        term_label: termLabel,
+        class_name: className,
+        balance_bf: '0',
+        bill: '0',
+        other_bill: '0',
+        total_part_payment: '0',
+        balance_cf: '0',
+        tuition: '0',
+        scholarship: '0',
+        other_bills_major: '0',
+        other_bills_minor: '0',
+        books: '0',
+        uniform: '0',
+        sportswear: '0',
+        waist_coat: '0',
+        tie: '0',
+        extra_lesson: '0',
+        special_lesson: '0',
+        additions: '0',
+        registration_fee: '0',
+        optional_items_enabled: '',
+        founders_scholarship: 0,
+        cleared: '',
+        clearance: ''
+      };
+
+      const row = Object.assign(defaults, patch || {}, {
         updated_at: new Date().toISOString()
       });
+
       const { data, error } = await sb.from('learner_terms').insert(row).select();
       if (error) return fail(error.message);
       return ok({ data: (data && data[0]) || null, mode: 'insert' });
