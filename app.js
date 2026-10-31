@@ -1565,7 +1565,7 @@
         if (!ok2) { stopLoader(); return; }
       }
 
-      const w = await window.TIS.updateLearnerTermSnapshot(r.data.id, term.term_type, term.year, {
+      const w = await window.TIS.upsertLearnerTerm(r.data.id, term.term_type, term.year, {
         balance_bf: String(newVal)
       });
       if (!w || !w.ok) { showToast('Save failed: ' + ((w && w.error) || 'unknown'), 'error'); stopLoader(); return; }
@@ -5679,21 +5679,40 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     }
     const lr = await window.TIS.listLearners();
     if (!lr || !lr.ok || !lr.data) return;
+
+    let created = 0, backfilled = 0, skipped = 0, failed = 0;
     for (const L of lr.data) {
       try {
         const prevR = await window.TIS.getLearnerTermFor(L.id, prevTerm.term_type, prevTerm.year);
         const prevRow = (prevR && prevR.ok) ? prevR.data : null;
         const balanceBf = prevRow ? Number(prevRow.balance_cf || 0) : 0;
-        if (balanceBf === 0) continue;
+
         const existingR = await window.TIS.getLearnerTermFor(L.id, newTerm.term_type, newTerm.year);
         const existing = (existingR && existingR.ok) ? existingR.data : null;
-        if (existing && Number(existing.balance_bf || 0) === 0) {
-          await window.TIS.updateLearnerTermSnapshot(L.id, newTerm.term_type, newTerm.year, {
+
+        if (!existing) {
+          const w = await window.TIS.upsertLearnerTerm(L.id, newTerm.term_type, newTerm.year, {
             balance_bf: String(balanceBf)
           });
+          if (w && w.ok) created++;
+          else { failed++; console.error('prepareTermData: upsert failed', L.id, w && w.error); }
+        } else if (Number(existing.balance_bf || 0) === 0 && balanceBf !== 0) {
+          const w = await window.TIS.updateLearnerTermSnapshot(L.id, newTerm.term_type, newTerm.year, {
+            balance_bf: String(balanceBf)
+          });
+          if (w && w.ok) backfilled++;
+          else { failed++; console.error('prepareTermData: B/F update failed', L.id, w && w.error); }
+        } else {
+          skipped++;
         }
-      } catch (e) { console.error('B/F backfill failed for learner', L.id, e); }
+      } catch (e) {
+        failed++;
+        console.error('prepareTermData: row error for learner', L.id, e);
+      }
     }
+    console.log('[prepareTermData] ' + newTerm.term_type + ' ' + newTerm.year +
+      ': created=' + created + ' backfilled=' + backfilled +
+      ' skipped=' + skipped + ' failed=' + failed);
   }
   window.prepareTermData = prepareTermData;
 

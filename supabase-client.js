@@ -836,6 +836,41 @@
       return ok({ updated: true });
     } catch (err) { return fail(err); }
   };
+
+  // Upsert - INSERT if row missing, UPDATE if present.
+  // Used by feeSaveBF (allows setting B/F on a learner without an existing row)
+  // and prepareTermData (creates new-term rows during term advance).
+  TIS.upsertLearnerTerm = async function (learnerId, termType, year, patch) {
+    try {
+      const sb = await loadSdk();
+      const checkR = await sb.from('learner_terms')
+        .select('learner_id')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (checkR.error) return fail(checkR.error.message);
+      if (checkR.data) {
+        const { error } = await sb.from('learner_terms')
+          .update(patch || {})
+          .eq('learner_id', learnerId)
+          .eq('term_type', termType)
+          .eq('year', year);
+        if (error) return fail(error.message);
+        return ok({ data: { updated: true }, mode: 'update' });
+      }
+      const row = Object.assign({
+        learner_id: learnerId,
+        term_type: termType,
+        year: year
+      }, patch || {}, {
+        updated_at: new Date().toISOString()
+      });
+      const { data, error } = await sb.from('learner_terms').insert(row).select();
+      if (error) return fail(error.message);
+      return ok({ data: (data && data[0]) || null, mode: 'insert' });
+    } catch (err) { return fail(err); }
+  };
   // ---- SYSTEM STATUS METHODS (added 2026-10-25) ----
   TIS.getRowCount = async function (tableName) {
     try {
