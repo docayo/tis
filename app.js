@@ -12632,19 +12632,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
     cursorY += logoSize + h * 0.018;
 
-    ctx.strokeStyle = IDC_COLORS.divider;
-    ctx.lineWidth   = 2;
-    ctx.beginPath();
-    ctx.moveTo(x + padX, cursorY);
-    ctx.lineTo(x + w - padX, cursorY);
-    ctx.stroke();
+    // Divider line removed — passport climbs into banner between logos.
+    cursorY += h * 0.008;
 
-    cursorY += h * 0.018;
-
-    // Photo
+    // Photo — overlaps into banner by 25% of logo size for bottom-space efficiency
     const photoSize = w * 0.46;
     const photoX    = x + (w - photoSize) / 2;
-    const photoY    = cursorY;
+    const photoY    = logoY + logoSize * 0.25;
     card.__layout.photoX    = photoX;
     card.__layout.photoY    = photoY;
     card.__layout.photoSize = photoSize;
@@ -12661,7 +12655,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     const nameUp = String(card.name || '').toUpperCase();
     ctx.fillText(idcFitText(ctx, nameUp, colW), centreCX, cursorY);
 
-    cursorY += h * 0.052;
+    cursorY += h * 0.040;
 
     // Identity block
     const labelX = x + padX;
