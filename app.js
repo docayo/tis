@@ -3735,9 +3735,6 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
         const lbl = document.getElementById('btnToggleInactiveLearnersLabel');
         if (lbl) lbl.textContent = __learnersShowInactive ? 'Hide Inactive' : 'Show Inactive';
         applyLearnerFilter();
-        if (typeof loadAttendanceRegister === 'function' && document.getElementById('attendanceTermView')) {
-          try { loadAttendanceRegister(); } catch (e) {}
-        }
       });
       toggle.__wired = true;
     }
