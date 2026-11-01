@@ -1521,7 +1521,7 @@
       // ---- 1. Learners in this class, active only ----
       const learnerQ = await sb
         .from('learners')
-        .select('id, pin, name, gender, date_of_birth, photo_url, class_name, date_of_withdrawal')
+        .select('id, pin, name, gender, date_of_birth, photo_url, class_name, date_of_withdrawal, class_at_withdrawal, exit_reason')
         .eq('class_name', className)
         .order('name', { ascending: true });
       if (learnerQ.error) return fail(learnerQ.error.message);
