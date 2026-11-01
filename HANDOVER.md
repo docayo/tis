@@ -1,120 +1,266 @@
+Set-Location C:\TIS-CBT
+$md = @'
 # TIS EMIS — Handover
 
-**Live URL:** https://tis-tan.vercel.app/ (Vercel production)
-**Repo:** https://github.com/docayo/tis (`main` branch)
-**Local clone:** `C:\Users\LENOVO\tis-portal`
-**Deployed HEAD as of 2026-10-31:** `4467f04`
+**Last updated:** 2026-11-01
+**Owner:** Dr Ayoola Gabriel Ololade FCIA, NIIA
 
 ---
 
-## Session 2026-10-31 — fee display and term-advance pipeline
+## 1. What this system is
 
-Ten commits landed today. All verified live. In order:
+**The Ideal Schools Educational Management Information System** — a two-tier school operations platform:
 
-| SHA | What |
+### Tier 1 — Online cloud portal
+- **Live:** https://tis-tan.vercel.app/ (moving to `www.tis.ng` when domain is ready)
+- **Backend:** Supabase (`ndsroviwrfjbgaucajri.supabase.co`)
+- **Purpose:** Authoritative cloud record — learners, staff, fees, results, attendance, ID cards, chat, CBT exam
+- **Repo:** https://github.com/docayo/tis → `main` branch
+- **Deploy:** auto on `git push origin main` → Vercel in 30-60s
+
+### Tier 2 — Offline LAN CBT server
+- **Dev:** `C:\TIS-CBT` on Server A (laptop)
+- **Prod:** `C:\TIS-CBT` on Server B → `https://192.168.0.28:3443`
+- **Backend:** SQLite (`data/cbt.sqlite`)
+- **Purpose:** Works without internet — mirrors core portal data, lets school operate on LAN during outages
+- **Auth:** `X-Admin-Password: tis-admin` (single shared admin password)
+- **Deploy:** `push-to-b.ps1` over WinRM (needs TrustedHosts on Server A)
+
+---
+
+## 2. The online ↔ offline integration (built 2026-11-01)
+
+The CBT server is now a **bidirectional mirror** of the online portal for the school's critical operating data. Every page works offline. Cloud sync is explicit (operator clicks buttons).
+
+### What's mirrored
+| Entity | Direction | Table (local) | Table (cloud) |
+|---|---|---|---|
+| Learners | ⇅ pull + push | `learners_local` | `learners` |
+| Learner terms (fees) | ⇅ pull + push | `learner_terms_local` | `learner_terms` |
+| Prospects | ⇅ pull + push | `prospects_local` | `prospective_learners` |
+| Collectible items | ⇅ pull + push | `collectible_items_local` | `collectible_items` |
+| Collectible ticks | ⇅ pull + push | `collectible_ticks_local` | `collectible_ticks` |
+| Fee schedule | ↓ pull only | `fee_schedule_local` | `fee_schedule` |
+| Attendance (learner) | ⇅ separate | `attendance_learner_local` | `attendance_learner` |
+| Attendance (staff) | ⇅ separate | `attendance_staff_local` | `attendance_staff` |
+| Chat | local only | `chat_*` tables | (not mirrored) |
+
+### How sync works
+
+**Pull** (cloud → local):
+- Operator clicks floating green "Pull from Portal" button (any page)
+- CBT fetches all entities in parallel from Supabase
+- Transactional upsert into SQLite — 1 round trip, ~45s for 179 learners + 685 terms + 78 fee schedules
+- Any row with pending local changes (in `portal_sync_queue`) is **skipped** — offline edits preserved
+- No internet → operator sees toast "Pull failed: no connection"
+
+**Push** (local → cloud):
+- Operator clicks floating gold "Push to Portal" button
+- Shows red badge with pending count (auto-updates every 30s)
+- CBT reads `portal_sync_queue` FIFO, sends each row to Supabase
+- Success → `pushed_at` set, row removed from queue
+- Failure → `push_error` set, row stays in queue for retry
+- Response: `{ok, pushed: N, failed: M, details: [...]}`
+
+**No auto-sync.** Nothing leaves the CBT without a button click. This is a design decision — school controls when data goes to cloud.
+
+### Learner lifecycle across both tiers
+
+1. **Prospect created offline** → gets unique TIS### PIN, learner row created with `is_prospect=1`
+2. **Prospect sits CBT exam** → works (same PIN, same table)
+3. **"Add to Class" clicked** → `is_prospect=0`, prospect becomes real learner
+4. **Push to Portal** → learner row + prospect update both sent to Supabase, learner ID remapped to portal's ID
+5. **Portal now shows this learner** — same TIS### PIN, same fees, same identity
+
+---
+
+## 3. Today's commits (2026-11-01)
+
+### CBT repo (`C:\TIS-CBT`)
+| Commit | Description |
 |---|---|
-| `6f5ca15` | FIX1–4: LOCKED learners read live fee picture + recompute after saves |
-| `a89295d` | FIX5A/5B: other_bills_minor is1st gate; snapshot/display alignment |
-| `9fbae0b` | Founders Scholarship support in resolve + recompute |
-| `5e46cba` | Term view: Founders ₦ + Total Schol. ₦ columns |
-| `5ddf68c` | §8.2/§8.3: prepareTermData creates rows; feeSaveBF uses upsert |
-| `2c4e6c6` | prepareTermData: log advanceTermFees return value; warn on failure |
-| `d0249b6` | advanceTermFees: remove notes NULL, add copySchedule option |
-| `5f52268` | upsertLearnerTerm insert path fix (term_label/class_name NOT NULL) |
-| `d0249b6` | advanceTermFees: copySchedule option (see above) |
-| `4467f04` | advanceTermFees: adjInsertRow undeclared (strict ReferenceError) |
+| `4d736ac` | Baseline: pre-Phase-1 CBT state (init git) |
+| `fe1501c` | Phase 2: portal-sync routes — pull + 5 read endpoints |
+| `1c4d03e` | Phase 3: portal-sync write endpoints + push + queue |
+| `e782d5f` | Phase 4.5–6: learners, prospects, fee schedule, sanitizer, upload regex |
 
----
-
-## Current data state (verified 2026-10-31)
-
-**1st term 2026/2027 — active term, in production:**
-- `fee_schedule.tuition` increased per class group: +₦5,000 (Creche→Basic 2), +₦8,000 (Basic 3→5), +₦10,000 (all secondary)
-- `learner_terms.founders_scholarship` = matching per-class amount for all 179 learners (1st term only)
-- Net effect for parents: tuition up + Founders down = same net bill as before the increase
-- All 179 learners: `learner_terms.bill` synced via bulk recompute
-
-**2nd term 2026/2027 — pre-seeded, inactive:**
-- 26 `fee_schedule` rows (copied from 1st)
-- 39 `fee_adjustments` rows (₦446,000.01 total — personal scholarships carried)
-- 179 `learner_terms` rows (B/F = 1st term C/F)
-- Founders = 0 (correct — off for 2nd/3rd term)
-- TIS0224 verified: tuition 35,000 − scholarship 12,000 − founders 0 = bill 23,000; B/F 62,500 → C/F 85,500
-
-**3rd term 2026/2027 — pre-seeded, inactive:**
-- 26 `fee_schedule` rows (copied from 2nd)
-- 39 `fee_adjustments` rows (₦446,000.01 — personal scholarships carried forward)
-- 179 `learner_terms` rows (B/F = 2nd term C/F)
-- Founders = 0
-- TIS0224 verified: tuition 35,000 − scholarship 12,000 − founders 0 = bill 23,000; B/F 85,500 → C/F 108,500
-
-**1st term 2027/2028 — empty, awaiting admin preparation:**
-- 0 `fee_schedule` (admin must set up new-year prices)
-- 0 `fee_adjustments`
-- 0 `learner_terms`
-- Year-advance test cleaned up after verification. `advanceTermFees({copySchedule: false})` confirmed working — copies fee_adjustments only, skips fee_schedule.
-
----
-
-## Term-advance behavior — verified end-to-end
-
-| Path | Behavior |
+### Portal repo (`C:\Users\LENOVO\tis-portal` → Vercel)
+| Commit | Description |
 |---|---|
-| **1st → 2nd** same year | Copies fee_schedule (26) + fee_adjustments (39). Creates learner_terms with B/F from prev C/F |
-| **2nd → 3rd** same year | Same as above |
-| **3rd → 1st** year advance | **Only** copies fee_adjustments (39). Fee_schedule untouched — admin sets up new-year fees separately. Creates learner_terms with B/F |
-| Founders scope | Only 1st term 2026/2027. Zero on 2nd/3rd and future 1st terms (unless admin explicitly sets) |
-| Personal scholarship | Carries every term and across years (39 learners, ₦446,000.01 same cohort) |
-
-**Runtime for advance:** ~250s for 179 learners (sequential API calls). School should be told: click "Set Active" and don't touch the browser for 4–5 minutes until the done toast appears.
+| `5ddf504` | Fix attendance register — filter sees `class_at_withdrawal` + `exit_reason` |
+| `548f277` | Show Inactive toggle — extended to attendance, persists across pages |
+| `1a7710d` | Remove cross-page attendance reload — no more "Pick a class first" toast |
+| `9b33653` | Show Inactive toggle — applies globally (learners, attendance, fees, broadsheet, ID cards, results) |
+| `b48184e` | ID card: remove divider, passport overlaps into banner, ~112px bottom space gained |
 
 ---
 
-## Verification rules (hard-won this session)
+## 4. Features added today (2026-11-01)
 
-1. Any test that calls `resolveLearnerFeePicture` must use `select=*` on `learner_terms` — partial selects flip LOCKED/live branch and produce false MISMATCH.
-2. Never use `new RegExp` with backslash patterns through PowerShell — use `.includes()`.
-3. Every saved `.ps1` needs byte-count verification BEFORE running. Truncated pastes are silent — `powershell -File` produces no output when it succeeds with a stub.
-4. `.ps1` files with UTF-8 no BOM trigger codepage trap on PS 5.1 if they contain any byte >127 — sanitize to ASCII before running.
-5. `[System.IO.File]::*` requires absolute paths — `Set-Location` doesn't affect the process working directory.
-6. Internal functions (`feesLoadAdjustments`, `feeRecomputeSnapshot` internals) are NOT on `window` — verify by fetching `/app.js` and grepping content instead.
-7. **Paste target discipline:** PowerShell commands → PowerShell terminal. JS blocks (start with `(async` or `console.log`) → browser DevTools console (F12). Python file content → never paste directly; write to disk via PowerShell here-string first. Getting this wrong three times this session cost ~1 hour.
-8. **Test the actual write path before commit** — syntax check only catches parse errors, not runtime failures (`adjInsertRow` undeclared passed `node --check` but failed at runtime).
-9. Check return value of `advanceTermFees`, not just try/catch — returns `{ok:false,error:...}` on failure, doesn't throw.
+### CBT offline portal — 6 phases completed
 
-## Order rule for DB + code changes
+**Phase 1** — Schema migrations (additive only, backup-first):
+- `learner_terms_local` — full fee history mirror
+- `fee_schedule_local` — class bills for offline display
+- `prospects_local` + `linked_learner_id` column
+- `collectible_items_local` + `collectible_ticks_local`
+- `portal_sync_queue` — pending-change tracker
+- `learner_counter` — auto TIS### PIN
+- `is_prospect` flag on `learners_local`
 
-**Code first, DB second.**
-1. Patch → verify → commit → push → confirm deploy live (fetch `/app.js` marker)
-2. **Then** apply DB change
-3. Never DB first — we created a real production exposure window this session by applying fee_schedule first, before the code that reads it was deployed.
+**Phase 2** — Read endpoints (`routes/portal-sync.js`):
+- `GET /api/portal/health`
+- `GET /api/portal/status`
+- `GET /api/portal/learners` (filters `is_prospect=1` by default; `?includeProspects=1` opts in)
+- `GET /api/portal/prospects`
+- `GET /api/portal/collectibles`
+- `GET /api/portal/terms/:learnerId`
+- `GET /api/portal/fee-schedule/:className`
+- `GET /api/portal/fee-schedule-all`
+- `POST /api/portal/pull`
+
+**Phase 3** — Write endpoints (`routes/portal-sync-write.js`):
+- `PUT /api/portal/learners/:id`
+- `POST /api/portal/prospects` — auto TIS### PIN + learner row
+- `PUT /api/portal/prospects/:id` — edit + enroll + admit + decline
+- `PUT /api/portal/tick` — collectible mark
+- `POST /api/portal/collectible-item`
+- `POST /api/portal/payment` — record part-payment
+- `PUT /api/portal/balance-adjust` — override B/F (for internal corrections)
+- `POST /api/portal/verify-operator01` — Section C gate
+- `POST /api/portal/push` — process queue
+
+**Phase 4.5** — Learner modal (`public/admin-portal.js`):
+- Click any learner row (in `pane-learners`) → operator password prompt
+- Modal with 3 tabs: Profile / Payment / Print Learner Card
+- **Profile tab:**
+  - Section A — Identity (all fields editable)
+  - Section B — Fees (bill breakdown, payment history, balance C/F, read-only)
+  - Section C — History & Origin — **locked by default**, "Unlock (Operator 01)" button asks for `CBT_OPERATOR_01_PW`
+- **Payment tab:** record ₦500 test → refund tested → verified in Supabase
+- **Print tab:** 80mm thermal format (matches online exactly)
+- Copy/cut/right-click disabled on modal
+- Auto-reset operator unlock on modal close
+
+**Phase 6** — Prospect flow:
+- Prospect auto-gets **TIS###** PIN (not TISP###)
+- Creates learner row with `is_prospect=1` → **can sit CBT exam immediately**
+- Section A + Section B (fees from `fee_schedule_local`) visible
+- Test Results tab (from CBT `sittings` table) with per-paper A4 print
+- **"Add to Class"** button → `is_prospect=0` → learner appears in Learners pane
+- Legacy TISP prospects still admitted via fallback (creates learner at admit time)
+
+**Fee Schedule notice board:**
+- Floating purple button (bottom-right of every admin page)
+- A4 print with classes grouped by identical bill (e.g. 26 classes → 11 cards)
+- Bank footer with 4 school accounts (GTBank / Opay / Polaris / Jaiz)
+
+**Sanitizer:**
+- `sanitizePortalFloat()` runs on boot + every 3s
+- Removes stray `[object HTMLDivElement]` text nodes from `#portal-float`
+- Self-healing against future broken patches
+
+**Upload regex fix:**
+- `admin-upload-v2.js:71` — `/^[A-D]\.test(ans)/` → `/^[A-D]$/.test(ans)`
+- Fixes Excel bulk question upload SyntaxError
+
+### Portal fixes — today
+
+**Exited learners global filter:**
+- Yellow bar on Learners pane: "Show exited learners (inactive)"
+- Persists via `localStorage` key `tis_showInactiveLearners`
+- Applies to: learners list, attendance register, fees register, broadsheet scope, results, ID cards
+- Prospect rows are separately excluded (`is_prospect=1`)
+
+**ID card layout (canvas, [S21] section):**
+- Removed divider line between logo row and passport
+- Passport photo Y position moved up — overlaps 25% into banner (between S and M logos)
+- Name-to-identity gap tightened from `h*0.052` to `h*0.040`
+- **~112px bottom space gained** — QR no longer touches bottom border
+- Confirmed working on second device
+
+### Chat improvements — today
+
+**Ringtone system:**
+- Web Audio API oscillator (no external files)
+- 3 presets: **Beep** (900Hz) / **Chime** (dual-tone 1200+800Hz) / **Pulse** (triple 1500Hz triangle)
+- Per-device selection via `localStorage` `tis_ringtone_preset`
+- Bell button (bottom-right of chat page) cycles preset + plays preview
+- 30s auto-stop if caller gives up
+- Vibration on mobile: `navigator.vibrate([400,200,400,200,400])`
+- Auto-unlocks AudioContext on first user gesture
+
+**Helper functions ready (not wired):**
+- `startRingback()` / `stopRingback()` — caller-side ringback tone (440Hz, 1s on / 2s off)
+- End-propagation logic pending
 
 ---
 
-## Next session open items
+## 5. What's tested and working
 
-| § | Item | Priority |
+| # | Feature | Verified |
 |---|---|---|
-| — | Optimize `prepareTermData` runtime — batch `upsertLearnerTerm` into single SQL insert (250s → ~3s) | Medium (blocks UX when admin advances) |
-| §8.4 | Status page checks shallow | Low |
-| §8.5 | Historical 3rd-term 2025/2026 debt reconciliation | Medium (needs school input) |
-
-**Not blocking** — the school can advance terms whenever ready. Advance-day checklist:
-
-1. Admin sets up `1st 2027` `fee_schedule` for all 26 classes
-2. Admin promotes learners (updates `learners.class_name`)
-3. Admin clicks "Set Active" on 1st 2027
-4. Wait 4–5 minutes (don't refresh browser)
-5. Console log confirms: `[prepareTermData] advanceTermFees OK - mode=year(adj-only) classes=0 adj=39` + `created=179 failed=0`
-
-If anything fails, the toast (`Warning: fee advance failed - ...`) + console log surface it immediately.
+| 1 | Learner modal → Profile A/B/C, C gated | ✅ TIS0224 |
+| 2 | Payment record → push → Supabase updated | ✅ ₦500 test, cleaned |
+| 3 | Print Learner Card 80mm + bank footer | ✅ |
+| 4 | Prospect → Profile + Section B fees | ✅ TIS0277 (Test Sunday) |
+| 5 | Prospect Test Results → A4 per-sitting | ✅ |
+| 6 | "Add to Class" → learner visible + same PIN | ✅ |
+| 7 | New prospect TIS### → CBT login | ✅ |
+| 8 | Fee Schedule button → 11 grouped cards | ✅ 26 classes → 11 groups |
+| 9 | Exited filter — 124 active / 55 hidden | ✅ All panes |
+| 10 | Sanitizer — `[object HTMLDivElement]` gone | ✅ |
+| 11 | ID card on Vercel — no divider, QR has margin | ✅ Confirmed on 2 devices |
+| 12 | Ringtone presets — beep/chime/pulse | ✅ Beep audible |
 
 ---
 
-## Test URLs (verified working)
+## 6. What's pending (next session)
 
-- Production: https://tis-tan.vercel.app/ (append `?v=<timestamp>` for cache-bust)
-- Supabase project: `ndsroviwrfjbgaucajri.supabase.co`
-- Anon key in `supabase-client.js` (public)
+### Chat — 2 items (~30 min)
+- **Ringback tone on caller** — helpers added, need to wire into `startVoiceCall` (start on "Ringing...") and audio-connect event (stop). Requires 1 function body extraction from `startCallPolling`.
+- **End propagation** — when 1 side hangs up, other side ends. Requires wiring into `startCallPolling` (detect `active === null` → cleanup).
 
-**Deploy trigger:** `git push origin main` → Vercel auto-deploys in 30–60s. Confirm live via `fetch('/app.js?_=' + Date.now())` + `.includes(marker)` before trusting.
+### CBT Collectibles (Phase 7, ~2-3 hrs)
+- `pane-collectibles` currently placeholder
+- Backend endpoints exist (`/api/portal/tick`, `/api/portal/collectible-item`)
+- Need UI: items manager + per-learner checklist + push
+- Mirror of online `[S07c] Collectibles` section
+
+### Deploy CBT to Server B (Phase 8, ~2 hrs)
+- WinRM push from A (`192.168.120.55`) to B (`192.168.0.28`)
+- `push-to-b.ps1` exists — verify it copies new files
+- Backup Server B DB before first push
+- Rollback: `pull-from-b.ps1` to restore
+
+### www.tis.ng domain (when live)
+- Point Vercel custom domain to portal
+- Configure Let's Encrypt cert
+- Deferred: chat push notifications for closed browser (needs PWA + push service worker)
+
+### Handover §10 carryovers
+- **§8.4** — status page checks shallow (low priority)
+- **§8.5** — historical 3rd Term 2025/2026 debt reconciliation (needs school input)
+
+---
+
+## 7. URLs and infrastructure
+
+| Service | URL | Notes |
+|---|---|---|
+| Portal (cloud) | https://tis-tan.vercel.app/ | Auto-deploy on `git push origin main` |
+| Portal (custom domain, pending) | https://www.tis.ng/ | When DNS + cert ready |
+| CBT dev | http://localhost:3000 / https://localhost:3443 | Server A laptop, HTTPS for camera |
+| CBT prod | https://192.168.0.28:3443 | Server B on school LAN |
+| Supabase | `ndsroviwrfjbgaucajri.supabase.co` | Anon key in `supabase-client.js` |
+| Supabase (service role) | in CBT `.env` as `SUPABASE_SERVICE_KEY` | Used by `/api/portal/pull` and `/api/portal/push` |
+
+---
+
+## 8. Rollback
+
+**Portal (if a bad commit ships):**
+```powershell
+Set-Location C:\Users\LENOVO\tis-portal
+git revert HEAD --no-edit
+git push origin main
