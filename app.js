@@ -2400,7 +2400,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       collectSetFeedback('Search failed: ' + ((r && r.error) || 'unknown'), 'error');
       return;
     }
-       const rows = (r.data || []).filter(function (l) { return !learnerIsInactive(l); });
+       const rows = (r.data || []).filter(function (l) { return __learnersShowInactive || !learnerIsInactive(l); });
 
     if (rows.length === 0) {
       collectSetFeedback('No active learner matched "' + q + '".', 'error');
@@ -5315,7 +5315,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return;
     }
      const learners = (learnerR.data || [])
-      .filter(function (l) { return !learnerIsInactive(l); });
+      .filter(function (l) { return __learnersShowInactive || !learnerIsInactive(l); });
     if (learners.length === 0) {
       setHTML('feesContent', emptyHTML('fa-users', 'No active learners'));
       return;
@@ -9898,7 +9898,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const learnersR = await window.TIS.listLearners();
       const learners = (learnersR && learnersR.ok ? learnersR.data : [])
              .filter(function (l) {
-          if (learnerIsInactive(l)) return false;
+          if (!__learnersShowInactive && learnerIsInactive(l)) return false;
           return l.class_name === cls;
         })
         .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
@@ -11304,7 +11304,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
   async function bsFetchLearnersInScope(opts) {
     const r = await window.TIS.listLearners();
     if (!r || !r.ok) return [];
-      let list = (r.data || []).filter(function (l) { return !learnerIsInactive(l); });
+      let list = (r.data || []).filter(function (l) { return __learnersShowInactive || !learnerIsInactive(l); });
     if (opts.scope === 'class' && opts.classFilter) {
       list = list.filter(function (l) { return l.class_name === opts.classFilter; });
     } else if (opts.scope === 'student' && opts.singlePin) {
@@ -12326,7 +12326,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
 
           const learners = (learnerR && learnerR.ok ? learnerR.data : [])
         .filter(function (l) {
-          if (learnerIsInactive(l)) return false;
+          if (!__learnersShowInactive && learnerIsInactive(l)) return false;
           return canonicalSet[l.class_name];
         });
 
