@@ -1514,7 +1514,7 @@
   // ================================================================
   // [ATTENDANCE_LEARNER]
   // ================================================================
-  TIS.getAttendanceRegister = async function (className, termType, year) {
+  TIS.getAttendanceRegister = async function (className, termType, year, includeInactive) {
     try {
       const sb = await loadSdk();
 
@@ -1525,7 +1525,8 @@
         .eq('class_name', className)
         .order('name', { ascending: true });
       if (learnerQ.error) return fail(learnerQ.error.message);
-           const learners = (learnerQ.data || []).filter(function (l) {
+           const __allLearners = learnerQ.data || [];
+      const learners = includeInactive ? __allLearners : __allLearners.filter(function (l) {
         const w = (l.date_of_withdrawal  || '').toString().trim();
         const k = (l.class_at_withdrawal || '').toString().trim();
         const r = (l.exit_reason         || '').toString().trim();

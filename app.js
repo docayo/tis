@@ -376,7 +376,12 @@
   // ================================================================
 
    // ---------- Module-scope constants ----------
-  let __learnersShowInactive = false;   // toggled by the toolbar button
+  let __learnersShowInactive = (function () {
+    try { return localStorage.getItem('tis_showInactiveLearners') === '1'; } catch (e) { return false; }
+  })();   // persisted; shared by learners, attendance, ID cards
+  function __persistShowInactive() {
+    try { localStorage.setItem('tis_showInactiveLearners', __learnersShowInactive ? '1' : '0'); } catch (e) {}
+  }
 
   const CONTACT_LABELS  = { father: 'Father', mother: 'Mother', guardian: 'Guardian' };
   const RELIGION_OPTIONS = ['Christianity', 'Islam', 'Traditionalist'];
@@ -3726,9 +3731,13 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     if (toggle && !toggle.__wired) {
       toggle.addEventListener('click', function () {
         __learnersShowInactive = !__learnersShowInactive;
+        __persistShowInactive();
         const lbl = document.getElementById('btnToggleInactiveLearnersLabel');
         if (lbl) lbl.textContent = __learnersShowInactive ? 'Hide Inactive' : 'Show Inactive';
         applyLearnerFilter();
+        if (typeof loadAttendanceRegister === 'function' && document.getElementById('attendanceTermView')) {
+          try { loadAttendanceRegister(); } catch (e) {}
+        }
       });
       toggle.__wired = true;
     }
@@ -6374,7 +6383,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     setHTML('attendanceTermView', pageLoaderHTML('Loading register…'));
     startLoader();
 
-    const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10));
+    const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10), __learnersShowInactive);
     if (!r || !r.ok) {
       stopLoader();
       setHTML('attendanceTermView', errorHTML('Could not load register', r && r.error));
@@ -7248,7 +7257,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     attClosePrintDialog();
 
     startLoader();
-    const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10));
+    const r = await window.TIS.getAttendanceRegister(cls, term, parseInt(year, 10), __learnersShowInactive);
 
     // Also fetch the B/F map so we can print it in the analysis block.
     let bfMap = {};
