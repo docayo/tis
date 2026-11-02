@@ -835,7 +835,41 @@
       if (error) return fail(error.message);
       return ok({ updated: true });
     } catch (err) { return fail(err); }
+  }
+
+  // Added 2026-11-02 — statutory item X / restore support
+  TIS.upsertFeeLearnerItemOverride = async function (row) {
+    try {
+      const sb = await loadSdk();
+      const { data, error } = await sb.from('fee_learner_item_overrides')
+        .insert(row)
+        .select()
+        .maybeSingle();
+      if (error) {
+        // Duplicate (unique constraint violation) — treat as success, row already exists
+        if (error.code === '23505' || /duplicate|already exists/i.test(error.message || '')) {
+          return ok({ already_exists: true });
+        }
+        return fail(error.message);
+      }
+      return ok(data);
+    } catch (err) { return fail(err); }
   };
+
+  TIS.deleteFeeLearnerItemOverride = async function (learnerId, termType, year, itemKey) {
+    try {
+      const sb = await loadSdk();
+      const { error } = await sb.from('fee_learner_item_overrides')
+        .delete()
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .eq('item_key', itemKey);
+      if (error) return fail(error.message);
+      return ok({ deleted: true });
+    } catch (err) { return fail(err); }
+  };
+;
 
   // Upsert - INSERT if row missing, UPDATE if present.
   // Used by feeSaveBF (allows setting B/F on a learner without an existing row)
