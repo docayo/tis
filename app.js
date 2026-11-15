@@ -400,10 +400,11 @@
   // learner fee card). Four school accounts, printed verbatim.
   // ================================================================
   const TIS_BANK_ACCOUNTS = [
+    { bank: 'Providus Bank',       acct: '1311472975', name: 'The Ideal Schools Ltd' },
     { bank: 'Guaranty Trust Bank', acct: '3003353905', name: 'The Ideal Schools Ltd' },
-    { bank: 'Opay',                acct: '8055535925', name: 'IdealMe RealYou' },
+    { bank: 'Jaiz Bank',           acct: '0025357488', name: 'The Ideal Schools Ltd' },
     { bank: 'Polaris Bank',        acct: '4091754359', name: 'The Ideal Schools Ltd' },
-    { bank: 'Jaiz Bank',           acct: '0025357488', name: 'The Ideal Schools Ltd' }
+    { bank: 'Moniepoint',          acct: '8055535925', name: 'The Ideal Schools Ltd' }
   ];
 
   function tisBankBlockHtml80mm() {
@@ -940,9 +941,33 @@
       return;
     }
     const d = learnerR.data;
-    const termRow = termsR && termsR.ok ? termsR.data.row : null;
-    const term    = termsR && termsR.ok ? termsR.data.term : null;
-    const termLabel = term ? term.label : 'No active term';
+    let termRow = termsR && termsR.ok ? termsR.data.row : null;
+    let term    = termsR && termsR.ok ? termsR.data.term : null;
+    let termLabel = term ? term.label : 'No active term';
+
+    const __isExited = (typeof learnerIsInactive === 'function') ? learnerIsInactive(d) : false;
+    if (__isExited) {
+      try {
+        const allR = await window.TIS.getLearnerTerms(d.id);
+        if (allR && allR.ok && Array.isArray(allR.data) && allR.data.length) {
+          const sorted = allR.data.slice().sort(function (a, b) {
+            const ya = parseInt(a.year, 10) || 0, yb = parseInt(b.year, 10) || 0;
+            if (yb !== ya) return yb - ya;
+            const oa = { '3rd': 3, '2nd': 2, '1st': 1 }[String(a.term_type || '').toLowerCase()] || 0;
+            const ob = { '3rd': 3, '2nd': 2, '1st': 1 }[String(b.term_type || '').toLowerCase()] || 0;
+            return ob - oa;
+          });
+          const last = sorted[0];
+          termRow = last;
+          term = {
+            term_type: last.term_type,
+            year: last.year,
+            label: last.term_label || (String(last.term_type || '').toUpperCase() + ' TERM ' + last.year + '/' + (last.year + 1))
+          };
+          termLabel = 'EXITED — last term ' + term.label;
+        }
+      } catch (e) {}
+    }
 
     let prevTermRow = null;
     if (term) {
@@ -1069,7 +1094,7 @@
       html += '</div></div>';
     }
 
-    if (canB) {
+    if (canB && !__isExited) {
       html += '<div class="expandable open lbSec"><div class="expandable-header" onclick="this.parentElement.classList.toggle(\'open\')">Section B — Fees (' + esc(termLabel) + ')</div><div class="expandable-body">';
       html += '<div style="display:flex;justify-content:flex-end;margin-bottom:6px;">' +
                 '<label style="font-size:11px;cursor:pointer;color:#0d4d26;user-select:none;">' +
@@ -1240,10 +1265,21 @@
         });
         html += '</div></details>';
 
+      
       html += infoRow('Blood Group / Genotype', d.blood_group);
       html += infoRow('Allergy', d.allergy);
       html += infoRow('2nd Phone (' + ph2.label + ')', ph2.value);
       html += sourceNote;
+      html += '</div></div>';
+    }
+        if (__isExited) {
+      html += '<div class="expandable open lbSec"><div class="expandable-header">Fee summary (exited)</div><div class="expandable-body">';
+      html += '<div class="info-row" style="background:#fff8e1;">' +
+              '<span class="info-label">Exited learner — no further term charges</span>' +
+              '<span class="info-value">' + esc(termLabel) + '</span></div>';
+      html += '<div class="info-row" style="border-top:2px solid #c8e6c9;font-weight:800;background:#fff8e1;">' +
+              '<span class="info-label">Balance C/F (at exit)</span>' +
+              '<span class="info-value">' + moneyOrDash(fee.balance_cf) + '</span></div>';
       html += '</div></div>';
     }
     if (canC) {
@@ -3355,8 +3391,30 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       return;
     }
 
-    const term    = termR.data.term;
-    const termRow = termR.data.row;
+    let term    = termR.data.term;
+    let termRow = termR.data.row;
+    const __isExited1 = (typeof learnerIsInactive === 'function') ? learnerIsInactive(learner) : false;
+    if (__isExited1) {
+      try {
+        const allR = await window.TIS.getLearnerTerms(learner.id);
+        if (allR && allR.ok && Array.isArray(allR.data) && allR.data.length) {
+          const sorted = allR.data.slice().sort(function (a, b) {
+            const ya = parseInt(a.year, 10) || 0, yb = parseInt(b.year, 10) || 0;
+            if (yb !== ya) return yb - ya;
+            const oa = { '3rd': 3, '2nd': 2, '1st': 1 }[String(a.term_type || '').toLowerCase()] || 0;
+            const ob = { '3rd': 3, '2nd': 2, '1st': 1 }[String(b.term_type || '').toLowerCase()] || 0;
+            return ob - oa;
+          });
+          const last = sorted[0];
+          termRow = last;
+          term = {
+            term_type: last.term_type,
+            year: last.year,
+            label: last.term_label || (String(last.term_type || '').toUpperCase() + ' TERM ' + last.year + '/' + (last.year + 1))
+          };
+        }
+      } catch (e) {}
+    }
 
     const fee = await resolveLearnerFeePicture(learner, termRow, term, term.year);
 
@@ -3474,9 +3532,33 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
     stopLoader();
     if (!r || !r.ok || !r.data) { showToast('Could not load learner', 'error'); return; }
     const d = r.data;
-    const termRow = termsR && termsR.ok ? termsR.data.row : null;
-    const term    = termsR && termsR.ok ? termsR.data.term : null;
-    const termLabel = term ? term.label : 'No active term';
+    let termRow = termsR && termsR.ok ? termsR.data.row : null;
+    let term    = termsR && termsR.ok ? termsR.data.term : null;
+    let termLabel = term ? term.label : 'No active term';
+
+    const __isExited2 = (typeof learnerIsInactive === 'function') ? learnerIsInactive(d) : false;
+    if (__isExited2) {
+      try {
+        const allR = await window.TIS.getLearnerTerms(d.id);
+        if (allR && allR.ok && Array.isArray(allR.data) && allR.data.length) {
+          const sorted = allR.data.slice().sort(function (a, b) {
+            const ya = parseInt(a.year, 10) || 0, yb = parseInt(b.year, 10) || 0;
+            if (yb !== ya) return yb - ya;
+            const oa = { '3rd': 3, '2nd': 2, '1st': 1 }[String(a.term_type || '').toLowerCase()] || 0;
+            const ob = { '3rd': 3, '2nd': 2, '1st': 1 }[String(b.term_type || '').toLowerCase()] || 0;
+            return ob - oa;
+          });
+          const last = sorted[0];
+          termRow = last;
+          term = {
+            term_type: last.term_type,
+            year: last.year,
+            label: last.term_label || (String(last.term_type || '').toUpperCase() + ' TERM ' + last.year + '/' + (last.year + 1))
+          };
+          termLabel = 'EXITED — last term ' + term.label;
+        }
+      } catch (e) {}
+    }
 
     const ph1 = phoneFor(d, 1);
     const ph2 = phoneFor(d, 2);
