@@ -400,22 +400,23 @@
   // learner fee card). Four school accounts, printed verbatim.
   // ================================================================
   const TIS_BANK_ACCOUNTS = [
-    { bank: 'Providus Bank',       acct: '1311472975', name: 'The Ideal Schools Ltd' },
-    { bank: 'Guaranty Trust Bank', acct: '3003353905', name: 'The Ideal Schools Ltd' },
-    { bank: 'Jaiz Bank',           acct: '0025357488', name: 'The Ideal Schools Ltd' },
-    { bank: 'Polaris Bank',        acct: '4091754359', name: 'The Ideal Schools Ltd' },
-    { bank: 'Moniepoint',          acct: '8055535925', name: 'The Ideal Schools Ltd' }
+    { bank: 'Providus Bank',  acct: '1311472975', name: 'The Ideal Schools Ltd' },
+    { bank: 'GTB',            acct: '3003353905', name: 'The Ideal Schools Ltd' },
+    { bank: 'Moniepoint',     acct: '8055535925', name: 'The Ideal Schools Ltd' },
+    { bank: 'Jaiz Bank',      acct: '0025357488', name: 'The Ideal Schools Ltd' },
+    { bank: 'Polaris Bank',   acct: '4091754359', name: 'The Ideal Schools Ltd' }
   ];
 
   function tisBankBlockHtml80mm() {
     let html = '<div class="banks">';
     html += '<div class="banks-hdr">SCHOOL ACCOUNTS</div>';
+    html += '<div class="bank-company">The Ideal Schools Ltd</div>';
     TIS_BANK_ACCOUNTS.forEach(function (a) {
       html += '<div class="bank-row">' +
                 '<span class="bk">' + esc(a.bank) + '</span>' +
                 '<span class="ac">' + esc(a.acct) + '</span>' +
               '</div>';
-      html += '<div class="bank-name">' + esc(a.name) + '</div>';
+      html += '<div class="bank-sep"></div>';
     });
     html += '</div>';
     return html;
@@ -430,7 +431,9 @@
       '.bank-row .bk{font-weight:700;}' +
       '.bank-row .ac{font-family:"Courier New",monospace;font-weight:900;letter-spacing:1px;}' +
       '.bank-name{font-size:10px;color:#333;padding-bottom:2px;' +
-                 'border-bottom:1px dotted #999;margin-bottom:2px;}';
+                 'border-bottom:1px dotted #999;margin-bottom:2px;}' +
+      '.bank-company{font-size:10px;font-weight:700;text-align:center;padding:2px 0 4px;color:#000;border-bottom:1px dashed #000;margin-bottom:4px;}' +
+      '.bank-sep{border-bottom:1px dashed #999;height:0;margin:3px 0;}';
   }
   // ---------- Populate the Terms-tab exit-reason dropdown ----------
   (function populateExitReasons() {
@@ -2197,7 +2200,7 @@
       'html,body{width:72mm;margin:0;padding:0;}' +
       'body{font-family:"Arial",sans-serif;font-size:14px;line-height:1.35;color:#000;}' +
       '*{box-sizing:border-box;}' +
-      '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin:0 0 8px;}' +
+        '.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:4px;margin:0 0 8px;}' +
       '.hdr img{height:36px;}' +
       '.hdr h1{font-size:18px;font-weight:900;margin:4px 0 2px;}' +
       '.hdr .sub{font-size:11px;font-style:italic;}' +
