@@ -1,4 +1,4 @@
-﻿{
+{
   "rewrites": [
     { "source": "/g/:token",   "destination": "/index.html" },
     { "source": "/s/:code",    "destination": "/index.html" },
