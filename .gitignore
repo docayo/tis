@@ -1,0 +1,35 @@
+﻿# Dependency & build artifacts
+node_modules/
+.vercel/
+
+# Local env files — NEVER commit (contains service keys)
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local backups (your existing folder pattern)
+_backups_*/
+
+# Backup files created by editor / manual snapshots
+*.bak
+*.bak-*
+*.bak_*
+*.bak.*
+
+# Python patch scripts (one-off, not part of the build)
+_patch_*.py
+
+# Loose scratch files
+"new 5"
+
+# Vercel CLI local cache
+.vercelignore
+
+# Logs
+*.log
+npm-debug.log*
