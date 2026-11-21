@@ -1,10 +1,4 @@
-﻿// Vercel serverless function - developer script-assistance proxy.
-// Placed at /api/ai.
-// Calls DeepSeek via Vercel AI Gateway using AI_GATEWAY_API_KEY from env.
-// Requires header x-tis-dev-key matching DEV_AI_KEY env to prevent public abuse.
-// Does NOT expose the DeepSeek key or the AI Gateway key to the browser.
-
-const AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1/chat/completions';
+﻿const AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const MODEL = 'deepseek/deepseek-v4.1-flash-fast';
 
 const ALLOWED_ORIGINS = [
@@ -29,7 +23,7 @@ function safeStr(v, max) {
   return s;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   setCors(req, res);
 
   if (req.method === 'OPTIONS') {
@@ -41,7 +35,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Gate - only the developer who knows DEV_AI_KEY can use this endpoint
   const gate = process.env.DEV_AI_KEY || '';
   if (!gate) {
     res.status(500).json({ ok: false, error: 'DEV_AI_KEY not configured on server' });
@@ -59,7 +52,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Body: { prompt: string, system?: string, max_tokens?: number, temperature?: number }
   let body = req.body;
   if (typeof body === 'string') {
     try { body = JSON.parse(body); } catch (_) { body = {}; }
@@ -121,4 +113,4 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(502).json({ ok: false, error: 'AI Gateway error: ' + (err && err.message ? err.message : String(err)) });
   }
-}
+};
