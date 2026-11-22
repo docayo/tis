@@ -13546,6 +13546,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
           resultsWatermarkHtml() +
           window.TISReport.resultsHeaderHtml('Statement of Result', learner) +
           window.TISReport.resultsStudentBar(learner, pop, term, year, att) +
+          feeGateBanner +
           '<div class="rc-body-grid">' +
             '<div class="rc-body-main rc-scroll">' +
               '<table class="rc-table">' +
@@ -13586,7 +13587,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
               '</table>' +
             '</div>' +
             '<div class="rc-body-side">' +
-              window.TISReport.resultsPsychomotorBlock(ratings) +
+              window.TISReport.resultsPsychomotorBlock(ratingsForCard) +
               window.TISReport.resultsFeeBreakdownBlock(feeBreakdown) +
             '</div>' +
           '</div>' +
@@ -13603,7 +13604,7 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
             learner,
             resume,
             '',
-            ratings,
+            ratingsForCard,
             promotedTo,
             learner.pin
           ) +
