@@ -1907,7 +1907,7 @@
         clearance:         balanceCf <= 0 ? new Date().toISOString().slice(0, 10) : '',
         updated_at:        new Date().toISOString()
       });
-    } catch (e) { /* silent */ }
+    } catch (e) { console.error("[feeRecomputeSnapshot]", e && (e.message || e)); try { showToast("Fee recalc failed: " + (e && (e.message || e)), "error"); } catch (_) {} }
   }
   window.feeRecomputeSnapshot = feeRecomputeSnapshot;
   // ================================================================
