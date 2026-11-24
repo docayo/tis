@@ -33,6 +33,186 @@
 // ================================================================
 
 (function () {
+
+  // ----------------------------------------------------------------
+  // ensureLearnerTerm-2026-11-24: auto-create a learner_terms row when
+  // a payment or part-payment is attempted for a learner with no active
+  // term record. Backfills from fee_schedule so bill/balance match the
+  // class the learner is enrolled in. Returns the created row (or null).
+  // ----------------------------------------------------------------
+  async function ensureLearnerTerm(learnerId, termType, year) {
+    try {
+      // Double-check it does not exist (race-safe enough for UI usage)
+      const { data: existing } = await supabase
+        .from('learner_terms')
+        .select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (existing) return existing;
+
+      // Fetch learner + fee schedule
+      const { data: learner } = await supabase
+        .from('learners')
+        .select('id, class_name, name, pin')
+        .eq('id', learnerId)
+        .maybeSingle();
+      if (!learner) return null;
+
+      const { data: sched } = await supabase
+        .from('fee_schedule')
+        .select('*')
+        .eq('class_name', learner.class_name)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+
+      const num = function (v) { return Number(v || 0); };
+      const is1st = (termType === '1st');
+      const bill = is1st && sched
+        ? num(sched.tuition) + num(sched.other_bills_major) + num(sched.other_bills_minor)
+          + num(sched.books) + num(sched.uniform) + num(sched.sportswear)
+          + num(sched.waist_coat) + num(sched.tie) + num(sched.extra_lesson)
+          + num(sched.special_lesson) + num(sched.registration_fee)
+        : num(sched && sched.tuition);
+      const label = ({ '1st': '1ST', '2nd': '2ND', '3rd': '3RD' })[termType] + ' TERM ' + year + '/' + (year + 1);
+
+      const row = {
+        learner_id: learnerId,
+        term_type: termType,
+        year: year,
+        term_label: label,
+        class_name: learner.class_name,
+        bill: bill,
+        other_bill: 0,
+        tuition: is1st && sched ? num(sched.tuition) : (sched ? num(sched.tuition) : 0),
+        scholarship: 0,
+        founders_scholarship: 0,
+        additions: 0,
+        other_bills_major: is1st && sched ? num(sched.other_bills_major) : 0,
+        other_bills_minor: is1st && sched ? num(sched.other_bills_minor) : 0,
+        books: is1st && sched ? num(sched.books) : 0,
+        uniform: is1st && sched ? num(sched.uniform) : 0,
+        sportswear: is1st && sched ? num(sched.sportswear) : 0,
+        waist_coat: is1st && sched ? num(sched.waist_coat) : 0,
+        tie: is1st && sched ? num(sched.tie) : 0,
+        extra_lesson: is1st && sched ? num(sched.extra_lesson) : 0,
+        special_lesson: is1st && sched ? num(sched.special_lesson) : 0,
+        registration_fee: is1st && sched ? num(sched.registration_fee) : 0,
+        balance_bf: 0,
+        balance_cf: bill,
+        total_part_payment: 0,
+        cleared: '',
+        clearance: '',
+        optional_items_enabled: '',
+        extra: 0,
+        updated_at: new Date().toISOString()
+      };
+      const { data: inserted, error: insErr } = await supabase
+        .from('learner_terms')
+        .insert(row)
+        .select()
+        .maybeSingle();
+      if (insErr) { console.error('[ensureLearnerTerm] insert error:', insErr.message); return null; }
+      return inserted;
+    } catch (e) {
+      console.error('[ensureLearnerTerm] failed:', e.message);
+      return null;
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // feeRecalculateFromSchedule-2026-11-24: after promotion, re-derive
+  // the bill/tuition/other_* columns from fee_schedule for the learner's
+  // CURRENT class. Preserves: scholarship, founders_scholarship, additions,
+  // part payments, balance_bf. Only writes if the calculated bill differs
+  // from the current bill, to avoid pointless writes on stream-only changes.
+  // Returns { updated: true/false, old_bill, new_bill }.
+  // ----------------------------------------------------------------
+  TIS.feeRecalculateFromSchedule = async function (learnerId, termType, year) {
+    try {
+      const sb = await loadSdk();
+      const { data: term, error: tErr } = await sb
+        .from('learner_terms')
+        .select('*')
+        .eq('learner_id', learnerId)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (tErr) return fail(tErr.message);
+      if (!term) return ok({ updated: false, reason: 'no_term_row' });
+
+      const cls = term.class_name;
+      if (!cls) return ok({ updated: false, reason: 'no_class_name_on_term' });
+
+      const { data: sched, error: sErr } = await sb
+        .from('fee_schedule')
+        .select('*')
+        .eq('class_name', cls)
+        .eq('term_type', termType)
+        .eq('year', year)
+        .maybeSingle();
+      if (sErr) return fail(sErr.message);
+      if (!sched) return ok({ updated: false, reason: 'no_fee_schedule_for_class' });
+
+      const num = function (v) { return Number(v || 0); };
+      const is1st = (termType === '1st');
+      const tuition      = num(sched.tuition);
+      const obm          = is1st ? num(sched.other_bills_major) : 0;
+      const obn          = is1st ? num(sched.other_bills_minor) : 0;
+      const books        = is1st ? num(sched.books) : 0;
+      const uniform      = is1st ? num(sched.uniform) : 0;
+      const sportswear   = is1st ? num(sched.sportswear) : 0;
+      const waist_coat   = is1st ? num(sched.waist_coat) : 0;
+      const tie          = is1st ? num(sched.tie) : 0;
+      const extra_lesson = is1st ? num(sched.extra_lesson) : 0;
+      const special_lesson = is1st ? num(sched.special_lesson) : 0;
+      const registration = is1st ? num(sched.registration_fee) : 0;
+
+      // Preserve per-learner state
+      const sch  = num(term.scholarship);
+      const fsch = num(term.founders_scholarship);
+      const add  = num(term.additions);
+      const bf   = num(term.balance_bf);
+      const paid = num(term.total_part_payment);
+
+      const bill = (is1st
+        ? tuition + obm + obn + books + uniform + sportswear + waist_coat + tie + extra_lesson + special_lesson + registration
+        : tuition)
+        + add - sch - fsch;
+      const cf = bf + bill - paid;
+
+      const oldBill = num(term.bill);
+      if (Math.abs(bill - oldBill) < 0.01) {
+        return ok({ updated: false, reason: 'unchanged', old_bill: oldBill, new_bill: bill });
+      }
+
+      const patch = {
+        tuition: tuition,
+        other_bills_major: obm,
+        other_bills_minor: obn,
+        books: books,
+        uniform: uniform,
+        sportswear: sportswear,
+        waist_coat: waist_coat,
+        tie: tie,
+        extra_lesson: extra_lesson,
+        special_lesson: special_lesson,
+        registration_fee: registration,
+        bill: bill,
+        balance_cf: cf,
+        updated_at: new Date().toISOString()
+      };
+      const { error: upErr } = await sb.from('learner_terms').update(patch)
+        .eq('learner_id', learnerId).eq('term_type', termType).eq('year', year);
+      if (upErr) return fail(upErr.message);
+
+      return ok({ updated: true, old_bill: oldBill, new_bill: bill });
+    } catch (err) { return fail(err); }
+  };
+
+
   'use strict';
 
   // ================================================================
@@ -261,6 +441,18 @@
       const sb = await loadSdk();
       const { data, error } = await sb.from('learners').insert(row).select().single();
       if (error) return fail(error.message);
+
+      // AutoCreateTerm-2026-11-24: new learners get their class fee row immediately.
+      // Without this, learners show ₦0 bill until first payment attempt.
+      try {
+        const active = await TIS.getActiveTerm();
+        if (active && active.ok && active.data) {
+          await ensureLearnerTerm(data.id, active.data.term_type, active.data.year);
+        }
+      } catch (e) {
+        console.error('[createLearner auto-term]', e.message);
+      }
+
       return ok(data);
     } catch (err) { return fail(err); }
   };
@@ -1020,7 +1212,10 @@
         .eq('year', year)
         .maybeSingle();
       if (rowErr) return fail(rowErr.message);
-      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
+      if (!row) {
+        row = await ensureLearnerTerm(learnerId, termType, year);
+        if (!row) return fail('Could not auto-create fee record for this learner.');
+      }
       const n = parseInt(slotNumber, 10);
       if (!n || n < 1 || n > 5) return fail('Slot number must be 1-5');
       const patch = {};
@@ -1054,7 +1249,10 @@
         .eq('year', year)
         .maybeSingle();
       if (rowErr) return fail(rowErr.message);
-      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
+      if (!row) {
+        row = await ensureLearnerTerm(learnerId, termType, year);
+        if (!row) return fail('Could not auto-create fee record for this learner.');
+      }
       const n = parseInt(slotNumber, 10);
       if (!n || n < 1 || n > 5) return fail('Slot number must be 1-5');
       const patch = {};
@@ -1407,7 +1605,10 @@
         .eq('year', year)
         .maybeSingle();
       if (rowErr) return fail(rowErr.message);
-      if (!row) return fail('No fee record for this learner in ' + termType + ' term ' + year);
+      if (!row) {
+        row = await ensureLearnerTerm(learnerId, termType, year);
+        if (!row) return fail('Could not auto-create fee record for this learner.');
+      }
 
       const slots = [1, 2, 3, 4, 5];
       let slot = null;
@@ -2568,6 +2769,7 @@
       if (!learnerIds || learnerIds.length === 0) return ok({ created: 0 });
       const sb = await loadSdk();
 
+      // Fetch source-term snapshots (carry-forward balances)
       const fromR = await sb
         .from('learner_terms')
         .select('learner_id, balance_cf, class_name')
@@ -2578,6 +2780,16 @@
       const fromMap = {};
       (fromR.data || []).forEach(function (r) { fromMap[r.learner_id] = r; });
 
+      // Fetch current learner class_names (in case year-promotion already changed them)
+      const learnerR = await sb
+        .from('learners')
+        .select('id, class_name')
+        .in('id', learnerIds);
+      if (learnerR.error) return fail(learnerR.error.message);
+      const learnerMap = {};
+      (learnerR.data || []).forEach(function (l) { learnerMap[l.id] = l; });
+
+      // Which target-term rows already exist?
       const existingR = await sb
         .from('learner_terms')
         .select('learner_id')
@@ -2588,17 +2800,78 @@
       const existsSet = {};
       (existingR.data || []).forEach(function (r) { existsSet[r.learner_id] = true; });
 
+      // Load all fee_schedule rows for the target term/year (one query, then map)
+      const schedR = await sb
+        .from('fee_schedule')
+        .select('*')
+        .eq('term_type', toTermType)
+        .eq('year', toYear);
+      if (schedR.error) return fail(schedR.error.message);
+      const schedByClass = {};
+      (schedR.data || []).forEach(function (s) { schedByClass[s.class_name] = s; });
+
+      const num = function (v) { return Number(v || 0); };
+      const is1st = (toTermType === '1st');
+      const labelMap = { '1st': '1ST', '2nd': '2ND', '3rd': '3RD' };
+      const termLabel = (labelMap[toTermType] || String(toTermType).toUpperCase()) + ' TERM ' + toYear + '/' + (toYear + 1);
+
       const rowsToInsert = [];
       learnerIds.forEach(function (id) {
         if (existsSet[id]) return;
         const from = fromMap[id];
+        const lr   = learnerMap[id];
+        const cls  = (lr && lr.class_name) || (from && from.class_name) || null;
+        const sched = cls ? schedByClass[cls] : null;
+
+        // Populate bill from fee schedule for target term.
+        // 1st term → full bill; 2nd/3rd term → tuition only (matches offline __createInitialTermRow).
+        const tuition       = num(sched && sched.tuition);
+        const obm           = is1st ? num(sched && sched.other_bills_major) : 0;
+        const obn           = is1st ? num(sched && sched.other_bills_minor) : 0;
+        const books         = is1st ? num(sched && sched.books) : 0;
+        const uniform       = is1st ? num(sched && sched.uniform) : 0;
+        const sportswear    = is1st ? num(sched && sched.sportswear) : 0;
+        const waist_coat    = is1st ? num(sched && sched.waist_coat) : 0;
+        const tie           = is1st ? num(sched && sched.tie) : 0;
+        const extra_lesson  = is1st ? num(sched && sched.extra_lesson) : 0;
+        const special_lesson= is1st ? num(sched && sched.special_lesson) : 0;
+        const registration  = is1st ? num(sched && sched.registration_fee) : 0;
+        const bill = is1st
+          ? tuition + obm + obn + books + uniform + sportswear + waist_coat + tie + extra_lesson + special_lesson + registration
+          : tuition;
+
+        const bf = Number(from && from.balance_cf) || 0;
+        const cf = bf + bill;
+
         rowsToInsert.push({
           learner_id: id,
           term_type: toTermType,
           year: toYear,
-          class_name: from ? from.class_name : null,
-          balance_bf: from && from.balance_cf ? String(from.balance_cf) : null,
-          total_part_payment: '0',
+          term_label: termLabel,
+          class_name: cls,
+          bill: bill,
+          other_bill: 0,
+          tuition: tuition,
+          scholarship: 0,
+          founders_scholarship: 0,
+          additions: 0,
+          other_bills_major: obm,
+          other_bills_minor: obn,
+          books: books,
+          uniform: uniform,
+          sportswear: sportswear,
+          waist_coat: waist_coat,
+          tie: tie,
+          extra_lesson: extra_lesson,
+          special_lesson: special_lesson,
+          registration_fee: registration,
+          balance_bf: bf,
+          balance_cf: cf,
+          total_part_payment: 0,
+          optional_items_enabled: '',
+          cleared: '',
+          clearance: '',
+          extra: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -2648,16 +2921,46 @@
       const sb = await loadSdk();
       const CHUNK = 50;
       let applied = 0;
+      let termRowsUpdated = 0;
+      let feesRecalculated = 0;
+
+      const active = await TIS.getActiveTerm();
+      const activeTerm = (active && active.ok && active.data) ? active.data : null;
+
       for (let i = 0; i < promotions.length; i += CHUNK) {
         const slice = promotions.slice(i, i + CHUNK);
+
+        // 1. Update learner.class_name
         await Promise.all(slice.map(function (p) {
           return sb.from('learners')
             .update({ class_name: p.newClassName, updated_at: new Date().toISOString() })
             .eq('id', p.learnerId);
         }));
+
+        // 2. Update current-term learner_terms.class_name so downstream lookups match
+        if (activeTerm) {
+          await Promise.all(slice.map(function (p) {
+            return sb.from('learner_terms')
+              .update({ class_name: p.newClassName, updated_at: new Date().toISOString() })
+              .eq('learner_id', p.learnerId)
+              .eq('term_type', activeTerm.term_type)
+              .eq('year', activeTerm.year);
+          }));
+          termRowsUpdated += slice.length;
+        }
+
         applied += slice.length;
       }
-      return ok({ applied: applied });
+
+      // 3. Recalculate fees from the new class's fee_schedule (only if bill changed)
+      if (activeTerm) {
+        for (const p of promotions) {
+          const r = await TIS.feeRecalculateFromSchedule(p.learnerId, activeTerm.term_type, activeTerm.year);
+          if (r && r.ok && r.data && r.data.updated) feesRecalculated++;
+        }
+      }
+
+      return ok({ applied: applied, term_rows_updated: termRowsUpdated, fees_recalculated: feesRecalculated });
     } catch (err) { return fail(err); }
   };
 
