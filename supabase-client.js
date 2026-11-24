@@ -453,7 +453,10 @@
         console.error('[createLearner auto-term]', e.message);
       }
 
-      return ok(data);
+      return ok(Object.assign({}, data, {
+        _auto_term_created: !!__termRow,
+        _auto_term_error: __termErr
+      }));
     } catch (err) { return fail(err); }
   };
 
@@ -3730,6 +3733,9 @@
       const learner = Array.isArray(cr.data) ? cr.data[0] : cr.data;
       const learnerId = learner && learner.id ? learner.id : null;
 
+      const termCreated = learner && learner._auto_term_created;
+      const termError   = learner && learner._auto_term_error;
+
       const sb = await loadSdk();
       const now = new Date().toISOString();
       const ur = await sb.from('prospective_learners')
@@ -3737,7 +3743,7 @@
         .eq('id', id).select().single();
       if (ur.error) return fail('Learner created but prospect update failed: ' + ur.error.message);
 
-      return ok({ prospect: ur.data, learner: learner });
+      return ok({ prospect: ur.data, learner: learner, term_created: termCreated, term_error: termError });
     } catch (err) { return fail(err); }
   };
 
