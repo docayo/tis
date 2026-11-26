@@ -4,3 +4,6 @@
 *.css text eol=lf working-tree-encoding=UTF-8
 *.json text eol=lf working-tree-encoding=UTF-8
 *.md text eol=lf working-tree-encoding=UTF-8
+
+# app.js is a large single-file JS bundle — treat as binary to preserve UTF-8 bytes exactly
+app.js binary
