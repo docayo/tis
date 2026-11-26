@@ -13530,9 +13530,24 @@ html += '<div class="ft">Printed ' + new Date().toLocaleString() + '</div>';
       const pct = maxAggregate > 0 ? (aggregate / maxAggregate * 100).toFixed(2) : '0.00';
 
       const feeText = window.TISReport.buildFeeText(termRec);
-
       const cleared = termRec && String(termRec.cleared || '').toLowerCase() === 'yes';
       const coverScores = !cleared;
+
+
+      // FeeGateMessage-2026-11-26: visible banner when scores are covered by the fee gate.
+      let feeGateBanner = '';
+      if (coverScores) {
+        const __balCf = termRec ? Number(termRec.balance_cf || 0) : 0;
+        const __amt = '₦' + __balCf.toLocaleString('en-NG');
+        const __nm  = String(learner.name || '');
+        const __pin = String(learner.pin || '');
+        feeGateBanner =
+          '<div class="rc-fee-gate-banner" style="background:#fff4e0;border-left:4px solid #d4a017;color:#7a5e00;padding:14px 18px;border-radius:8px;margin:0 0 14px 0;font-size:13px;line-height:1.6;">' +
+            '<b>Dear ' + esc(__nm) + ' (' + esc(__pin) + '),</b><br>' +
+            'You are <b>not cleared yet</b>. Please pay the outstanding balance of <b>' + esc(__amt) + '</b> to be cleared, then check again for your report card.' +
+          '</div>';
+      }
+
 
       if (coverScores) {
         bodyRows = bodyRows.replace(/<td class="rc-num">[^<]*<\/td>/g, '<td class="rc-num rc-covered">—</td>')
